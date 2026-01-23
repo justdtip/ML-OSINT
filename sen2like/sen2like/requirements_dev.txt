@@ -1,0 +1,10 @@
+# This file may be used to update dev environment using:
+# conda install -n ENV_NAME -c conda-forge -f requirements_dev.txt
+#pylint=3.2.7
+#mypy=1.11.2
+coverage=7.6.1
+pytest=7.4.4
+black=24.8.0
+bandit=1.8.0
+matplotlib=3.9.3
+jinja2=3.1.6

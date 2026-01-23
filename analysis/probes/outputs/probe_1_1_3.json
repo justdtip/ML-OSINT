@@ -1,0 +1,39 @@
+{
+  "probe_id": "1.1.3",
+  "probe_name": "Equipment Category Disaggregation",
+  "status": "completed",
+  "duration_seconds": 0.14911270141601562,
+  "findings": [
+    {
+      "key_result": "Highest personnel correlation: drones (r=0.2891)",
+      "significance": "p-value = 8.48e-29",
+      "interpretation": "This equipment category most closely tracks personnel casualties"
+    },
+    {
+      "key_result": "Lowest personnel correlation: aircraft (r=-0.1827)",
+      "significance": "p-value = 3.77e-12",
+      "interpretation": "This equipment category may be less informative for casualty prediction"
+    },
+    {
+      "key_result": "Optimal lag analysis: [{'category': 'drones', 'best_lag': -7, 'best_lag_corr': 0.31965553211714326, 'lag_interpretation': 'equipment leads'}, {'category': 'apcs', 'best_lag': 0, 'best_lag_corr': 0.2207397385368487, 'lag_interpretation': 'concurrent'}, {'category': 'tanks', 'best_lag': 14, 'best_lag_corr': -0.05876220037962495, 'lag_interpretation': 'equipment lags'}]",
+      "significance": "Positive lag = equipment losses precede personnel casualties",
+      "interpretation": "Lag structure indicates whether equipment provides leading signal"
+    }
+  ],
+  "artifacts": {
+    "figures": [
+      "/Users/daniel.tipton/ML_OSINT/analysis/probes/outputs/1_1_3_category_analysis.png"
+    ],
+    "tables": [
+      "/Users/daniel.tipton/ML_OSINT/analysis/probes/outputs/1_1_3_category_correlations.csv",
+      "/Users/daniel.tipton/ML_OSINT/analysis/probes/outputs/1_1_3_lag_analysis.csv"
+    ]
+  },
+  "recommendations": [
+    "Focus model attention on drones - highest correlation with casualties",
+    "Consider dropping or downweighting aircraft - minimal correlation",
+    "Use lag structure in feature engineering for predictive modeling",
+    "Investigate why some categories correlate more strongly (tactical significance)"
+  ],
+  "error_message": null
+}

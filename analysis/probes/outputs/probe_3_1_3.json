@@ -1,0 +1,143 @@
+{
+  "probe_id": "3.1.3",
+  "probe_name": "Predictive Horizon Analysis",
+  "status": "completed",
+  "duration_seconds": 7.782870054244995,
+  "findings": {
+    "results_by_horizon": {
+      "1": {
+        "accuracy": 0.5558333333333333,
+        "f1_score": 0.2439777558294327,
+        "confusion_matrix": [
+          [
+            0,
+            0,
+            8,
+            0
+          ],
+          [
+            0,
+            0,
+            61,
+            0
+          ],
+          [
+            0,
+            0,
+            96,
+            0
+          ],
+          [
+            0,
+            0,
+            464,
+            571
+          ]
+        ],
+        "n_samples": 1200
+      },
+      "3": {
+        "accuracy": 0.5558333333333333,
+        "f1_score": 0.2439777558294327,
+        "confusion_matrix": [
+          [
+            0,
+            0,
+            8,
+            0
+          ],
+          [
+            0,
+            0,
+            61,
+            0
+          ],
+          [
+            0,
+            0,
+            96,
+            0
+          ],
+          [
+            0,
+            0,
+            464,
+            571
+          ]
+        ],
+        "n_samples": 1200
+      },
+      "7": {
+        "accuracy": 0.5541666666666667,
+        "f1_score": 0.24339383659146496,
+        "confusion_matrix": [
+          [
+            0,
+            0,
+            8,
+            0
+          ],
+          [
+            0,
+            0,
+            61,
+            0
+          ],
+          [
+            0,
+            0,
+            96,
+            0
+          ],
+          [
+            0,
+            0,
+            466,
+            569
+          ]
+        ],
+        "n_samples": 1200
+      },
+      "14": {
+        "accuracy": 0.5475,
+        "f1_score": 0.24105800214822773,
+        "confusion_matrix": [
+          [
+            0,
+            0,
+            8,
+            0
+          ],
+          [
+            0,
+            0,
+            61,
+            0
+          ],
+          [
+            0,
+            0,
+            96,
+            0
+          ],
+          [
+            0,
+            0,
+            474,
+            561
+          ]
+        ],
+        "n_samples": 1200
+      }
+    }
+  },
+  "artifacts": {
+    "figures": [
+      "horizon_performance",
+      "horizon_confusion"
+    ],
+    "tables": []
+  },
+  "recommendations": [],
+  "error_message": null
+}

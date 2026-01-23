@@ -1,0 +1,13 @@
+{
+  "probe_id": "5.2.2",
+  "probe_name": "Narrative-Numerical Lag Analysis",
+  "status": "completed",
+  "duration_seconds": 11.355293989181519,
+  "findings": {},
+  "artifacts": {
+    "figures": [],
+    "tables": []
+  },
+  "recommendations": [],
+  "error_message": null
+}

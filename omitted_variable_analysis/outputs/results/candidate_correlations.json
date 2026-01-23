@@ -1,0 +1,4597 @@
+{
+  "factor_correlations": {
+    "day_of_week": [
+      {
+        "correlation": -0.03256972191689567,
+        "pvalue": 0.5076690798535566
+      },
+      {
+        "correlation": 0.020430766283834535,
+        "pvalue": 0.6777780993459026
+      },
+      {
+        "correlation": 0.022006319644085698,
+        "pvalue": 0.6544806938130913
+      },
+      {
+        "correlation": 0.049069856465227796,
+        "pvalue": 0.31807442925363305
+      },
+      {
+        "correlation": -0.035402339181762915,
+        "pvalue": 0.4714499117262438
+      }
+    ],
+    "day_of_month": [
+      {
+        "correlation": 0.013489870229427431,
+        "pvalue": 0.7838348433575096
+      },
+      {
+        "correlation": -0.011511404824174207,
+        "pvalue": 0.8149160413237688
+      },
+      {
+        "correlation": 0.04741047442212171,
+        "pvalue": 0.3347348670969748
+      },
+      {
+        "correlation": 0.06155746492940463,
+        "pvalue": 0.21022699490527189
+      },
+      {
+        "correlation": 0.029581664406933286,
+        "pvalue": 0.5473963802218638
+      }
+    ],
+    "month": [
+      {
+        "correlation": -0.0670466117419106,
+        "pvalue": 0.1722815206936323
+      },
+      {
+        "correlation": -0.2355375832747263,
+        "pvalue": 1.1851467328673922e-06
+      },
+      {
+        "correlation": 0.2630135135053687,
+        "pvalue": 5.1965111193980836e-08
+      },
+      {
+        "correlation": -0.3722095121487346,
+        "pvalue": 4.071938605062962e-15
+      },
+      {
+        "correlation": -0.6292539052598649,
+        "pvalue": 2.973733357902595e-47
+      }
+    ],
+    "days_since_start": [
+      {
+        "correlation": -0.8679210391249698,
+        "pvalue": 6.88862773080691e-128
+      },
+      {
+        "correlation": 0.042157999093769535,
+        "pvalue": 0.39108470603938394
+      },
+      {
+        "correlation": -0.4306836404697728,
+        "pvalue": 3.238063439282463e-20
+      },
+      {
+        "correlation": 0.027004155873525826,
+        "pvalue": 0.5828532722490933
+      },
+      {
+        "correlation": -0.13501422305316638,
+        "pvalue": 0.005813592258866895
+      }
+    ],
+    "is_weekend": [
+      {
+        "correlation": -0.008774819783866405,
+        "pvalue": 0.8583790063858032
+      },
+      {
+        "correlation": 0.01564909517765045,
+        "pvalue": 0.7503036856651306
+      },
+      {
+        "correlation": 0.024561041966080666,
+        "pvalue": 0.617415189743042
+      },
+      {
+        "correlation": 0.05495789647102356,
+        "pvalue": 0.2633972465991974
+      },
+      {
+        "correlation": -0.03083522990345955,
+        "pvalue": 0.5305442810058594
+      }
+    ],
+    "is_month_start": [
+      {
+        "correlation": -0.02245565503835678,
+        "pvalue": 0.6478956937789917
+      },
+      {
+        "correlation": -0.030358368530869484,
+        "pvalue": 0.5369248986244202
+      },
+      {
+        "correlation": -0.003405466675758362,
+        "pvalue": 0.9447913765907288
+      },
+      {
+        "correlation": 0.03071712516248226,
+        "pvalue": 0.5321211218833923
+      },
+      {
+        "correlation": -0.008405957370996475,
+        "pvalue": 0.8642748594284058
+      }
+    ],
+    "is_month_end": [
+      {
+        "correlation": 0.012423412874341011,
+        "pvalue": 0.8005496263504028
+      },
+      {
+        "correlation": -0.003002084791660309,
+        "pvalue": 0.9513226747512817
+      },
+      {
+        "correlation": 0.0477532297372818,
+        "pvalue": 0.33124858140945435
+      },
+      {
+        "correlation": 0.024165725335478783,
+        "pvalue": 0.623090386390686
+      },
+      {
+        "correlation": 0.011461501941084862,
+        "pvalue": 0.8157041072845459
+      }
+    ],
+    "week_of_year": [
+      {
+        "correlation": -0.07194126974660464,
+        "pvalue": 0.14297462659417268
+      },
+      {
+        "correlation": -0.24010556429069738,
+        "pvalue": 7.227555850183839e-07
+      },
+      {
+        "correlation": 0.28254264664342627,
+        "pvalue": 4.4817852677468335e-09
+      },
+      {
+        "correlation": -0.3668088669986732,
+        "pvalue": 1.0751866466435699e-14
+      },
+      {
+        "correlation": -0.616179776122711,
+        "pvalue": 7.47494508672844e-45
+      }
+    ],
+    "quarter": [
+      {
+        "correlation": -0.09441258900984961,
+        "pvalue": 0.05433550442305926
+      },
+      {
+        "correlation": -0.22548632939347057,
+        "pvalue": 3.3982054786206508e-06
+      },
+      {
+        "correlation": 0.2576520512732621,
+        "pvalue": 9.847112569582291e-08
+      },
+      {
+        "correlation": -0.39286241811751804,
+        "pvalue": 8.371977176130578e-17
+      },
+      {
+        "correlation": -0.6226821236559026,
+        "pvalue": 4.943453419736972e-46
+      }
+    ],
+    "day_of_week_sin": [
+      {
+        "correlation": 0.035589960677430116,
+        "pvalue": 0.4691020853229989
+      },
+      {
+        "correlation": 0.008958776484181155,
+        "pvalue": 0.8554432339878594
+      },
+      {
+        "correlation": -0.03702578102354287,
+        "pvalue": 0.4513497540112771
+      },
+      {
+        "correlation": -0.028337713006679022,
+        "pvalue": 0.5643753597039729
+      },
+      {
+        "correlation": 0.012803454099146743,
+        "pvalue": 0.7945821157532813
+      }
+    ],
+    "day_of_week_cos": [
+      {
+        "correlation": 0.05260076900517272,
+        "pvalue": 0.2844562413845754
+      },
+      {
+        "correlation": 0.006973017880111482,
+        "pvalue": 0.8872411449508851
+      },
+      {
+        "correlation": 0.002093701642423276,
+        "pvalue": 0.9660404394934636
+      },
+      {
+        "correlation": -0.029458525244939048,
+        "pvalue": 0.5490658454600342
+      },
+      {
+        "correlation": 0.0340653776367222,
+        "pvalue": 0.4883656581935039
+      }
+    ],
+    "month_sin": [
+      {
+        "correlation": 0.0011845958130105507,
+        "pvalue": 0.9807820825105349
+      },
+      {
+        "correlation": 0.24762425755771106,
+        "pvalue": 3.1333064526680646e-07
+      },
+      {
+        "correlation": -0.07896801106061187,
+        "pvalue": 0.10776866744409185
+      },
+      {
+        "correlation": 0.3844899923682685,
+        "pvalue": 4.1795700991977855e-16
+      },
+      {
+        "correlation": 0.818782284477267,
+        "pvalue": 7.97334101179128e-102
+      }
+    ],
+    "month_cos": [
+      {
+        "correlation": -0.2845635314527766,
+        "pvalue": 3.4393962379704095e-09
+      },
+      {
+        "correlation": -0.40563360449507324,
+        "pvalue": 6.586506664583172e-18
+      },
+      {
+        "correlation": 0.43091055800850253,
+        "pvalue": 3.0795041555553295e-20
+      },
+      {
+        "correlation": -0.31034319967495005,
+        "pvalue": 9.722538381490025e-11
+      },
+      {
+        "correlation": 0.28175815182729913,
+        "pvalue": 4.964023317135904e-09
+      }
+    ],
+    "moon_phase": [
+      {
+        "correlation": -0.027447601537320857,
+        "pvalue": 0.5766776996213737
+      },
+      {
+        "correlation": -0.1163042253694753,
+        "pvalue": 0.017640883034463414
+      },
+      {
+        "correlation": 0.0056073725566120735,
+        "pvalue": 0.9092178379501696
+      },
+      {
+        "correlation": -0.010453608949841578,
+        "pvalue": 0.8316570045920175
+      },
+      {
+        "correlation": 0.026354527210532035,
+        "pvalue": 0.5919553060677324
+      }
+    ],
+    "moon_illumination": [
+      {
+        "correlation": 0.010136803303165473,
+        "pvalue": 0.8366860690186619
+      },
+      {
+        "correlation": -0.0014245537396653431,
+        "pvalue": 0.9768901940281275
+      },
+      {
+        "correlation": 0.00623026019487877,
+        "pvalue": 0.8991843802885549
+      },
+      {
+        "correlation": -0.09292622450678145,
+        "pvalue": 0.0582612661358159
+      },
+      {
+        "correlation": 0.04674162940052617,
+        "pvalue": 0.341605798705353
+      }
+    ],
+    "moon_phase_sin": [
+      {
+        "correlation": 0.0386633884106134,
+        "pvalue": 0.43157298886807866
+      },
+      {
+        "correlation": 0.11405664905372231,
+        "pvalue": 0.019970236738993733
+      },
+      {
+        "correlation": 0.023462945945230063,
+        "pvalue": 0.633235500955885
+      },
+      {
+        "correlation": 0.05629155664155171,
+        "pvalue": 0.2519686300890474
+      },
+      {
+        "correlation": -0.04801007491379637,
+        "pvalue": 0.3286512496250507
+      }
+    ],
+    "moon_phase_cos": [
+      {
+        "correlation": -0.010136803303165477,
+        "pvalue": 0.8366860690186619
+      },
+      {
+        "correlation": 0.001424553739665338,
+        "pvalue": 0.9768901940281275
+      },
+      {
+        "correlation": -0.006230260194878768,
+        "pvalue": 0.8991843802885549
+      },
+      {
+        "correlation": 0.09292622450678142,
+        "pvalue": 0.0582612661358159
+      },
+      {
+        "correlation": -0.046741629400526175,
+        "pvalue": 0.34160579870535074
+      }
+    ],
+    "equip_aircraft_cumulative": [
+      {
+        "correlation": -0.9525686717480564,
+        "pvalue": 5.190351837434784e-216
+      },
+      {
+        "correlation": 0.13779241926919386,
+        "pvalue": 0.00487150705488599
+      },
+      {
+        "correlation": -0.1862241148528872,
+        "pvalue": 0.00013329907348493079
+      },
+      {
+        "correlation": 0.03226051921498424,
+        "pvalue": 0.5117089492584248
+      },
+      {
+        "correlation": 0.0811072024774694,
+        "pvalue": 0.09853172587971848
+      }
+    ],
+    "equip_aircraft_daily": [
+      {
+        "correlation": 0.1605795944060677,
+        "pvalue": 0.001013715104812071
+      },
+      {
+        "correlation": -0.038934307699121554,
+        "pvalue": 0.42835013554982493
+      },
+      {
+        "correlation": 0.16116212369610816,
+        "pvalue": 0.0009710826577566374
+      },
+      {
+        "correlation": -0.08064255075026652,
+        "pvalue": 0.10048256107472624
+      },
+      {
+        "correlation": -0.06536813962844738,
+        "pvalue": 0.1832990998298246
+      }
+    ],
+    "equip_helicopter_cumulative": [
+      {
+        "correlation": -0.9462443170319248,
+        "pvalue": 4.7725767827032435e-205
+      },
+      {
+        "correlation": 0.08209186874644242,
+        "pvalue": 0.0944972359316501
+      },
+      {
+        "correlation": -0.24625764961417138,
+        "pvalue": 3.6547833662979956e-07
+      },
+      {
+        "correlation": 0.040676824131240574,
+        "pvalue": 0.4079572223580234
+      },
+      {
+        "correlation": 0.05987015003668728,
+        "pvalue": 0.22302063643643977
+      }
+    ],
+    "equip_helicopter_daily": [
+      {
+        "correlation": 0.1152707518637181,
+        "pvalue": 0.01868073543648045
+      },
+      {
+        "correlation": -0.05646044746122898,
+        "pvalue": 0.25054633443439506
+      },
+      {
+        "correlation": 0.15947141350645108,
+        "pvalue": 0.0010996183957335504
+      },
+      {
+        "correlation": -0.11241563852126317,
+        "pvalue": 0.021835779937328634
+      },
+      {
+        "correlation": -0.07725312600040382,
+        "pvalue": 0.11565594667962788
+      }
+    ],
+    "equip_tank_cumulative": [
+      {
+        "correlation": -0.8967137626018148,
+        "pvalue": 1.2400238880394663e-148
+      },
+      {
+        "correlation": 0.01064881895735817,
+        "pvalue": 0.8285615866374063
+      },
+      {
+        "correlation": -0.3752941497211251,
+        "pvalue": 2.31945813667022e-15
+      },
+      {
+        "correlation": -0.0026835129853422252,
+        "pvalue": 0.9564821963727372
+      },
+      {
+        "correlation": -0.08927749531298994,
+        "pvalue": 0.06890142375655388
+      }
+    ],
+    "equip_tank_daily": [
+      {
+        "correlation": 0.02685494517272807,
+        "pvalue": 0.5849381205408446
+      },
+      {
+        "correlation": -0.11907626311061839,
+        "pvalue": 0.015097469230687095
+      },
+      {
+        "correlation": -0.07508833980831517,
+        "pvalue": 0.126249898930517
+      },
+      {
+        "correlation": -0.2558033162401756,
+        "pvalue": 1.2234797070651384e-07
+      },
+      {
+        "correlation": -0.1453636325494329,
+        "pvalue": 0.002961303759131968
+      }
+    ],
+    "equip_APC_cumulative": [
+      {
+        "correlation": -0.8888067082133666,
+        "pvalue": 2.2551565652473477e-142
+      },
+      {
+        "correlation": 0.005897126846508033,
+        "pvalue": 0.9045485899139426
+      },
+      {
+        "correlation": -0.3890141137935814,
+        "pvalue": 1.7630890278440087e-16
+      },
+      {
+        "correlation": 0.003653689976068738,
+        "pvalue": 0.9407740938820717
+      },
+      {
+        "correlation": -0.11385320980512416,
+        "pvalue": 0.020193718136459867
+      }
+    ],
+    "equip_APC_daily": [
+      {
+        "correlation": 0.056972594423938434,
+        "pvalue": 0.24626752779406116
+      },
+      {
+        "correlation": -0.11088076998022217,
+        "pvalue": 0.02371556682411989
+      },
+      {
+        "correlation": -0.14871064634433748,
+        "pvalue": 0.002358620590232826
+      },
+      {
+        "correlation": -0.2436343938749278,
+        "pvalue": 4.898916143830569e-07
+      },
+      {
+        "correlation": -0.1560312468726866,
+        "pvalue": 0.001410841187217341
+      }
+    ],
+    "equip_field_artillery_cumulative": [
+      {
+        "correlation": -0.7374455878882223,
+        "pvalue": 1.4608199560881849e-72
+      },
+      {
+        "correlation": -0.1090730615755029,
+        "pvalue": 0.02610745203659559
+      },
+      {
+        "correlation": -0.512840376948072,
+        "pvalue": 2.7889886724719417e-29
+      },
+      {
+        "correlation": -0.04190446597669154,
+        "pvalue": 0.39394244333044764
+      },
+      {
+        "correlation": -0.3036225152233201,
+        "pvalue": 2.5491681432770675e-10
+      }
+    ],
+    "equip_field_artillery_daily": [
+      {
+        "correlation": -0.45184477049362737,
+        "pvalue": 2.5393649444964516e-22
+      },
+      {
+        "correlation": 0.0257684071043517,
+        "pvalue": 0.6002228725805168
+      },
+      {
+        "correlation": -0.3825435227997515,
+        "pvalue": 6.034405807944673e-16
+      },
+      {
+        "correlation": -0.1011708601590432,
+        "pvalue": 0.03915306452089165
+      },
+      {
+        "correlation": -0.3606086399383527,
+        "pvalue": 3.2056360346421454e-14
+      }
+    ],
+    "equip_MRL_cumulative": [
+      {
+        "correlation": -0.8321846703665849,
+        "pvalue": 4.43891540631075e-108
+      },
+      {
+        "correlation": -0.020642342187799114,
+        "pvalue": 0.674631045163709
+      },
+      {
+        "correlation": -0.455602269972088,
+        "pvalue": 1.0356489222147495e-22
+      },
+      {
+        "correlation": 0.003885775016660077,
+        "pvalue": 0.9370195831916579
+      },
+      {
+        "correlation": -0.20276533213129966,
+        "pvalue": 3.092672020592784e-05
+      }
+    ],
+    "equip_MRL_daily": [
+      {
+        "correlation": -0.09778300916151524,
+        "pvalue": 0.0462431010100518
+      },
+      {
+        "correlation": 0.07352357495590811,
+        "pvalue": 0.13436537070799748
+      },
+      {
+        "correlation": -0.11678446240504092,
+        "pvalue": 0.01717513353147478
+      },
+      {
+        "correlation": -0.0013731442494889362,
+        "pvalue": 0.9777239638882815
+      },
+      {
+        "correlation": -0.13916859174900886,
+        "pvalue": 0.0044578526958002716
+      }
+    ],
+    "equip_drone_cumulative": [
+      {
+        "correlation": -0.7680058205048409,
+        "pvalue": 3.890196012010265e-82
+      },
+      {
+        "correlation": -0.0687820323092081,
+        "pvalue": 0.16141712311978496
+      },
+      {
+        "correlation": -0.5088140679714026,
+        "pvalue": 8.89569535469509e-29
+      },
+      {
+        "correlation": -0.006864540114502622,
+        "pvalue": 0.8889838981589544
+      },
+      {
+        "correlation": -0.27643702746626275,
+        "pvalue": 9.845611765280993e-09
+      }
+    ],
+    "equip_drone_daily": [
+      {
+        "correlation": -0.3132063039473292,
+        "pvalue": 6.400197689354025e-11
+      },
+      {
+        "correlation": 0.13228920527341365,
+        "pvalue": 0.006893478667249406
+      },
+      {
+        "correlation": -0.13770141373019654,
+        "pvalue": 0.004900044391377007
+      },
+      {
+        "correlation": -0.02307124617615479,
+        "pvalue": 0.6389199044585075
+      },
+      {
+        "correlation": -0.20513551428212853,
+        "pvalue": 2.483514655494001e-05
+      }
+    ],
+    "equip_naval_ship_cumulative": [
+      {
+        "correlation": -0.8678323891359371,
+        "pvalue": 7.838431078608317e-128
+      },
+      {
+        "correlation": 0.002243931826997248,
+        "pvalue": 0.9636053541415267
+      },
+      {
+        "correlation": -0.38362584773807107,
+        "pvalue": 4.921245549283238e-16
+      },
+      {
+        "correlation": 0.018150749652973433,
+        "pvalue": 0.7120378469483429
+      },
+      {
+        "correlation": 0.047719997398875905,
+        "pvalue": 0.331585436611874
+      }
+    ],
+    "equip_naval_ship_daily": [
+      {
+        "correlation": -0.027637353856359466,
+        "pvalue": 0.5740445696101353
+      },
+      {
+        "correlation": -0.10033575480685407,
+        "pvalue": 0.04080928750964591
+      },
+      {
+        "correlation": -0.05774052524835625,
+        "pvalue": 0.23994780772600174
+      },
+      {
+        "correlation": -0.03596903057601761,
+        "pvalue": 0.46437826673120475
+      },
+      {
+        "correlation": -0.024756706169529165,
+        "pvalue": 0.6146145099040693
+      }
+    ],
+    "equip_anti_aircraft_warfare_cumulative": [
+      {
+        "correlation": -0.7745462333897648,
+        "pvalue": 2.2254270441593897e-84
+      },
+      {
+        "correlation": -0.051493001808469316,
+        "pvalue": 0.29473521606541225
+      },
+      {
+        "correlation": -0.4818617850167915,
+        "pvalue": 1.4266140081469317e-25
+      },
+      {
+        "correlation": -0.03639942102964123,
+        "pvalue": 0.4590470382541674
+      },
+      {
+        "correlation": -0.30468399962109816,
+        "pvalue": 2.1927430117291322e-10
+      }
+    ],
+    "equip_anti_aircraft_warfare_daily": [
+      {
+        "correlation": -0.18592965168803427,
+        "pvalue": 0.0001366614044067603
+      },
+      {
+        "correlation": 0.18648608045192666,
+        "pvalue": 0.0001303732448000431
+      },
+      {
+        "correlation": -0.11523628114232126,
+        "pvalue": 0.018716320878180218
+      },
+      {
+        "correlation": 0.022725719408590972,
+        "pvalue": 0.6439518591876544
+      },
+      {
+        "correlation": -0.2098534036175781,
+        "pvalue": 1.592754418823163e-05
+      }
+    ],
+    "equip_total_key": [
+      {
+        "correlation": -0.894594082454977,
+        "pvalue": 6.609880378588699e-147
+      },
+      {
+        "correlation": 0.010406054944931329,
+        "pvalue": 0.8324114580252003
+      },
+      {
+        "correlation": -0.3799309676655565,
+        "pvalue": 9.841295959138787e-16
+      },
+      {
+        "correlation": 0.002303266404531051,
+        "pvalue": 0.9626436901850695
+      },
+      {
+        "correlation": -0.1000703588067574,
+        "pvalue": 0.04134786764320633
+      }
+    ],
+    "equip_total_key_daily": [
+      {
+        "correlation": 0.059120354196273234,
+        "pvalue": 0.228880458125942
+      },
+      {
+        "correlation": -0.12638438513286723,
+        "pvalue": 0.009870197067258257
+      },
+      {
+        "correlation": -0.1157779097886166,
+        "pvalue": 0.018163953660856342
+      },
+      {
+        "correlation": -0.2745354421614674,
+        "pvalue": 1.2531354039679278e-08
+      },
+      {
+        "correlation": -0.1687180643389467,
+        "pvalue": 0.0005489949994949658
+      }
+    ],
+    "personnel_cumulative": [
+      {
+        "correlation": -0.8033780931150543,
+        "pvalue": 3.016167815532235e-95
+      },
+      {
+        "correlation": 0.047988278819786345,
+        "pvalue": 0.3288711365105217
+      },
+      {
+        "correlation": -0.5207794043292248,
+        "pvalue": 2.705910655411119e-30
+      },
+      {
+        "correlation": 0.06264711007955807,
+        "pvalue": 0.20225139465962885
+      },
+      {
+        "correlation": -0.1641903322772132,
+        "pvalue": 0.0007749129555189053
+      }
+    ],
+    "personnel_daily": [
+      {
+        "correlation": -0.6566015668001022,
+        "pvalue": 1.1558432344666335e-52
+      },
+      {
+        "correlation": -0.0010157126103188807,
+        "pvalue": 0.9835214855815733
+      },
+      {
+        "correlation": -0.09227896828217375,
+        "pvalue": 0.060042713073035624
+      },
+      {
+        "correlation": 0.009262542634436948,
+        "pvalue": 0.8505982711951299
+      },
+      {
+        "correlation": 0.3399242893194634,
+        "pvalue": 1.036719334597115e-12
+      }
+    ],
+    "viina_event_count": [
+      {
+        "correlation": 0.754885683866807,
+        "pvalue": 7.4702679727290015e-78
+      },
+      {
+        "correlation": -0.0455858500365135,
+        "pvalue": 0.35368924738606616
+      },
+      {
+        "correlation": 0.4024274017414817,
+        "pvalue": 1.2599563972273824e-17
+      },
+      {
+        "correlation": -0.16350478297782495,
+        "pvalue": 0.0008158065800278095
+      },
+      {
+        "correlation": -0.03407388489601894,
+        "pvalue": 0.4882570000855201
+      }
+    ],
+    "viina_regions_affected": [
+      {
+        "correlation": 0.5797869798107588,
+        "pvalue": 9.907281629130436e-39
+      },
+      {
+        "correlation": -0.12174971919580727,
+        "pvalue": 0.012955303167740215
+      },
+      {
+        "correlation": 0.33646494396943705,
+        "pvalue": 1.8090500538613856e-12
+      },
+      {
+        "correlation": -0.19252082182730168,
+        "pvalue": 7.75382417777697e-05
+      },
+      {
+        "correlation": -0.07258492724845166,
+        "pvalue": 0.1394229628071264
+      }
+    ],
+    "viina_sources_reporting": [
+      {
+        "correlation": 0.7311395852261524,
+        "pvalue": 9.442261664005941e-71
+      },
+      {
+        "correlation": -0.07529245251762484,
+        "pvalue": 0.12521994877107356
+      },
+      {
+        "correlation": 0.43793541511050693,
+        "pvalue": 6.386653851166758e-21
+      },
+      {
+        "correlation": -0.20563121682286015,
+        "pvalue": 2.3713907924610167e-05
+      },
+      {
+        "correlation": -0.26070210215989703,
+        "pvalue": 6.85722539979102e-08
+      }
+    ],
+    "viina_event_count_7d_mean": [
+      {
+        "correlation": 0.8340780655455291,
+        "pvalue": 5.237097754660533e-109
+      },
+      {
+        "correlation": -0.06302865462873304,
+        "pvalue": 0.19951130667472655
+      },
+      {
+        "correlation": 0.4345117392353612,
+        "pvalue": 1.3811290532735858e-20
+      },
+      {
+        "correlation": -0.16439977782952814,
+        "pvalue": 0.0007628026881288543
+      },
+      {
+        "correlation": -0.041332095820713795,
+        "pvalue": 0.4004401458513402
+      }
+    ],
+    "viina_event_count_7d_std": [
+      {
+        "correlation": -0.11498259706762438,
+        "pvalue": 0.018980030883404983
+      },
+      {
+        "correlation": -0.11651563218958144,
+        "pvalue": 0.017434511825144845
+      },
+      {
+        "correlation": 0.18218597636609563,
+        "pvalue": 0.00018696214622777502
+      },
+      {
+        "correlation": -0.14603148318026848,
+        "pvalue": 0.0028308967349623955
+      },
+      {
+        "correlation": 0.14810500396144816,
+        "pvalue": 0.002458607956759932
+      }
+    ],
+    "hdx_conflict_events": [
+      {
+        "correlation": -0.273135926416021,
+        "pvalue": 1.4948023471951445e-08
+      },
+      {
+        "correlation": 0.14900935466637716,
+        "pvalue": 0.0023106846168759816
+      },
+      {
+        "correlation": -0.3980111889580326,
+        "pvalue": 3.043749083895056e-17
+      },
+      {
+        "correlation": -0.020533992129597264,
+        "pvalue": 0.6762419778468018
+      },
+      {
+        "correlation": -0.48743129834009025,
+        "pvalue": 3.274153171840485e-26
+      }
+    ],
+    "hdx_fatalities": [
+      {
+        "correlation": -0.09964372671183742,
+        "pvalue": 0.04222621794564745
+      },
+      {
+        "correlation": -0.05137913418128565,
+        "pvalue": 0.29580567670201346
+      },
+      {
+        "correlation": 0.40710923061525084,
+        "pvalue": 4.875047285781524e-18
+      },
+      {
+        "correlation": -0.42873744588213225,
+        "pvalue": 4.973040008891578e-20
+      },
+      {
+        "correlation": -0.4710665726265034,
+        "pvalue": 2.293031675241242e-24
+      }
+    ]
+  },
+  "residual_correlations": {
+    "deepstate": {
+      "day_of_week": {
+        "correlation": -1.8000177785238575e-05,
+        "pvalue": 0.9997079516465182
+      },
+      "day_of_month": {
+        "correlation": -0.011681293699622715,
+        "pvalue": 0.8122349530229424
+      },
+      "month": {
+        "correlation": 0.3608865225893886,
+        "pvalue": 3.05401158289999e-14
+      },
+      "days_since_start": {
+        "correlation": -0.7134322226013675,
+        "pvalue": 6.242241841841973e-66
+      },
+      "is_weekend": {
+        "correlation": 0.019044887274503708,
+        "pvalue": 0.6985288858413696
+      },
+      "is_month_start": {
+        "correlation": -0.05092686787247658,
+        "pvalue": 0.3000824451446533
+      },
+      "is_month_end": {
+        "correlation": -0.017671365290880203,
+        "pvalue": 0.7193185091018677
+      },
+      "week_of_year": {
+        "correlation": 0.36205248935749834,
+        "pvalue": 2.490866570557324e-14
+      },
+      "quarter": {
+        "correlation": 0.3379291504378916,
+        "pvalue": 1.4304696563758196e-12
+      },
+      "day_of_week_sin": {
+        "correlation": -0.004242912763890088,
+        "pvalue": 0.9312448101781904
+      },
+      "day_of_week_cos": {
+        "correlation": 0.05762233537490456,
+        "pvalue": 0.24091296897620404
+      },
+      "month_sin": {
+        "correlation": -0.3047064700040082,
+        "pvalue": 2.185748607823716e-10
+      },
+      "month_cos": {
+        "correlation": 0.19761377094951663,
+        "pvalue": 4.938690967191109e-05
+      },
+      "moon_phase": {
+        "correlation": 0.0402543284192653,
+        "pvalue": 0.4128480764999407
+      },
+      "moon_illumination": {
+        "correlation": 0.0328107026102081,
+        "pvalue": 0.5045321670151023
+      },
+      "moon_phase_sin": {
+        "correlation": -0.03430949721580946,
+        "pvalue": 0.48525283383418183
+      },
+      "moon_phase_cos": {
+        "correlation": -0.03281070261020811,
+        "pvalue": 0.5045321670151023
+      },
+      "equip_aircraft_cumulative": {
+        "correlation": -0.7695140604367743,
+        "pvalue": 1.200674087722292e-82
+      },
+      "equip_aircraft_daily": {
+        "correlation": 0.24316964427245197,
+        "pvalue": 5.158124628995836e-07
+      },
+      "equip_helicopter_cumulative": {
+        "correlation": -0.7655261477602956,
+        "pvalue": 2.6361963506731356e-81
+      },
+      "equip_helicopter_daily": {
+        "correlation": 0.1258101677086213,
+        "pvalue": 0.01021320375583669
+      },
+      "equip_tank_cumulative": {
+        "correlation": -0.6889360031038967,
+        "pvalue": 7.756747499552039e-60
+      },
+      "equip_tank_daily": {
+        "correlation": 0.19495146642118277,
+        "pvalue": 6.261011646676212e-05
+      },
+      "equip_APC_cumulative": {
+        "correlation": -0.6888407581814306,
+        "pvalue": 8.169420694075656e-60
+      },
+      "equip_APC_daily": {
+        "correlation": 0.18337804776078623,
+        "pvalue": 0.00016931778006704928
+      },
+      "equip_field_artillery_cumulative": {
+        "correlation": -0.5286510888667946,
+        "pvalue": 2.5181928417183136e-31
+      },
+      "equip_field_artillery_daily": {
+        "correlation": -0.3756186024317262,
+        "pvalue": 2.185377057406254e-15
+      },
+      "equip_MRL_cumulative": {
+        "correlation": -0.6474242903486316,
+        "pvalue": 8.720261411899553e-51
+      },
+      "equip_MRL_daily": {
+        "correlation": -0.12643803915088908,
+        "pvalue": 0.009838675509203048
+      },
+      "equip_drone_cumulative": {
+        "correlation": -0.5915635314768213,
+        "pvalue": 1.257754420494366e-40
+      },
+      "equip_drone_daily": {
+        "correlation": -0.26755507271592965,
+        "pvalue": 2.990179940763121e-08
+      },
+      "equip_naval_ship_cumulative": {
+        "correlation": -0.6933914799834895,
+        "pvalue": 6.711010035933282e-61
+      },
+      "equip_naval_ship_daily": {
+        "correlation": 0.010886513230503473,
+        "pvalue": 0.8247960842769705
+      },
+      "equip_anti_aircraft_warfare_cumulative": {
+        "correlation": -0.5805995343551741,
+        "pvalue": 7.37188309879604e-39
+      },
+      "equip_anti_aircraft_warfare_daily": {
+        "correlation": -0.2464573984927663,
+        "pvalue": 3.573664860573184e-07
+      },
+      "equip_total_key": {
+        "correlation": -0.6920352637198107,
+        "pvalue": 1.4202788102931552e-60
+      },
+      "equip_total_key_daily": {
+        "correlation": 0.2157533015134046,
+        "pvalue": 9.009426367302268e-06
+      },
+      "personnel_cumulative": {
+        "correlation": -0.6991016897939246,
+        "pvalue": 2.7280349496863885e-62
+      },
+      "personnel_daily": {
+        "correlation": -0.4995955101365971,
+        "pvalue": 1.1956609463575415e-27
+      },
+      "viina_event_count": {
+        "correlation": 0.7252055066373703,
+        "pvalue": 4.2903703705678897e-69
+      },
+      "viina_regions_affected": {
+        "correlation": 0.6296286623369396,
+        "pvalue": 2.5281625695144776e-47
+      },
+      "viina_sources_reporting": {
+        "correlation": 0.7678534334369895,
+        "pvalue": 4.3786427099190475e-82
+      },
+      "viina_event_count_7d_mean": {
+        "correlation": 0.7997318719521792,
+        "pvalue": 8.939508110338178e-94
+      },
+      "viina_event_count_7d_std": {
+        "correlation": 0.11563609570779583,
+        "pvalue": 0.018307187307555615
+      },
+      "hdx_conflict_events": {
+        "correlation": -0.3517598984189491,
+        "pvalue": 1.4634108985898883e-13
+      },
+      "hdx_fatalities": {
+        "correlation": 0.2972461210446713,
+        "pvalue": 6.220006535504217e-10
+      }
+    },
+    "equipment": {
+      "day_of_week": {
+        "correlation": -0.07067215331587268,
+        "pvalue": 0.15017965991188462
+      },
+      "day_of_month": {
+        "correlation": 0.03526864935766069,
+        "pvalue": 0.4731267884806449
+      },
+      "month": {
+        "correlation": -0.07375310683951344,
+        "pvalue": 0.13315038877475247
+      },
+      "days_since_start": {
+        "correlation": -0.37292170372075795,
+        "pvalue": 3.577678286717289e-15
+      },
+      "is_weekend": {
+        "correlation": -0.05637679621577263,
+        "pvalue": 0.25124993920326233
+      },
+      "is_month_start": {
+        "correlation": -0.04971862956881523,
+        "pvalue": 0.31171056628227234
+      },
+      "is_month_end": {
+        "correlation": -0.004476410336792469,
+        "pvalue": 0.927470862865448
+      },
+      "week_of_year": {
+        "correlation": -0.07625669074836564,
+        "pvalue": 0.12044240665153047
+      },
+      "quarter": {
+        "correlation": -0.11133588950803046,
+        "pvalue": 0.02314410224758331
+      },
+      "day_of_week_sin": {
+        "correlation": 0.051345573975709435,
+        "pvalue": 0.2961216677401173
+      },
+      "day_of_week_cos": {
+        "correlation": 0.052440407511272304,
+        "pvalue": 0.28592908518243515
+      },
+      "month_sin": {
+        "correlation": 0.06637208039951528,
+        "pvalue": 0.17664833224118273
+      },
+      "month_cos": {
+        "correlation": -0.17766285900463372,
+        "pvalue": 0.0002708076810180397
+      },
+      "moon_phase": {
+        "correlation": 0.005273981740755757,
+        "pvalue": 0.9145941257692671
+      },
+      "moon_illumination": {
+        "correlation": 0.036302995110223626,
+        "pvalue": 0.4602384833302257
+      },
+      "moon_phase_sin": {
+        "correlation": -0.03958261454249178,
+        "pvalue": 0.4206947735613509
+      },
+      "moon_phase_cos": {
+        "correlation": -0.036302995110223626,
+        "pvalue": 0.4602384833302257
+      },
+      "equip_aircraft_cumulative": {
+        "correlation": -0.4675924840136535,
+        "pvalue": 5.489524574691607e-24
+      },
+      "equip_aircraft_daily": {
+        "correlation": 0.13762973020212171,
+        "pvalue": 0.00492262875523143
+      },
+      "equip_helicopter_cumulative": {
+        "correlation": -0.45570117298139023,
+        "pvalue": 1.0113341783370432e-22
+      },
+      "equip_helicopter_daily": {
+        "correlation": 0.011075683688803094,
+        "pvalue": 0.8218021494979466
+      },
+      "equip_tank_cumulative": {
+        "correlation": -0.39090598152480116,
+        "pvalue": 1.2240362416338998e-16
+      },
+      "equip_tank_daily": {
+        "correlation": 0.059467516168480485,
+        "pvalue": 0.22615387300333725
+      },
+      "equip_APC_cumulative": {
+        "correlation": -0.38875049668827366,
+        "pvalue": 1.85471067741996e-16
+      },
+      "equip_APC_daily": {
+        "correlation": 0.12728564921870983,
+        "pvalue": 0.009352430466259849
+      },
+      "equip_field_artillery_cumulative": {
+        "correlation": -0.27377793013843493,
+        "pvalue": 1.3788121564093782e-08
+      },
+      "equip_field_artillery_daily": {
+        "correlation": -0.2080804116773614,
+        "pvalue": 1.8843536764187476e-05
+      },
+      "equip_MRL_cumulative": {
+        "correlation": -0.34405189949085,
+        "pvalue": 5.286879707392116e-13
+      },
+      "equip_MRL_daily": {
+        "correlation": -0.1147262931354383,
+        "pvalue": 0.019249745913156608
+      },
+      "equip_drone_cumulative": {
+        "correlation": -0.2995521020116644,
+        "pvalue": 4.5163160221837506e-10
+      },
+      "equip_drone_daily": {
+        "correlation": -0.1914451131030414,
+        "pvalue": 8.51636075138576e-05
+      },
+      "equip_naval_ship_cumulative": {
+        "correlation": -0.40100700686865354,
+        "pvalue": 1.6756452354436743e-17
+      },
+      "equip_naval_ship_daily": {
+        "correlation": 0.004920442250820294,
+        "pvalue": 0.9202995839126163
+      },
+      "equip_anti_aircraft_warfare_cumulative": {
+        "correlation": -0.30544136047256915,
+        "pvalue": 1.9685935809830906e-10
+      },
+      "equip_anti_aircraft_warfare_daily": {
+        "correlation": -0.13078418912898704,
+        "pvalue": 0.007563933789617089
+      },
+      "equip_total_key": {
+        "correlation": -0.3920850182859979,
+        "pvalue": 9.738895505281238e-17
+      },
+      "equip_total_key_daily": {
+        "correlation": 0.11315464844268738,
+        "pvalue": 0.020977732042991696
+      },
+      "personnel_cumulative": {
+        "correlation": -0.315523046208403,
+        "pvalue": 4.5480621210993894e-11
+      },
+      "personnel_daily": {
+        "correlation": -0.31998566685621455,
+        "pvalue": 2.3356015168102805e-11
+      },
+      "viina_event_count": {
+        "correlation": 0.35148723598399756,
+        "pvalue": 1.5323605957421884e-13
+      },
+      "viina_regions_affected": {
+        "correlation": 0.26418735173019386,
+        "pvalue": 4.5092670655097174e-08
+      },
+      "viina_sources_reporting": {
+        "correlation": 0.289902332509537,
+        "pvalue": 1.6916700969475797e-09
+      },
+      "viina_event_count_7d_mean": {
+        "correlation": 0.37824936666737297,
+        "pvalue": 1.3451536022332793e-15
+      },
+      "viina_event_count_7d_std": {
+        "correlation": -0.09412520292871379,
+        "pvalue": 0.05507690480288242
+      },
+      "hdx_conflict_events": {
+        "correlation": -0.06880816058098266,
+        "pvalue": 0.16125758360084336
+      },
+      "hdx_fatalities": {
+        "correlation": -0.1624182888056011,
+        "pvalue": 0.0008847218301154331
+      }
+    },
+    "firms": {
+      "day_of_week": {
+        "correlation": 0.004104067400875235,
+        "pvalue": 0.9334894719173212
+      },
+      "day_of_month": {
+        "correlation": 0.11508094759718132,
+        "pvalue": 0.018877411636728157
+      },
+      "month": {
+        "correlation": -0.038705551475623226,
+        "pvalue": 0.4310704992944886
+      },
+      "days_since_start": {
+        "correlation": -0.1853764974973176,
+        "pvalue": 0.00014319387598307163
+      },
+      "is_weekend": {
+        "correlation": 0.03221210092306137,
+        "pvalue": 0.5123425722122192
+      },
+      "is_month_start": {
+        "correlation": 0.03962085396051407,
+        "pvalue": 0.420245498418808
+      },
+      "is_month_end": {
+        "correlation": 0.10668817162513733,
+        "pvalue": 0.029578812420368195
+      },
+      "week_of_year": {
+        "correlation": -0.030841736248706245,
+        "pvalue": 0.5304580733911056
+      },
+      "quarter": {
+        "correlation": -0.06955331125450254,
+        "pvalue": 0.15675747861989886
+      },
+      "day_of_week_sin": {
+        "correlation": -0.014525196710380953,
+        "pvalue": 0.7677026924194449
+      },
+      "day_of_week_cos": {
+        "correlation": 0.042000343450808594,
+        "pvalue": 0.39286026800530977
+      },
+      "month_sin": {
+        "correlation": 0.06284752967728803,
+        "pvalue": 0.20080867987276244
+      },
+      "month_cos": {
+        "correlation": -0.19717049499402806,
+        "pvalue": 5.1388049295935474e-05
+      },
+      "moon_phase": {
+        "correlation": 0.035172047128822014,
+        "pvalue": 0.474340506240394
+      },
+      "moon_illumination": {
+        "correlation": -0.1523219781549477,
+        "pvalue": 0.0018355713170883044
+      },
+      "moon_phase_sin": {
+        "correlation": 0.020212865245227397,
+        "pvalue": 0.6810251014931731
+      },
+      "moon_phase_cos": {
+        "correlation": 0.15232197815494766,
+        "pvalue": 0.0018355713170883044
+      },
+      "equip_aircraft_cumulative": {
+        "correlation": -0.23294405801944928,
+        "pvalue": 1.5624179243378445e-06
+      },
+      "equip_aircraft_daily": {
+        "correlation": 0.002529192564932444,
+        "pvalue": 0.9589825040573853
+      },
+      "equip_helicopter_cumulative": {
+        "correlation": -0.2232587685999219,
+        "pvalue": 4.264302283500373e-06
+      },
+      "equip_helicopter_daily": {
+        "correlation": 0.0004984685476125371,
+        "pvalue": 0.9919126110963089
+      },
+      "equip_tank_cumulative": {
+        "correlation": -0.20370111299972316,
+        "pvalue": 2.8369558572382875e-05
+      },
+      "equip_tank_daily": {
+        "correlation": -0.08194195095135162,
+        "pvalue": 0.09510284127574281
+      },
+      "equip_APC_cumulative": {
+        "correlation": -0.1966028572684945,
+        "pvalue": 5.406253274463542e-05
+      },
+      "equip_APC_daily": {
+        "correlation": -0.08456916813468204,
+        "pvalue": 0.08492892932673368
+      },
+      "equip_field_artillery_cumulative": {
+        "correlation": -0.15457389985535136,
+        "pvalue": 0.0015655991345978346
+      },
+      "equip_field_artillery_daily": {
+        "correlation": -0.11134839127535981,
+        "pvalue": 0.023128574182088704
+      },
+      "equip_MRL_cumulative": {
+        "correlation": -0.17517260188054268,
+        "pvalue": 0.0003308315429829255
+      },
+      "equip_MRL_daily": {
+        "correlation": -0.0358709168452267,
+        "pvalue": 0.46559838494807376
+      },
+      "equip_drone_cumulative": {
+        "correlation": -0.15458191535169796,
+        "pvalue": 0.0015647069462212252
+      },
+      "equip_drone_daily": {
+        "correlation": -0.053273139866661795,
+        "pvalue": 0.2783365895116399
+      },
+      "equip_naval_ship_cumulative": {
+        "correlation": -0.21054540505134645,
+        "pvalue": 1.4910179331203498e-05
+      },
+      "equip_naval_ship_daily": {
+        "correlation": -0.013888615511986592,
+        "pvalue": 0.7776103270942978
+      },
+      "equip_anti_aircraft_warfare_cumulative": {
+        "correlation": -0.16736190214925212,
+        "pvalue": 0.0006092561543171142
+      },
+      "equip_anti_aircraft_warfare_daily": {
+        "correlation": -0.1362716966593343,
+        "pvalue": 0.00536858778881698
+      },
+      "equip_total_key": {
+        "correlation": -0.2002986158104457,
+        "pvalue": 3.875380144163302e-05
+      },
+      "equip_total_key_daily": {
+        "correlation": -0.08956625916763641,
+        "pvalue": 0.06800510410659814
+      },
+      "personnel_cumulative": {
+        "correlation": -0.15355303361964145,
+        "pvalue": 0.0016831207865861742
+      },
+      "personnel_daily": {
+        "correlation": -0.18984591832464054,
+        "pvalue": 9.78151825891653e-05
+      },
+      "viina_event_count": {
+        "correlation": 0.13664535266400876,
+        "pvalue": 0.005242394495144194
+      },
+      "viina_regions_affected": {
+        "correlation": 0.14436157717308953,
+        "pvalue": 0.0031672332664717945
+      },
+      "viina_sources_reporting": {
+        "correlation": 0.1416481271432951,
+        "pvalue": 0.003791786294662782
+      },
+      "viina_event_count_7d_mean": {
+        "correlation": 0.15667082566689744,
+        "pvalue": 0.0013474682092271526
+      },
+      "viina_event_count_7d_std": {
+        "correlation": -0.11400106271455285,
+        "pvalue": 0.02003108466022874
+      },
+      "hdx_conflict_events": {
+        "correlation": -0.017368361389242998,
+        "pvalue": 0.7239331240108963
+      },
+      "hdx_fatalities": {
+        "correlation": -0.10463197816676091,
+        "pvalue": 0.03288210076329831
+      }
+    },
+    "ucdp": {
+      "day_of_week": {
+        "correlation": -0.012120660950941196,
+        "pvalue": 0.8053113487843179
+      },
+      "day_of_month": {
+        "correlation": 0.0641557588192392,
+        "pvalue": 0.19157492504397317
+      },
+      "month": {
+        "correlation": -0.013511553314969933,
+        "pvalue": 0.783496006288351
+      },
+      "days_since_start": {
+        "correlation": -0.19352530244207553,
+        "pvalue": 7.100260422852475e-05
+      },
+      "is_weekend": {
+        "correlation": -0.005939723923802376,
+        "pvalue": 0.903862476348877
+      },
+      "is_month_start": {
+        "correlation": -0.018556511029601097,
+        "pvalue": 0.7058964371681213
+      },
+      "is_month_end": {
+        "correlation": 0.04578499495983124,
+        "pvalue": 0.35158872604370117
+      },
+      "week_of_year": {
+        "correlation": -0.004081125446406927,
+        "pvalue": 0.9338604172402865
+      },
+      "quarter": {
+        "correlation": -0.02173484471450411,
+        "pvalue": 0.6584718992035582
+      },
+      "day_of_week_sin": {
+        "correlation": 0.014597489833501471,
+        "pvalue": 0.7665798896335023
+      },
+      "day_of_week_cos": {
+        "correlation": 0.007692739804588591,
+        "pvalue": 0.8756925755382646
+      },
+      "month_sin": {
+        "correlation": 0.021751789975705683,
+        "pvalue": 0.6582224857549336
+      },
+      "month_cos": {
+        "correlation": -0.2169095163790184,
+        "pvalue": 8.04249605314545e-06
+      },
+      "moon_phase": {
+        "correlation": -0.09771875042071289,
+        "pvalue": 0.04638736039103076
+      },
+      "moon_illumination": {
+        "correlation": -0.065581737600435,
+        "pvalue": 0.18186882729201467
+      },
+      "moon_phase_sin": {
+        "correlation": 0.054621553530416644,
+        "pvalue": 0.26633458685253203
+      },
+      "moon_phase_cos": {
+        "correlation": 0.06558173760043498,
+        "pvalue": 0.18186882729201467
+      },
+      "equip_aircraft_cumulative": {
+        "correlation": -0.2923429055415111,
+        "pvalue": 1.216974766414794e-09
+      },
+      "equip_aircraft_daily": {
+        "correlation": 0.13107613376724966,
+        "pvalue": 0.007429496997235732
+      },
+      "equip_helicopter_cumulative": {
+        "correlation": -0.2716249339040586,
+        "pvalue": 1.806278139852918e-08
+      },
+      "equip_helicopter_daily": {
+        "correlation": -0.04358102849182954,
+        "pvalue": 0.3752788091857753
+      },
+      "equip_tank_cumulative": {
+        "correlation": -0.2120200842815185,
+        "pvalue": 1.2944288342429987e-05
+      },
+      "equip_tank_daily": {
+        "correlation": 0.007646468464818555,
+        "pvalue": 0.8764342738951024
+      },
+      "equip_APC_cumulative": {
+        "correlation": -0.2043543859363021,
+        "pvalue": 2.670453746397585e-05
+      },
+      "equip_APC_daily": {
+        "correlation": 0.07115001000490837,
+        "pvalue": 0.1474350528446877
+      },
+      "equip_field_artillery_cumulative": {
+        "correlation": -0.10128907232559801,
+        "pvalue": 0.038923279839767885
+      },
+      "equip_field_artillery_daily": {
+        "correlation": -0.08805551723994509,
+        "pvalue": 0.072802087500178
+      },
+      "equip_MRL_cumulative": {
+        "correlation": -0.1616669304823553,
+        "pvalue": 0.0009354828325445344
+      },
+      "equip_MRL_daily": {
+        "correlation": -0.0844236501413139,
+        "pvalue": 0.08546851212152803
+      },
+      "equip_drone_cumulative": {
+        "correlation": -0.11499277103516961,
+        "pvalue": 0.01896939284437123
+      },
+      "equip_drone_daily": {
+        "correlation": -0.04969849399927366,
+        "pvalue": 0.31190669473901556
+      },
+      "equip_naval_ship_cumulative": {
+        "correlation": -0.2759375779534421,
+        "pvalue": 1.0491418776336625e-08
+      },
+      "equip_naval_ship_daily": {
+        "correlation": -0.01430246163537927,
+        "pvalue": 0.7711650927339038
+      },
+      "equip_anti_aircraft_warfare_cumulative": {
+        "correlation": -0.12382522864512636,
+        "pvalue": 0.011481750423060004
+      },
+      "equip_anti_aircraft_warfare_daily": {
+        "correlation": -0.020341778143509515,
+        "pvalue": 0.6791034195178242
+      },
+      "equip_total_key": {
+        "correlation": -0.20952770489996947,
+        "pvalue": 1.642888146969227e-05
+      },
+      "equip_total_key_daily": {
+        "correlation": 0.052019843161576075,
+        "pvalue": 0.2898161228107949
+      },
+      "personnel_cumulative": {
+        "correlation": -0.13461117225479957,
+        "pvalue": 0.005963083776265024
+      },
+      "personnel_daily": {
+        "correlation": -0.2321729693971503,
+        "pvalue": 1.6951781642068589e-06
+      },
+      "viina_event_count": {
+        "correlation": 0.19828923876653384,
+        "pvalue": 4.647853313160015e-05
+      },
+      "viina_regions_affected": {
+        "correlation": 0.14185575923877913,
+        "pvalue": 0.0037403227060403737
+      },
+      "viina_sources_reporting": {
+        "correlation": 0.1771899364603182,
+        "pvalue": 0.000281359996134557
+      },
+      "viina_event_count_7d_mean": {
+        "correlation": 0.19361619221671048,
+        "pvalue": 7.043757815399155e-05
+      },
+      "viina_event_count_7d_std": {
+        "correlation": -0.12358375235774388,
+        "pvalue": 0.011645210450845772
+      },
+      "hdx_conflict_events": {
+        "correlation": -0.03129848280410951,
+        "pvalue": 0.5243844796411803
+      },
+      "hdx_fatalities": {
+        "correlation": -0.02477450408882209,
+        "pvalue": 0.6143600270380096
+      }
+    }
+  },
+  "significant_pairs": [
+    {
+      "type": "factor",
+      "index": 0,
+      "candidate": "equip_aircraft_cumulative",
+      "correlation": -0.9525686717480564,
+      "pvalue": 5.190351837434784e-216,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 0,
+      "candidate": "equip_helicopter_cumulative",
+      "correlation": -0.9462443170319248,
+      "pvalue": 4.7725767827032435e-205,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 0,
+      "candidate": "equip_tank_cumulative",
+      "correlation": -0.8967137626018148,
+      "pvalue": 1.2400238880394663e-148,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 0,
+      "candidate": "equip_total_key",
+      "correlation": -0.894594082454977,
+      "pvalue": 6.609880378588699e-147,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 0,
+      "candidate": "equip_APC_cumulative",
+      "correlation": -0.8888067082133666,
+      "pvalue": 2.2551565652473477e-142,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 0,
+      "candidate": "days_since_start",
+      "correlation": -0.8679210391249698,
+      "pvalue": 6.88862773080691e-128,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 0,
+      "candidate": "equip_naval_ship_cumulative",
+      "correlation": -0.8678323891359371,
+      "pvalue": 7.838431078608317e-128,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 0,
+      "candidate": "viina_event_count_7d_mean",
+      "correlation": 0.8340780655455291,
+      "pvalue": 5.237097754660533e-109,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 0,
+      "candidate": "equip_MRL_cumulative",
+      "correlation": -0.8321846703665849,
+      "pvalue": 4.43891540631075e-108,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 4,
+      "candidate": "month_sin",
+      "correlation": 0.818782284477267,
+      "pvalue": 7.97334101179128e-102,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 0,
+      "candidate": "personnel_cumulative",
+      "correlation": -0.8033780931150543,
+      "pvalue": 3.016167815532235e-95,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "deepstate",
+      "candidate": "viina_event_count_7d_mean",
+      "correlation": 0.7997318719521792,
+      "pvalue": 8.939508110338178e-94,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 0,
+      "candidate": "equip_anti_aircraft_warfare_cumulative",
+      "correlation": -0.7745462333897648,
+      "pvalue": 2.2254270441593897e-84,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "deepstate",
+      "candidate": "equip_aircraft_cumulative",
+      "correlation": -0.7695140604367743,
+      "pvalue": 1.200674087722292e-82,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 0,
+      "candidate": "equip_drone_cumulative",
+      "correlation": -0.7680058205048409,
+      "pvalue": 3.890196012010265e-82,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "deepstate",
+      "candidate": "viina_sources_reporting",
+      "correlation": 0.7678534334369895,
+      "pvalue": 4.3786427099190475e-82,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "deepstate",
+      "candidate": "equip_helicopter_cumulative",
+      "correlation": -0.7655261477602956,
+      "pvalue": 2.6361963506731356e-81,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 0,
+      "candidate": "viina_event_count",
+      "correlation": 0.754885683866807,
+      "pvalue": 7.4702679727290015e-78,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 0,
+      "candidate": "equip_field_artillery_cumulative",
+      "correlation": -0.7374455878882223,
+      "pvalue": 1.4608199560881849e-72,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 0,
+      "candidate": "viina_sources_reporting",
+      "correlation": 0.7311395852261524,
+      "pvalue": 9.442261664005941e-71,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "deepstate",
+      "candidate": "viina_event_count",
+      "correlation": 0.7252055066373703,
+      "pvalue": 4.2903703705678897e-69,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "deepstate",
+      "candidate": "days_since_start",
+      "correlation": -0.7134322226013675,
+      "pvalue": 6.242241841841973e-66,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "deepstate",
+      "candidate": "personnel_cumulative",
+      "correlation": -0.6991016897939246,
+      "pvalue": 2.7280349496863885e-62,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "deepstate",
+      "candidate": "equip_naval_ship_cumulative",
+      "correlation": -0.6933914799834895,
+      "pvalue": 6.711010035933282e-61,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "deepstate",
+      "candidate": "equip_total_key",
+      "correlation": -0.6920352637198107,
+      "pvalue": 1.4202788102931552e-60,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "deepstate",
+      "candidate": "equip_tank_cumulative",
+      "correlation": -0.6889360031038967,
+      "pvalue": 7.756747499552039e-60,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "deepstate",
+      "candidate": "equip_APC_cumulative",
+      "correlation": -0.6888407581814306,
+      "pvalue": 8.169420694075656e-60,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 0,
+      "candidate": "personnel_daily",
+      "correlation": -0.6566015668001022,
+      "pvalue": 1.1558432344666335e-52,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "deepstate",
+      "candidate": "equip_MRL_cumulative",
+      "correlation": -0.6474242903486316,
+      "pvalue": 8.720261411899553e-51,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "deepstate",
+      "candidate": "viina_regions_affected",
+      "correlation": 0.6296286623369396,
+      "pvalue": 2.5281625695144776e-47,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 4,
+      "candidate": "month",
+      "correlation": -0.6292539052598649,
+      "pvalue": 2.973733357902595e-47,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 4,
+      "candidate": "quarter",
+      "correlation": -0.6226821236559026,
+      "pvalue": 4.943453419736972e-46,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 4,
+      "candidate": "week_of_year",
+      "correlation": -0.616179776122711,
+      "pvalue": 7.47494508672844e-45,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "deepstate",
+      "candidate": "equip_drone_cumulative",
+      "correlation": -0.5915635314768213,
+      "pvalue": 1.257754420494366e-40,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "deepstate",
+      "candidate": "equip_anti_aircraft_warfare_cumulative",
+      "correlation": -0.5805995343551741,
+      "pvalue": 7.37188309879604e-39,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 0,
+      "candidate": "viina_regions_affected",
+      "correlation": 0.5797869798107588,
+      "pvalue": 9.907281629130436e-39,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "deepstate",
+      "candidate": "equip_field_artillery_cumulative",
+      "correlation": -0.5286510888667946,
+      "pvalue": 2.5181928417183136e-31,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 2,
+      "candidate": "personnel_cumulative",
+      "correlation": -0.5207794043292248,
+      "pvalue": 2.705910655411119e-30,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 2,
+      "candidate": "equip_field_artillery_cumulative",
+      "correlation": -0.512840376948072,
+      "pvalue": 2.7889886724719417e-29,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 2,
+      "candidate": "equip_drone_cumulative",
+      "correlation": -0.5088140679714026,
+      "pvalue": 8.89569535469509e-29,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "deepstate",
+      "candidate": "personnel_daily",
+      "correlation": -0.4995955101365971,
+      "pvalue": 1.1956609463575415e-27,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 4,
+      "candidate": "hdx_conflict_events",
+      "correlation": -0.48743129834009025,
+      "pvalue": 3.274153171840485e-26,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 2,
+      "candidate": "equip_anti_aircraft_warfare_cumulative",
+      "correlation": -0.4818617850167915,
+      "pvalue": 1.4266140081469317e-25,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 4,
+      "candidate": "hdx_fatalities",
+      "correlation": -0.4710665726265034,
+      "pvalue": 2.293031675241242e-24,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "equipment",
+      "candidate": "equip_aircraft_cumulative",
+      "correlation": -0.4675924840136535,
+      "pvalue": 5.489524574691607e-24,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "equipment",
+      "candidate": "equip_helicopter_cumulative",
+      "correlation": -0.45570117298139023,
+      "pvalue": 1.0113341783370432e-22,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 2,
+      "candidate": "equip_MRL_cumulative",
+      "correlation": -0.455602269972088,
+      "pvalue": 1.0356489222147495e-22,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 0,
+      "candidate": "equip_field_artillery_daily",
+      "correlation": -0.45184477049362737,
+      "pvalue": 2.5393649444964516e-22,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 2,
+      "candidate": "viina_sources_reporting",
+      "correlation": 0.43793541511050693,
+      "pvalue": 6.386653851166758e-21,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 2,
+      "candidate": "viina_event_count_7d_mean",
+      "correlation": 0.4345117392353612,
+      "pvalue": 1.3811290532735858e-20,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 2,
+      "candidate": "month_cos",
+      "correlation": 0.43091055800850253,
+      "pvalue": 3.0795041555553295e-20,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 2,
+      "candidate": "days_since_start",
+      "correlation": -0.4306836404697728,
+      "pvalue": 3.238063439282463e-20,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 3,
+      "candidate": "hdx_fatalities",
+      "correlation": -0.42873744588213225,
+      "pvalue": 4.973040008891578e-20,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 2,
+      "candidate": "hdx_fatalities",
+      "correlation": 0.40710923061525084,
+      "pvalue": 4.875047285781524e-18,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 1,
+      "candidate": "month_cos",
+      "correlation": -0.40563360449507324,
+      "pvalue": 6.586506664583172e-18,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 2,
+      "candidate": "viina_event_count",
+      "correlation": 0.4024274017414817,
+      "pvalue": 1.2599563972273824e-17,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "equipment",
+      "candidate": "equip_naval_ship_cumulative",
+      "correlation": -0.40100700686865354,
+      "pvalue": 1.6756452354436743e-17,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 2,
+      "candidate": "hdx_conflict_events",
+      "correlation": -0.3980111889580326,
+      "pvalue": 3.043749083895056e-17,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 3,
+      "candidate": "quarter",
+      "correlation": -0.39286241811751804,
+      "pvalue": 8.371977176130578e-17,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "equipment",
+      "candidate": "equip_total_key",
+      "correlation": -0.3920850182859979,
+      "pvalue": 9.738895505281238e-17,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "equipment",
+      "candidate": "equip_tank_cumulative",
+      "correlation": -0.39090598152480116,
+      "pvalue": 1.2240362416338998e-16,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 2,
+      "candidate": "equip_APC_cumulative",
+      "correlation": -0.3890141137935814,
+      "pvalue": 1.7630890278440087e-16,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "equipment",
+      "candidate": "equip_APC_cumulative",
+      "correlation": -0.38875049668827366,
+      "pvalue": 1.85471067741996e-16,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 3,
+      "candidate": "month_sin",
+      "correlation": 0.3844899923682685,
+      "pvalue": 4.1795700991977855e-16,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 2,
+      "candidate": "equip_naval_ship_cumulative",
+      "correlation": -0.38362584773807107,
+      "pvalue": 4.921245549283238e-16,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 2,
+      "candidate": "equip_field_artillery_daily",
+      "correlation": -0.3825435227997515,
+      "pvalue": 6.034405807944673e-16,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 2,
+      "candidate": "equip_total_key",
+      "correlation": -0.3799309676655565,
+      "pvalue": 9.841295959138787e-16,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "equipment",
+      "candidate": "viina_event_count_7d_mean",
+      "correlation": 0.37824936666737297,
+      "pvalue": 1.3451536022332793e-15,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "deepstate",
+      "candidate": "equip_field_artillery_daily",
+      "correlation": -0.3756186024317262,
+      "pvalue": 2.185377057406254e-15,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 2,
+      "candidate": "equip_tank_cumulative",
+      "correlation": -0.3752941497211251,
+      "pvalue": 2.31945813667022e-15,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "equipment",
+      "candidate": "days_since_start",
+      "correlation": -0.37292170372075795,
+      "pvalue": 3.577678286717289e-15,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 3,
+      "candidate": "month",
+      "correlation": -0.3722095121487346,
+      "pvalue": 4.071938605062962e-15,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 3,
+      "candidate": "week_of_year",
+      "correlation": -0.3668088669986732,
+      "pvalue": 1.0751866466435699e-14,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "deepstate",
+      "candidate": "week_of_year",
+      "correlation": 0.36205248935749834,
+      "pvalue": 2.490866570557324e-14,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "deepstate",
+      "candidate": "month",
+      "correlation": 0.3608865225893886,
+      "pvalue": 3.05401158289999e-14,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 4,
+      "candidate": "equip_field_artillery_daily",
+      "correlation": -0.3606086399383527,
+      "pvalue": 3.2056360346421454e-14,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "deepstate",
+      "candidate": "hdx_conflict_events",
+      "correlation": -0.3517598984189491,
+      "pvalue": 1.4634108985898883e-13,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "equipment",
+      "candidate": "viina_event_count",
+      "correlation": 0.35148723598399756,
+      "pvalue": 1.5323605957421884e-13,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "equipment",
+      "candidate": "equip_MRL_cumulative",
+      "correlation": -0.34405189949085,
+      "pvalue": 5.286879707392116e-13,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 4,
+      "candidate": "personnel_daily",
+      "correlation": 0.3399242893194634,
+      "pvalue": 1.036719334597115e-12,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "deepstate",
+      "candidate": "quarter",
+      "correlation": 0.3379291504378916,
+      "pvalue": 1.4304696563758196e-12,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 2,
+      "candidate": "viina_regions_affected",
+      "correlation": 0.33646494396943705,
+      "pvalue": 1.8090500538613856e-12,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "equipment",
+      "candidate": "personnel_daily",
+      "correlation": -0.31998566685621455,
+      "pvalue": 2.3356015168102805e-11,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "equipment",
+      "candidate": "personnel_cumulative",
+      "correlation": -0.315523046208403,
+      "pvalue": 4.5480621210993894e-11,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 0,
+      "candidate": "equip_drone_daily",
+      "correlation": -0.3132063039473292,
+      "pvalue": 6.400197689354025e-11,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 3,
+      "candidate": "month_cos",
+      "correlation": -0.31034319967495005,
+      "pvalue": 9.722538381490025e-11,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "equipment",
+      "candidate": "equip_anti_aircraft_warfare_cumulative",
+      "correlation": -0.30544136047256915,
+      "pvalue": 1.9685935809830906e-10,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "deepstate",
+      "candidate": "month_sin",
+      "correlation": -0.3047064700040082,
+      "pvalue": 2.185748607823716e-10,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 4,
+      "candidate": "equip_anti_aircraft_warfare_cumulative",
+      "correlation": -0.30468399962109816,
+      "pvalue": 2.1927430117291322e-10,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 4,
+      "candidate": "equip_field_artillery_cumulative",
+      "correlation": -0.3036225152233201,
+      "pvalue": 2.5491681432770675e-10,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "equipment",
+      "candidate": "equip_drone_cumulative",
+      "correlation": -0.2995521020116644,
+      "pvalue": 4.5163160221837506e-10,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "deepstate",
+      "candidate": "hdx_fatalities",
+      "correlation": 0.2972461210446713,
+      "pvalue": 6.220006535504217e-10,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "ucdp",
+      "candidate": "equip_aircraft_cumulative",
+      "correlation": -0.2923429055415111,
+      "pvalue": 1.216974766414794e-09,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "equipment",
+      "candidate": "viina_sources_reporting",
+      "correlation": 0.289902332509537,
+      "pvalue": 1.6916700969475797e-09,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 0,
+      "candidate": "month_cos",
+      "correlation": -0.2845635314527766,
+      "pvalue": 3.4393962379704095e-09,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 2,
+      "candidate": "week_of_year",
+      "correlation": 0.28254264664342627,
+      "pvalue": 4.4817852677468335e-09,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 4,
+      "candidate": "month_cos",
+      "correlation": 0.28175815182729913,
+      "pvalue": 4.964023317135904e-09,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 4,
+      "candidate": "equip_drone_cumulative",
+      "correlation": -0.27643702746626275,
+      "pvalue": 9.845611765280993e-09,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "ucdp",
+      "candidate": "equip_naval_ship_cumulative",
+      "correlation": -0.2759375779534421,
+      "pvalue": 1.0491418776336625e-08,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 3,
+      "candidate": "equip_total_key_daily",
+      "correlation": -0.2745354421614674,
+      "pvalue": 1.2531354039679278e-08,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "equipment",
+      "candidate": "equip_field_artillery_cumulative",
+      "correlation": -0.27377793013843493,
+      "pvalue": 1.3788121564093782e-08,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 0,
+      "candidate": "hdx_conflict_events",
+      "correlation": -0.273135926416021,
+      "pvalue": 1.4948023471951445e-08,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "ucdp",
+      "candidate": "equip_helicopter_cumulative",
+      "correlation": -0.2716249339040586,
+      "pvalue": 1.806278139852918e-08,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "deepstate",
+      "candidate": "equip_drone_daily",
+      "correlation": -0.26755507271592965,
+      "pvalue": 2.990179940763121e-08,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "equipment",
+      "candidate": "viina_regions_affected",
+      "correlation": 0.26418735173019386,
+      "pvalue": 4.5092670655097174e-08,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 2,
+      "candidate": "month",
+      "correlation": 0.2630135135053687,
+      "pvalue": 5.1965111193980836e-08,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 4,
+      "candidate": "viina_sources_reporting",
+      "correlation": -0.26070210215989703,
+      "pvalue": 6.85722539979102e-08,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 2,
+      "candidate": "quarter",
+      "correlation": 0.2576520512732621,
+      "pvalue": 9.847112569582291e-08,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 3,
+      "candidate": "equip_tank_daily",
+      "correlation": -0.2558033162401756,
+      "pvalue": 1.2234797070651384e-07,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 1,
+      "candidate": "month_sin",
+      "correlation": 0.24762425755771106,
+      "pvalue": 3.1333064526680646e-07,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "deepstate",
+      "candidate": "equip_anti_aircraft_warfare_daily",
+      "correlation": -0.2464573984927663,
+      "pvalue": 3.573664860573184e-07,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 2,
+      "candidate": "equip_helicopter_cumulative",
+      "correlation": -0.24625764961417138,
+      "pvalue": 3.6547833662979956e-07,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 3,
+      "candidate": "equip_APC_daily",
+      "correlation": -0.2436343938749278,
+      "pvalue": 4.898916143830569e-07,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "deepstate",
+      "candidate": "equip_aircraft_daily",
+      "correlation": 0.24316964427245197,
+      "pvalue": 5.158124628995836e-07,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 1,
+      "candidate": "week_of_year",
+      "correlation": -0.24010556429069738,
+      "pvalue": 7.227555850183839e-07,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 1,
+      "candidate": "month",
+      "correlation": -0.2355375832747263,
+      "pvalue": 1.1851467328673922e-06,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "firms",
+      "candidate": "equip_aircraft_cumulative",
+      "correlation": -0.23294405801944928,
+      "pvalue": 1.5624179243378445e-06,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "ucdp",
+      "candidate": "personnel_daily",
+      "correlation": -0.2321729693971503,
+      "pvalue": 1.6951781642068589e-06,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 1,
+      "candidate": "quarter",
+      "correlation": -0.22548632939347057,
+      "pvalue": 3.3982054786206508e-06,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "firms",
+      "candidate": "equip_helicopter_cumulative",
+      "correlation": -0.2232587685999219,
+      "pvalue": 4.264302283500373e-06,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "ucdp",
+      "candidate": "month_cos",
+      "correlation": -0.2169095163790184,
+      "pvalue": 8.04249605314545e-06,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "deepstate",
+      "candidate": "equip_total_key_daily",
+      "correlation": 0.2157533015134046,
+      "pvalue": 9.009426367302268e-06,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "ucdp",
+      "candidate": "equip_tank_cumulative",
+      "correlation": -0.2120200842815185,
+      "pvalue": 1.2944288342429987e-05,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "firms",
+      "candidate": "equip_naval_ship_cumulative",
+      "correlation": -0.21054540505134645,
+      "pvalue": 1.4910179331203498e-05,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 4,
+      "candidate": "equip_anti_aircraft_warfare_daily",
+      "correlation": -0.2098534036175781,
+      "pvalue": 1.592754418823163e-05,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "ucdp",
+      "candidate": "equip_total_key",
+      "correlation": -0.20952770489996947,
+      "pvalue": 1.642888146969227e-05,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "equipment",
+      "candidate": "equip_field_artillery_daily",
+      "correlation": -0.2080804116773614,
+      "pvalue": 1.8843536764187476e-05,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 3,
+      "candidate": "viina_sources_reporting",
+      "correlation": -0.20563121682286015,
+      "pvalue": 2.3713907924610167e-05,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 4,
+      "candidate": "equip_drone_daily",
+      "correlation": -0.20513551428212853,
+      "pvalue": 2.483514655494001e-05,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "ucdp",
+      "candidate": "equip_APC_cumulative",
+      "correlation": -0.2043543859363021,
+      "pvalue": 2.670453746397585e-05,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "firms",
+      "candidate": "equip_tank_cumulative",
+      "correlation": -0.20370111299972316,
+      "pvalue": 2.8369558572382875e-05,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 4,
+      "candidate": "equip_MRL_cumulative",
+      "correlation": -0.20276533213129966,
+      "pvalue": 3.092672020592784e-05,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "firms",
+      "candidate": "equip_total_key",
+      "correlation": -0.2002986158104457,
+      "pvalue": 3.875380144163302e-05,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "ucdp",
+      "candidate": "viina_event_count",
+      "correlation": 0.19828923876653384,
+      "pvalue": 4.647853313160015e-05,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "deepstate",
+      "candidate": "month_cos",
+      "correlation": 0.19761377094951663,
+      "pvalue": 4.938690967191109e-05,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "firms",
+      "candidate": "month_cos",
+      "correlation": -0.19717049499402806,
+      "pvalue": 5.1388049295935474e-05,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "firms",
+      "candidate": "equip_APC_cumulative",
+      "correlation": -0.1966028572684945,
+      "pvalue": 5.406253274463542e-05,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "deepstate",
+      "candidate": "equip_tank_daily",
+      "correlation": 0.19495146642118277,
+      "pvalue": 6.261011646676212e-05,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "ucdp",
+      "candidate": "viina_event_count_7d_mean",
+      "correlation": 0.19361619221671048,
+      "pvalue": 7.043757815399155e-05,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "ucdp",
+      "candidate": "days_since_start",
+      "correlation": -0.19352530244207553,
+      "pvalue": 7.100260422852475e-05,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 3,
+      "candidate": "viina_regions_affected",
+      "correlation": -0.19252082182730168,
+      "pvalue": 7.75382417777697e-05,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "equipment",
+      "candidate": "equip_drone_daily",
+      "correlation": -0.1914451131030414,
+      "pvalue": 8.51636075138576e-05,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "firms",
+      "candidate": "personnel_daily",
+      "correlation": -0.18984591832464054,
+      "pvalue": 9.78151825891653e-05,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 1,
+      "candidate": "equip_anti_aircraft_warfare_daily",
+      "correlation": 0.18648608045192666,
+      "pvalue": 0.0001303732448000431,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 2,
+      "candidate": "equip_aircraft_cumulative",
+      "correlation": -0.1862241148528872,
+      "pvalue": 0.00013329907348493079,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 0,
+      "candidate": "equip_anti_aircraft_warfare_daily",
+      "correlation": -0.18592965168803427,
+      "pvalue": 0.0001366614044067603,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "firms",
+      "candidate": "days_since_start",
+      "correlation": -0.1853764974973176,
+      "pvalue": 0.00014319387598307163,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "deepstate",
+      "candidate": "equip_APC_daily",
+      "correlation": 0.18337804776078623,
+      "pvalue": 0.00016931778006704928,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 2,
+      "candidate": "viina_event_count_7d_std",
+      "correlation": 0.18218597636609563,
+      "pvalue": 0.00018696214622777502,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "equipment",
+      "candidate": "month_cos",
+      "correlation": -0.17766285900463372,
+      "pvalue": 0.0002708076810180397,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "ucdp",
+      "candidate": "viina_sources_reporting",
+      "correlation": 0.1771899364603182,
+      "pvalue": 0.000281359996134557,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "firms",
+      "candidate": "equip_MRL_cumulative",
+      "correlation": -0.17517260188054268,
+      "pvalue": 0.0003308315429829255,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 4,
+      "candidate": "equip_total_key_daily",
+      "correlation": -0.1687180643389467,
+      "pvalue": 0.0005489949994949658,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "firms",
+      "candidate": "equip_anti_aircraft_warfare_cumulative",
+      "correlation": -0.16736190214925212,
+      "pvalue": 0.0006092561543171142,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 3,
+      "candidate": "viina_event_count_7d_mean",
+      "correlation": -0.16439977782952814,
+      "pvalue": 0.0007628026881288543,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 4,
+      "candidate": "personnel_cumulative",
+      "correlation": -0.1641903322772132,
+      "pvalue": 0.0007749129555189053,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 3,
+      "candidate": "viina_event_count",
+      "correlation": -0.16350478297782495,
+      "pvalue": 0.0008158065800278095,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "equipment",
+      "candidate": "hdx_fatalities",
+      "correlation": -0.1624182888056011,
+      "pvalue": 0.0008847218301154331,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "ucdp",
+      "candidate": "equip_MRL_cumulative",
+      "correlation": -0.1616669304823553,
+      "pvalue": 0.0009354828325445344,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 2,
+      "candidate": "equip_aircraft_daily",
+      "correlation": 0.16116212369610816,
+      "pvalue": 0.0009710826577566374,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 0,
+      "candidate": "equip_aircraft_daily",
+      "correlation": 0.1605795944060677,
+      "pvalue": 0.001013715104812071,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 2,
+      "candidate": "equip_helicopter_daily",
+      "correlation": 0.15947141350645108,
+      "pvalue": 0.0010996183957335504,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "firms",
+      "candidate": "viina_event_count_7d_mean",
+      "correlation": 0.15667082566689744,
+      "pvalue": 0.0013474682092271526,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 4,
+      "candidate": "equip_APC_daily",
+      "correlation": -0.1560312468726866,
+      "pvalue": 0.001410841187217341,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "firms",
+      "candidate": "equip_drone_cumulative",
+      "correlation": -0.15458191535169796,
+      "pvalue": 0.0015647069462212252,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "firms",
+      "candidate": "equip_field_artillery_cumulative",
+      "correlation": -0.15457389985535136,
+      "pvalue": 0.0015655991345978346,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "firms",
+      "candidate": "personnel_cumulative",
+      "correlation": -0.15355303361964145,
+      "pvalue": 0.0016831207865861742,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "firms",
+      "candidate": "moon_illumination",
+      "correlation": -0.1523219781549477,
+      "pvalue": 0.0018355713170883044,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "firms",
+      "candidate": "moon_phase_cos",
+      "correlation": 0.15232197815494766,
+      "pvalue": 0.0018355713170883044,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 1,
+      "candidate": "hdx_conflict_events",
+      "correlation": 0.14900935466637716,
+      "pvalue": 0.0023106846168759816,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 2,
+      "candidate": "equip_APC_daily",
+      "correlation": -0.14871064634433748,
+      "pvalue": 0.002358620590232826,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 4,
+      "candidate": "viina_event_count_7d_std",
+      "correlation": 0.14810500396144816,
+      "pvalue": 0.002458607956759932,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 3,
+      "candidate": "viina_event_count_7d_std",
+      "correlation": -0.14603148318026848,
+      "pvalue": 0.0028308967349623955,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 4,
+      "candidate": "equip_tank_daily",
+      "correlation": -0.1453636325494329,
+      "pvalue": 0.002961303759131968,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "firms",
+      "candidate": "viina_regions_affected",
+      "correlation": 0.14436157717308953,
+      "pvalue": 0.0031672332664717945,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "ucdp",
+      "candidate": "viina_regions_affected",
+      "correlation": 0.14185575923877913,
+      "pvalue": 0.0037403227060403737,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "firms",
+      "candidate": "viina_sources_reporting",
+      "correlation": 0.1416481271432951,
+      "pvalue": 0.003791786294662782,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 4,
+      "candidate": "equip_MRL_daily",
+      "correlation": -0.13916859174900886,
+      "pvalue": 0.0044578526958002716,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 1,
+      "candidate": "equip_aircraft_cumulative",
+      "correlation": 0.13779241926919386,
+      "pvalue": 0.00487150705488599,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 2,
+      "candidate": "equip_drone_daily",
+      "correlation": -0.13770141373019654,
+      "pvalue": 0.004900044391377007,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "equipment",
+      "candidate": "equip_aircraft_daily",
+      "correlation": 0.13762973020212171,
+      "pvalue": 0.00492262875523143,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "firms",
+      "candidate": "viina_event_count",
+      "correlation": 0.13664535266400876,
+      "pvalue": 0.005242394495144194,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "firms",
+      "candidate": "equip_anti_aircraft_warfare_daily",
+      "correlation": -0.1362716966593343,
+      "pvalue": 0.00536858778881698,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 4,
+      "candidate": "days_since_start",
+      "correlation": -0.13501422305316638,
+      "pvalue": 0.005813592258866895,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "ucdp",
+      "candidate": "personnel_cumulative",
+      "correlation": -0.13461117225479957,
+      "pvalue": 0.005963083776265024,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 1,
+      "candidate": "equip_drone_daily",
+      "correlation": 0.13228920527341365,
+      "pvalue": 0.006893478667249406,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "ucdp",
+      "candidate": "equip_aircraft_daily",
+      "correlation": 0.13107613376724966,
+      "pvalue": 0.007429496997235732,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "equipment",
+      "candidate": "equip_anti_aircraft_warfare_daily",
+      "correlation": -0.13078418912898704,
+      "pvalue": 0.007563933789617089,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "equipment",
+      "candidate": "equip_APC_daily",
+      "correlation": 0.12728564921870983,
+      "pvalue": 0.009352430466259849,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "deepstate",
+      "candidate": "equip_MRL_daily",
+      "correlation": -0.12643803915088908,
+      "pvalue": 0.009838675509203048,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 1,
+      "candidate": "equip_total_key_daily",
+      "correlation": -0.12638438513286723,
+      "pvalue": 0.009870197067258257,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "deepstate",
+      "candidate": "equip_helicopter_daily",
+      "correlation": 0.1258101677086213,
+      "pvalue": 0.01021320375583669,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "ucdp",
+      "candidate": "equip_anti_aircraft_warfare_cumulative",
+      "correlation": -0.12382522864512636,
+      "pvalue": 0.011481750423060004,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "ucdp",
+      "candidate": "viina_event_count_7d_std",
+      "correlation": -0.12358375235774388,
+      "pvalue": 0.011645210450845772,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 1,
+      "candidate": "viina_regions_affected",
+      "correlation": -0.12174971919580727,
+      "pvalue": 0.012955303167740215,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 1,
+      "candidate": "equip_tank_daily",
+      "correlation": -0.11907626311061839,
+      "pvalue": 0.015097469230687095,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 2,
+      "candidate": "equip_MRL_daily",
+      "correlation": -0.11678446240504092,
+      "pvalue": 0.01717513353147478,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 1,
+      "candidate": "viina_event_count_7d_std",
+      "correlation": -0.11651563218958144,
+      "pvalue": 0.017434511825144845,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 1,
+      "candidate": "moon_phase",
+      "correlation": -0.1163042253694753,
+      "pvalue": 0.017640883034463414,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 2,
+      "candidate": "equip_total_key_daily",
+      "correlation": -0.1157779097886166,
+      "pvalue": 0.018163953660856342,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "deepstate",
+      "candidate": "viina_event_count_7d_std",
+      "correlation": 0.11563609570779583,
+      "pvalue": 0.018307187307555615,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 0,
+      "candidate": "equip_helicopter_daily",
+      "correlation": 0.1152707518637181,
+      "pvalue": 0.01868073543648045,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 2,
+      "candidate": "equip_anti_aircraft_warfare_daily",
+      "correlation": -0.11523628114232126,
+      "pvalue": 0.018716320878180218,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "firms",
+      "candidate": "day_of_month",
+      "correlation": 0.11508094759718132,
+      "pvalue": 0.018877411636728157,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "ucdp",
+      "candidate": "equip_drone_cumulative",
+      "correlation": -0.11499277103516961,
+      "pvalue": 0.01896939284437123,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 0,
+      "candidate": "viina_event_count_7d_std",
+      "correlation": -0.11498259706762438,
+      "pvalue": 0.018980030883404983,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "equipment",
+      "candidate": "equip_MRL_daily",
+      "correlation": -0.1147262931354383,
+      "pvalue": 0.019249745913156608,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 1,
+      "candidate": "moon_phase_sin",
+      "correlation": 0.11405664905372231,
+      "pvalue": 0.019970236738993733,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "firms",
+      "candidate": "viina_event_count_7d_std",
+      "correlation": -0.11400106271455285,
+      "pvalue": 0.02003108466022874,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 4,
+      "candidate": "equip_APC_cumulative",
+      "correlation": -0.11385320980512416,
+      "pvalue": 0.020193718136459867,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "equipment",
+      "candidate": "equip_total_key_daily",
+      "correlation": 0.11315464844268738,
+      "pvalue": 0.020977732042991696,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 3,
+      "candidate": "equip_helicopter_daily",
+      "correlation": -0.11241563852126317,
+      "pvalue": 0.021835779937328634,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "firms",
+      "candidate": "equip_field_artillery_daily",
+      "correlation": -0.11134839127535981,
+      "pvalue": 0.023128574182088704,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "equipment",
+      "candidate": "quarter",
+      "correlation": -0.11133588950803046,
+      "pvalue": 0.02314410224758331,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 1,
+      "candidate": "equip_APC_daily",
+      "correlation": -0.11088076998022217,
+      "pvalue": 0.02371556682411989,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 1,
+      "candidate": "equip_field_artillery_cumulative",
+      "correlation": -0.1090730615755029,
+      "pvalue": 0.02610745203659559,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "firms",
+      "candidate": "is_month_end",
+      "correlation": 0.10668817162513733,
+      "pvalue": 0.029578812420368195,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "firms",
+      "candidate": "hdx_fatalities",
+      "correlation": -0.10463197816676091,
+      "pvalue": 0.03288210076329831,
+      "lag": 0
+    },
+    {
+      "type": "residual",
+      "source": "ucdp",
+      "candidate": "equip_field_artillery_cumulative",
+      "correlation": -0.10128907232559801,
+      "pvalue": 0.038923279839767885,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 3,
+      "candidate": "equip_field_artillery_daily",
+      "correlation": -0.1011708601590432,
+      "pvalue": 0.03915306452089165,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 1,
+      "candidate": "equip_naval_ship_daily",
+      "correlation": -0.10033575480685407,
+      "pvalue": 0.04080928750964591,
+      "lag": 0
+    },
+    {
+      "type": "factor",
+      "index": 4,
+      "candidate": "equip_total_key",
+      "correlation": -0.1000703588067574,
+      "pvalue": 0.04134786764320633,
+      "lag": 0
+    }
+  ],
+  "candidate_metadata": {
+    "temporal": {
+      "description": "Time-based patterns",
+      "n_features": 13,
+      "source": "computed_from_timestamps"
+    },
+    "lunar": {
+      "description": "Moon phase features",
+      "n_features": 4,
+      "source": "astronomical_calculations"
+    },
+    "war_losses": {
+      "description": "Daily equipment and personnel losses",
+      "n_features": 23,
+      "source": "war-losses-data/russia_losses_*.json"
+    },
+    "viina": {
+      "description": "Daily conflict event counts",
+      "n_features": 5,
+      "source": "viina/extracted/event_*.csv"
+    },
+    "hdx": {
+      "description": "HDX aggregated conflict data",
+      "n_features": 2,
+      "source": "hdx/ukraine/conflict_events_*.csv"
+    }
+  },
+  "lagged_correlations": {
+    "day_of_week": {
+      "factor_0": {
+        "correlation": -0.05212477432051772,
+        "lag": -11
+      },
+      "factor_1": {
+        "correlation": 0.05634837558929166,
+        "lag": -18
+      },
+      "factor_2": {
+        "correlation": -0.05586419805507904,
+        "lag": 16
+      },
+      "factor_3": {
+        "correlation": -0.09333134412134904,
+        "lag": -20
+      },
+      "factor_4": {
+        "correlation": -0.05619263937107912,
+        "lag": 18
+      }
+    },
+    "day_of_month": {
+      "factor_0": {
+        "correlation": -0.05298325535706436,
+        "lag": 30
+      },
+      "factor_1": {
+        "correlation": 0.0955460658684496,
+        "lag": -12
+      },
+      "factor_2": {
+        "correlation": 0.07790651071740498,
+        "lag": 30
+      },
+      "factor_3": {
+        "correlation": 0.1514126885035212,
+        "lag": -27
+      },
+      "factor_4": {
+        "correlation": -0.07364096250438451,
+        "lag": 30
+      }
+    },
+    "month": {
+      "factor_0": {
+        "correlation": 0.1996800172626021,
+        "lag": 30
+      },
+      "factor_1": {
+        "correlation": -0.5440400472456128,
+        "lag": -30
+      },
+      "factor_2": {
+        "correlation": 0.3717151466058528,
+        "lag": -29
+      },
+      "factor_3": {
+        "correlation": -0.39749588023997895,
+        "lag": -10
+      },
+      "factor_4": {
+        "correlation": -0.6614887091430581,
+        "lag": 19
+      }
+    },
+    "days_since_start": {
+      "factor_0": {
+        "correlation": -0.8812127474736233,
+        "lag": -21
+      },
+      "factor_1": {
+        "correlation": 0.20480598586681298,
+        "lag": 30
+      },
+      "factor_2": {
+        "correlation": -0.6772386411706113,
+        "lag": -30
+      },
+      "factor_3": {
+        "correlation": 0.2813904550931224,
+        "lag": -30
+      },
+      "factor_4": {
+        "correlation": -0.13516513522514403,
+        "lag": 1
+      }
+    },
+    "is_weekend": {
+      "factor_0": {
+        "correlation": 0.03121093474328518,
+        "lag": 26
+      },
+      "factor_1": {
+        "correlation": 0.08658985793590546,
+        "lag": 8
+      },
+      "factor_2": {
+        "correlation": -0.05542950704693794,
+        "lag": 23
+      },
+      "factor_3": {
+        "correlation": 0.07453683018684387,
+        "lag": 9
+      },
+      "factor_4": {
+        "correlation": -0.04997221753001213,
+        "lag": -28
+      }
+    },
+    "is_month_start": {
+      "factor_0": {
+        "correlation": -0.044510722160339355,
+        "lag": 11
+      },
+      "factor_1": {
+        "correlation": -0.08864311873912811,
+        "lag": 5
+      },
+      "factor_2": {
+        "correlation": -0.08472713828086853,
+        "lag": -27
+      },
+      "factor_3": {
+        "correlation": 0.1311197578907013,
+        "lag": 5
+      },
+      "factor_4": {
+        "correlation": 0.10451873391866684,
+        "lag": 30
+      }
+    },
+    "is_month_end": {
+      "factor_0": {
+        "correlation": 0.05369027331471443,
+        "lag": -13
+      },
+      "factor_1": {
+        "correlation": -0.10771314799785614,
+        "lag": 27
+      },
+      "factor_2": {
+        "correlation": 0.08311668038368225,
+        "lag": 9
+      },
+      "factor_3": {
+        "correlation": -0.10795027017593384,
+        "lag": -7
+      },
+      "factor_4": {
+        "correlation": -0.06091552600264549,
+        "lag": 14
+      }
+    },
+    "week_of_year": {
+      "factor_0": {
+        "correlation": 0.18918701619798461,
+        "lag": 30
+      },
+      "factor_1": {
+        "correlation": -0.5536722296285728,
+        "lag": -30
+      },
+      "factor_2": {
+        "correlation": 0.37274552769829594,
+        "lag": -22
+      },
+      "factor_3": {
+        "correlation": -0.4063097741813503,
+        "lag": -10
+      },
+      "factor_4": {
+        "correlation": -0.6587218701222739,
+        "lag": 20
+      }
+    },
+    "quarter": {
+      "factor_0": {
+        "correlation": 0.2132547928213266,
+        "lag": 30
+      },
+      "factor_1": {
+        "correlation": -0.5633161682983452,
+        "lag": -30
+      },
+      "factor_2": {
+        "correlation": 0.39101429410158084,
+        "lag": -30
+      },
+      "factor_3": {
+        "correlation": -0.4205151016944002,
+        "lag": -8
+      },
+      "factor_4": {
+        "correlation": -0.7056008336080177,
+        "lag": 22
+      }
+    },
+    "day_of_week_sin": {
+      "factor_0": {
+        "correlation": 0.044392052582355374,
+        "lag": -5
+      },
+      "factor_1": {
+        "correlation": -0.06526592262922232,
+        "lag": -18
+      },
+      "factor_2": {
+        "correlation": -0.05370113878942051,
+        "lag": 8
+      },
+      "factor_3": {
+        "correlation": 0.09475796312039808,
+        "lag": -20
+      },
+      "factor_4": {
+        "correlation": 0.046392583626747544,
+        "lag": 8
+      }
+    },
+    "day_of_week_cos": {
+      "factor_0": {
+        "correlation": 0.06658412719902224,
+        "lag": -12
+      },
+      "factor_1": {
+        "correlation": 0.06182664161043393,
+        "lag": 3
+      },
+      "factor_2": {
+        "correlation": 0.06707858681499203,
+        "lag": 27
+      },
+      "factor_3": {
+        "correlation": 0.13536928358463773,
+        "lag": -22
+      },
+      "factor_4": {
+        "correlation": 0.06177013007278062,
+        "lag": 17
+      }
+    },
+    "month_sin": {
+      "factor_0": {
+        "correlation": -0.2732864607048119,
+        "lag": 30
+      },
+      "factor_1": {
+        "correlation": 0.550011718707107,
+        "lag": -30
+      },
+      "factor_2": {
+        "correlation": -0.2587564271953015,
+        "lag": -30
+      },
+      "factor_3": {
+        "correlation": 0.5152983468390753,
+        "lag": -24
+      },
+      "factor_4": {
+        "correlation": 0.8797610358564195,
+        "lag": 18
+      }
+    },
+    "month_cos": {
+      "factor_0": {
+        "correlation": -0.2845635314527766,
+        "lag": 0
+      },
+      "factor_1": {
+        "correlation": -0.46684015192517936,
+        "lag": 26
+      },
+      "factor_2": {
+        "correlation": 0.5739038317433947,
+        "lag": 27
+      },
+      "factor_3": {
+        "correlation": -0.4196009462683704,
+        "lag": 25
+      },
+      "factor_4": {
+        "correlation": 0.7823702484658822,
+        "lag": -30
+      }
+    },
+    "moon_phase": {
+      "factor_0": {
+        "correlation": -0.0677425575667602,
+        "lag": 29
+      },
+      "factor_1": {
+        "correlation": -0.12421373913504657,
+        "lag": -1
+      },
+      "factor_2": {
+        "correlation": -0.05570485841796156,
+        "lag": -14
+      },
+      "factor_3": {
+        "correlation": -0.111323546764887,
+        "lag": 4
+      },
+      "factor_4": {
+        "correlation": 0.070082993971162,
+        "lag": 21
+      }
+    },
+    "moon_illumination": {
+      "factor_0": {
+        "correlation": -0.03964275696753813,
+        "lag": -10
+      },
+      "factor_1": {
+        "correlation": -0.15157143342660234,
+        "lag": -6
+      },
+      "factor_2": {
+        "correlation": 0.1135523290347249,
+        "lag": -12
+      },
+      "factor_3": {
+        "correlation": 0.11493157262824737,
+        "lag": -12
+      },
+      "factor_4": {
+        "correlation": -0.07256871008560029,
+        "lag": 29
+      }
+    },
+    "moon_phase_sin": {
+      "factor_0": {
+        "correlation": 0.07893555227945298,
+        "lag": 9
+      },
+      "factor_1": {
+        "correlation": -0.14074221670788178,
+        "lag": -13
+      },
+      "factor_2": {
+        "correlation": 0.07616674447175281,
+        "lag": -15
+      },
+      "factor_3": {
+        "correlation": -0.13841150071767125,
+        "lag": -30
+      },
+      "factor_4": {
+        "correlation": -0.06947293064025692,
+        "lag": 2
+      }
+    },
+    "moon_phase_cos": {
+      "factor_0": {
+        "correlation": 0.03964275696753812,
+        "lag": -10
+      },
+      "factor_1": {
+        "correlation": 0.15157143342660234,
+        "lag": -6
+      },
+      "factor_2": {
+        "correlation": -0.11355232903472492,
+        "lag": -12
+      },
+      "factor_3": {
+        "correlation": -0.11493157262824737,
+        "lag": -12
+      },
+      "factor_4": {
+        "correlation": 0.07256871008560026,
+        "lag": 29
+      }
+    },
+    "equip_aircraft_cumulative": {
+      "factor_0": {
+        "correlation": -0.9545762952629634,
+        "lag": 29
+      },
+      "factor_1": {
+        "correlation": 0.25471649531191,
+        "lag": -21
+      },
+      "factor_2": {
+        "correlation": -0.5318318073181666,
+        "lag": -30
+      },
+      "factor_3": {
+        "correlation": 0.4184923648594805,
+        "lag": -30
+      },
+      "factor_4": {
+        "correlation": 0.1778277069651996,
+        "lag": -8
+      }
+    },
+    "equip_aircraft_daily": {
+      "factor_0": {
+        "correlation": 0.20495569037894756,
+        "lag": 8
+      },
+      "factor_1": {
+        "correlation": -0.10615090935538567,
+        "lag": 30
+      },
+      "factor_2": {
+        "correlation": 0.2954250093312518,
+        "lag": -23
+      },
+      "factor_3": {
+        "correlation": -0.2517501021776535,
+        "lag": 11
+      },
+      "factor_4": {
+        "correlation": -0.12882284190701224,
+        "lag": 29
+      }
+    },
+    "equip_helicopter_cumulative": {
+      "factor_0": {
+        "correlation": -0.9615333674999027,
+        "lag": 30
+      },
+      "factor_1": {
+        "correlation": 0.1976538066279952,
+        "lag": -21
+      },
+      "factor_2": {
+        "correlation": -0.5904684249978239,
+        "lag": -30
+      },
+      "factor_3": {
+        "correlation": 0.4077035706666641,
+        "lag": -30
+      },
+      "factor_4": {
+        "correlation": 0.15451394753766784,
+        "lag": -8
+      }
+    },
+    "equip_helicopter_daily": {
+      "factor_0": {
+        "correlation": 0.1801117742347416,
+        "lag": 21
+      },
+      "factor_1": {
+        "correlation": -0.08814420617208894,
+        "lag": -12
+      },
+      "factor_2": {
+        "correlation": 0.30450298162696554,
+        "lag": -21
+      },
+      "factor_3": {
+        "correlation": -0.19054850347437746,
+        "lag": -16
+      },
+      "factor_4": {
+        "correlation": -0.1674025304633721,
+        "lag": 22
+      }
+    },
+    "equip_tank_cumulative": {
+      "factor_0": {
+        "correlation": -0.917108461570333,
+        "lag": -20
+      },
+      "factor_1": {
+        "correlation": 0.1687046361601096,
+        "lag": 30
+      },
+      "factor_2": {
+        "correlation": -0.6384670337808809,
+        "lag": -30
+      },
+      "factor_3": {
+        "correlation": 0.32380392631104304,
+        "lag": -30
+      },
+      "factor_4": {
+        "correlation": -0.10177681919280607,
+        "lag": 23
+      }
+    },
+    "equip_tank_daily": {
+      "factor_0": {
+        "correlation": 0.08545267361404459,
+        "lag": -28
+      },
+      "factor_1": {
+        "correlation": -0.19001407531271064,
+        "lag": -20
+      },
+      "factor_2": {
+        "correlation": 0.20247334213831208,
+        "lag": -26
+      },
+      "factor_3": {
+        "correlation": -0.2693100468482691,
+        "lag": -7
+      },
+      "factor_4": {
+        "correlation": -0.31738901213396964,
+        "lag": 29
+      }
+    },
+    "equip_APC_cumulative": {
+      "factor_0": {
+        "correlation": -0.908943751993418,
+        "lag": -20
+      },
+      "factor_1": {
+        "correlation": 0.177870032249453,
+        "lag": 30
+      },
+      "factor_2": {
+        "correlation": -0.6505772555555981,
+        "lag": -30
+      },
+      "factor_3": {
+        "correlation": 0.30516722894063336,
+        "lag": -30
+      },
+      "factor_4": {
+        "correlation": -0.12184973382883893,
+        "lag": 23
+      }
+    },
+    "equip_APC_daily": {
+      "factor_0": {
+        "correlation": 0.14257487304371017,
+        "lag": -30
+      },
+      "factor_1": {
+        "correlation": -0.2221103519492243,
+        "lag": -23
+      },
+      "factor_2": {
+        "correlation": 0.20051593925677508,
+        "lag": -25
+      },
+      "factor_3": {
+        "correlation": -0.25158223068597685,
+        "lag": -4
+      },
+      "factor_4": {
+        "correlation": -0.28977050855840236,
+        "lag": 26
+      }
+    },
+    "equip_field_artillery_cumulative": {
+      "factor_0": {
+        "correlation": -0.7868365944739815,
+        "lag": -30
+      },
+      "factor_1": {
+        "correlation": -0.1682556465998376,
+        "lag": -30
+      },
+      "factor_2": {
+        "correlation": -0.6975927783259595,
+        "lag": -30
+      },
+      "factor_3": {
+        "correlation": 0.13467522335939416,
+        "lag": -30
+      },
+      "factor_4": {
+        "correlation": -0.31928909477577927,
+        "lag": 18
+      }
+    },
+    "equip_field_artillery_daily": {
+      "factor_0": {
+        "correlation": -0.5148197354270498,
+        "lag": -30
+      },
+      "factor_1": {
+        "correlation": 0.18867725589024062,
+        "lag": 23
+      },
+      "factor_2": {
+        "correlation": -0.4431402828729988,
+        "lag": -29
+      },
+      "factor_3": {
+        "correlation": 0.14733682613673646,
+        "lag": 30
+      },
+      "factor_4": {
+        "correlation": -0.43231177523447545,
+        "lag": -20
+      }
+    },
+    "equip_MRL_cumulative": {
+      "factor_0": {
+        "correlation": -0.8577624274321651,
+        "lag": -26
+      },
+      "factor_1": {
+        "correlation": 0.17658777224418892,
+        "lag": 30
+      },
+      "factor_2": {
+        "correlation": -0.6862158885890954,
+        "lag": -30
+      },
+      "factor_3": {
+        "correlation": 0.22733852220843043,
+        "lag": -30
+      },
+      "factor_4": {
+        "correlation": -0.20640947131425832,
+        "lag": 13
+      }
+    },
+    "equip_MRL_daily": {
+      "factor_0": {
+        "correlation": -0.1485945004170895,
+        "lag": 24
+      },
+      "factor_1": {
+        "correlation": 0.13678637487581838,
+        "lag": 7
+      },
+      "factor_2": {
+        "correlation": -0.20289746179881174,
+        "lag": 18
+      },
+      "factor_3": {
+        "correlation": 0.1405938301915684,
+        "lag": 29
+      },
+      "factor_4": {
+        "correlation": -0.17787030341799198,
+        "lag": -14
+      }
+    },
+    "equip_drone_cumulative": {
+      "factor_0": {
+        "correlation": -0.798948403796683,
+        "lag": -29
+      },
+      "factor_1": {
+        "correlation": 0.16912565827545112,
+        "lag": 30
+      },
+      "factor_2": {
+        "correlation": -0.7155064217195033,
+        "lag": -30
+      },
+      "factor_3": {
+        "correlation": 0.17626136698584535,
+        "lag": -30
+      },
+      "factor_4": {
+        "correlation": -0.2832880967575935,
+        "lag": 15
+      }
+    },
+    "equip_drone_daily": {
+      "factor_0": {
+        "correlation": -0.3475624755181145,
+        "lag": -28
+      },
+      "factor_1": {
+        "correlation": 0.23930627608699712,
+        "lag": 30
+      },
+      "factor_2": {
+        "correlation": -0.2752225881338861,
+        "lag": -27
+      },
+      "factor_3": {
+        "correlation": 0.08120148134166646,
+        "lag": -30
+      },
+      "factor_4": {
+        "correlation": -0.26404225835194295,
+        "lag": -30
+      }
+    },
+    "equip_naval_ship_cumulative": {
+      "factor_0": {
+        "correlation": -0.8737635903592161,
+        "lag": -2
+      },
+      "factor_1": {
+        "correlation": 0.2254236655835172,
+        "lag": -21
+      },
+      "factor_2": {
+        "correlation": -0.6094729233959826,
+        "lag": -24
+      },
+      "factor_3": {
+        "correlation": 0.34095749230868355,
+        "lag": -30
+      },
+      "factor_4": {
+        "correlation": 0.14629066968818324,
+        "lag": -8
+      }
+    },
+    "equip_naval_ship_daily": {
+      "factor_0": {
+        "correlation": -0.0330361502759838,
+        "lag": 13
+      },
+      "factor_1": {
+        "correlation": -0.14653727398394972,
+        "lag": 5
+      },
+      "factor_2": {
+        "correlation": -0.07754619256227337,
+        "lag": -27
+      },
+      "factor_3": {
+        "correlation": -0.09642453497202899,
+        "lag": -27
+      },
+      "factor_4": {
+        "correlation": -0.09432015549083159,
+        "lag": 22
+      }
+    },
+    "equip_anti_aircraft_warfare_cumulative": {
+      "factor_0": {
+        "correlation": -0.808891227667051,
+        "lag": -30
+      },
+      "factor_1": {
+        "correlation": 0.17531863635188077,
+        "lag": 30
+      },
+      "factor_2": {
+        "correlation": -0.6749402203175796,
+        "lag": -30
+      },
+      "factor_3": {
+        "correlation": 0.1451590696678669,
+        "lag": -30
+      },
+      "factor_4": {
+        "correlation": -0.3134387070950164,
+        "lag": 16
+      }
+    },
+    "equip_anti_aircraft_warfare_daily": {
+      "factor_0": {
+        "correlation": -0.2410287749793466,
+        "lag": -28
+      },
+      "factor_1": {
+        "correlation": 0.19085107627025244,
+        "lag": 2
+      },
+      "factor_2": {
+        "correlation": -0.20138703799922186,
+        "lag": 28
+      },
+      "factor_3": {
+        "correlation": 0.18320914287825635,
+        "lag": 26
+      },
+      "factor_4": {
+        "correlation": -0.2717462262146492,
+        "lag": -17
+      }
+    },
+    "equip_total_key": {
+      "factor_0": {
+        "correlation": -0.9139405654768816,
+        "lag": -20
+      },
+      "factor_1": {
+        "correlation": 0.17566722017249692,
+        "lag": 30
+      },
+      "factor_2": {
+        "correlation": -0.6443148856756675,
+        "lag": -30
+      },
+      "factor_3": {
+        "correlation": 0.3154416098820449,
+        "lag": -30
+      },
+      "factor_4": {
+        "correlation": -0.10976222392354645,
+        "lag": 23
+      }
+    },
+    "equip_total_key_daily": {
+      "factor_0": {
+        "correlation": 0.14163428786061302,
+        "lag": -30
+      },
+      "factor_1": {
+        "correlation": -0.21913264489376283,
+        "lag": -23
+      },
+      "factor_2": {
+        "correlation": 0.24510132755490857,
+        "lag": -26
+      },
+      "factor_3": {
+        "correlation": -0.2769312441223031,
+        "lag": -3
+      },
+      "factor_4": {
+        "correlation": -0.32422503211417675,
+        "lag": 28
+      }
+    },
+    "personnel_cumulative": {
+      "factor_0": {
+        "correlation": -0.8168288789736684,
+        "lag": 30
+      },
+      "factor_1": {
+        "correlation": 0.22417891484205194,
+        "lag": 30
+      },
+      "factor_2": {
+        "correlation": -0.7327309490547183,
+        "lag": -30
+      },
+      "factor_3": {
+        "correlation": 0.25556121306683266,
+        "lag": -30
+      },
+      "factor_4": {
+        "correlation": -0.22025341315608168,
+        "lag": -30
+      }
+    },
+    "personnel_daily": {
+      "factor_0": {
+        "correlation": -0.6700932081045645,
+        "lag": 2
+      },
+      "factor_1": {
+        "correlation": 0.2567711477219334,
+        "lag": -28
+      },
+      "factor_2": {
+        "correlation": -0.2842618021473673,
+        "lag": -29
+      },
+      "factor_3": {
+        "correlation": 0.45155905977117206,
+        "lag": -30
+      },
+      "factor_4": {
+        "correlation": 0.46589789266384174,
+        "lag": -18
+      }
+    },
+    "viina_event_count": {
+      "factor_0": {
+        "correlation": 0.7780651280381434,
+        "lag": 27
+      },
+      "factor_1": {
+        "correlation": -0.1765160341820498,
+        "lag": 28
+      },
+      "factor_2": {
+        "correlation": 0.6997233295250903,
+        "lag": -25
+      },
+      "factor_3": {
+        "correlation": -0.31936422724633307,
+        "lag": -29
+      },
+      "factor_4": {
+        "correlation": -0.11007348805678047,
+        "lag": 30
+      }
+    },
+    "viina_regions_affected": {
+      "factor_0": {
+        "correlation": 0.6087288769076133,
+        "lag": 29
+      },
+      "factor_1": {
+        "correlation": -0.22520653343269856,
+        "lag": -20
+      },
+      "factor_2": {
+        "correlation": 0.5961152040461174,
+        "lag": -23
+      },
+      "factor_3": {
+        "correlation": -0.24416249384052055,
+        "lag": -29
+      },
+      "factor_4": {
+        "correlation": -0.16073792543091475,
+        "lag": 30
+      }
+    },
+    "viina_sources_reporting": {
+      "factor_0": {
+        "correlation": 0.8331535575484086,
+        "lag": 30
+      },
+      "factor_1": {
+        "correlation": -0.232321644233372,
+        "lag": -21
+      },
+      "factor_2": {
+        "correlation": 0.7260395169211459,
+        "lag": -30
+      },
+      "factor_3": {
+        "correlation": -0.43248980935716214,
+        "lag": -30
+      },
+      "factor_4": {
+        "correlation": -0.29160641825531086,
+        "lag": 21
+      }
+    },
+    "viina_event_count_7d_mean": {
+      "factor_0": {
+        "correlation": 0.8775988270521309,
+        "lag": 30
+      },
+      "factor_1": {
+        "correlation": -0.17716864913244945,
+        "lag": 29
+      },
+      "factor_2": {
+        "correlation": 0.7401800372003552,
+        "lag": -30
+      },
+      "factor_3": {
+        "correlation": -0.3641041758004505,
+        "lag": -30
+      },
+      "factor_4": {
+        "correlation": -0.11216760143514143,
+        "lag": 30
+      }
+    },
+    "viina_event_count_7d_std": {
+      "factor_0": {
+        "correlation": -0.12167224553759964,
+        "lag": 4
+      },
+      "factor_1": {
+        "correlation": -0.19186803581262038,
+        "lag": 18
+      },
+      "factor_2": {
+        "correlation": 0.2671866916404876,
+        "lag": -23
+      },
+      "factor_3": {
+        "correlation": -0.2292199687035792,
+        "lag": 19
+      },
+      "factor_4": {
+        "correlation": 0.2909578131840572,
+        "lag": -27
+      }
+    },
+    "hdx_conflict_events": {
+      "factor_0": {
+        "correlation": -0.37827124994012346,
+        "lag": -30
+      },
+      "factor_1": {
+        "correlation": 0.3675323323134951,
+        "lag": 25
+      },
+      "factor_2": {
+        "correlation": -0.5192177251421318,
+        "lag": 23
+      },
+      "factor_3": {
+        "correlation": 0.2772117339715067,
+        "lag": 30
+      },
+      "factor_4": {
+        "correlation": -0.6148022980771859,
+        "lag": -29
+      }
+    },
+    "hdx_fatalities": {
+      "factor_0": {
+        "correlation": -0.18171133536352757,
+        "lag": -29
+      },
+      "factor_1": {
+        "correlation": -0.4066088159674829,
+        "lag": -30
+      },
+      "factor_2": {
+        "correlation": 0.45557455891563836,
+        "lag": -19
+      },
+      "factor_3": {
+        "correlation": -0.4640442906731501,
+        "lag": 4
+      },
+      "factor_4": {
+        "correlation": -0.5862874482718641,
+        "lag": 29
+      }
+    }
+  },
+  "metadata": {
+    "n_samples": 416,
+    "n_factors": 5,
+    "n_candidates": 47,
+    "max_lag": 30,
+    "date_range": [
+      "2022-05-10",
+      "2023-11-13"
+    ],
+    "sources_analyzed": [
+      "deepstate",
+      "equipment",
+      "firms",
+      "ucdp"
+    ]
+  }
+}

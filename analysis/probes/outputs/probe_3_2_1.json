@@ -1,0 +1,20 @@
+{
+  "probe_id": "3.2.1",
+  "probe_name": "Transition Boundary Analysis",
+  "status": "completed",
+  "duration_seconds": 0.12845993041992188,
+  "findings": {
+    "error": "index 23 is out of bounds for axis 1 with size 12",
+    "probe": "TransitionDynamicsProbe"
+  },
+  "artifacts": {
+    "figures": [],
+    "tables": []
+  },
+  "recommendations": [
+    "Probe TransitionDynamicsProbe failed: index 23 is out of bounds for axis 1 with size 12.",
+    "This may indicate insufficient data samples spanning transition periods.",
+    "Consider increasing num_samples or checking dataset date coverage."
+  ],
+  "error_message": null
+}

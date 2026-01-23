@@ -1,0 +1,5 @@
+*.pem
+node_modules
+.env
+test.xml
+test.json

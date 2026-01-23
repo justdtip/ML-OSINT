@@ -1,0 +1,13 @@
+{
+  "probe_id": "5.1.2",
+  "probe_name": "ISW Topic-Source Correlation",
+  "status": "completed",
+  "duration_seconds": 11.301850080490112,
+  "findings": {},
+  "artifacts": {
+    "figures": [],
+    "tables": []
+  },
+  "recommendations": [],
+  "error_message": null
+}

@@ -1,0 +1,13 @@
+{
+  "probe_id": "5.1.3",
+  "probe_name": "ISW Predictive Content Test",
+  "status": "completed",
+  "duration_seconds": 11.302793979644775,
+  "findings": {},
+  "artifacts": {
+    "figures": [],
+    "tables": []
+  },
+  "recommendations": [],
+  "error_message": null
+}

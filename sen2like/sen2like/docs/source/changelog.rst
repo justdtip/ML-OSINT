@@ -1,0 +1,1 @@
+.. mdinclude:: ../../release-notes.md

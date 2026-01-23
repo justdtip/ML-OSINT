@@ -1,0 +1,13 @@
+{
+  "probe_id": "2.1.4",
+  "probe_name": "Checkpoint Comparison",
+  "status": "completed",
+  "duration_seconds": 12.692060947418213,
+  "findings": "Checkpoint Comparison Results:\n===================================\n\nEpochs analyzed: [10]\n\nEpoch 10:\n  mean_rsa: 0.7254\n  max_rsa: 0.9980\n  cross_attn_a_to_b_layer0_entropy: 2.4814\n  cross_attn_b_to_a_layer0_entropy: 2.2976\n  cross_attn_a_to_b_layer1_entropy: 2.4805\n  cross_attn_b_to_a_layer1_entropy: 2.3720\n  source_importance: {'equipment': 0.12368260324001312, 'personnel': 0.10156919062137604, 'deepstate': 0.5007690191268921, 'firms': 0.1425219029188156, 'viina': 0.06991428136825562, 'source_5': 0.061541687697172165}\n\nTrend Analysis:\n",
+  "artifacts": {
+    "figures": [],
+    "tables": []
+  },
+  "recommendations": [],
+  "error_message": null
+}

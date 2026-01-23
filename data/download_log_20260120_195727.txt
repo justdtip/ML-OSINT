@@ -1,0 +1,33 @@
+[1;33m[INFO][0m Creating directory structure...
+[1;33m[INFO][0m === Downloading VIINA 2.0 Dataset ===
+[0;32m[SUCCESS][0m VIINA 2.0 downloaded successfully
+[1;33m[INFO][0m === Downloading HDX HAPI Data ===
+[0;31m[ERROR][0m HDX conflict events failed
+[0;31m[ERROR][0m HDX refugee data failed
+[0;31m[ERROR][0m HDX humanitarian needs failed
+[0;31m[ERROR][0m HDX operational presence failed
+[0;31m[ERROR][0m HDX IDP data failed
+[1;33m[INFO][0m === Downloading OpenStreetMap Ukraine ===
+[0;32m[SUCCESS][0m OSM Ukraine extract downloaded (~1.5GB)
+[1;33m[INFO][0m === Downloading ReliefWeb Data ===
+[0;31m[ERROR][0m ReliefWeb reports failed
+[0;31m[ERROR][0m ReliefWeb disasters failed
+[1;33m[INFO][0m === Downloading Maxar Open Data Catalog ===
+[0;32m[SUCCESS][0m Maxar STAC catalog downloaded
+[1;33m[INFO][0m === Downloading Ukraine Air Raid Alert Data ===
+[0;31m[ERROR][0m Alert regions failed
+[0;32m[SUCCESS][0m Current alert states downloaded (alerts.com.ua)
+[1;33m[INFO][0m === Downloading Ookla Open Data ===
+[0;32m[SUCCESS][0m Ookla data cloned
+[1;33m[INFO][0m === Checking Wayback Machine for Historical Data ===
+[1;33m[INFO][0m Google Mobility Reports (discontinued Oct 2022) - checking archives...
+[1;33m[INFO][0m Apple Mobility Trends (discontinued Apr 2022) - checking archives...
+[1;33m[INFO][0m ============================================================
+[1;33m[INFO][0m DOWNLOAD SUMMARY
+[1;33m[INFO][0m ============================================================
+[1;33m[INFO][0m Downloaded data locations:
+[1;33m[INFO][0m ============================================================
+[1;33m[INFO][0m SOURCES REQUIRING ACCOUNT REGISTRATION
+[1;33m[INFO][0m ============================================================
+[1;33m[INFO][0m Log file: /Users/daniel.tipton/ML_OSINT/data/download_log_20260120_195727.txt
+[0;32m[SUCCESS][0m Download script completed!

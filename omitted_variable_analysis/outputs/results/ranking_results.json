@@ -1,0 +1,235 @@
+{
+  "timestamp": "2026-01-20T22:52:06.883440",
+  "n_candidates": 24,
+  "n_independent": 24,
+  "n_leakage": 0,
+  "top_independent": [
+    {
+      "variable": "month_sin",
+      "source": "Calendar",
+      "factor": "Factor_5",
+      "correlation": 0.8147079601537305,
+      "p_value": 5.023359668429328e-100,
+      "n_obs": 416,
+      "granger_causal": false,
+      "optimal_lag": null,
+      "leakage_risk": "low",
+      "composite_score": 97.76495521844767
+    },
+    {
+      "variable": "month_cos",
+      "source": "Calendar",
+      "factor": "Factor_1",
+      "correlation": 0.6054691241369755,
+      "p_value": 5.7236312233518296e-43,
+      "n_obs": 416,
+      "granger_causal": false,
+      "optimal_lag": null,
+      "leakage_risk": "low",
+      "composite_score": 72.65629489643706
+    },
+    {
+      "variable": "month_cos",
+      "source": "Calendar",
+      "factor": "Factor_3",
+      "correlation": 0.4601943355041356,
+      "p_value": 3.408707207263844e-23,
+      "n_obs": 416,
+      "granger_causal": false,
+      "optimal_lag": null,
+      "leakage_risk": "low",
+      "composite_score": 55.22332026049627
+    },
+    {
+      "variable": "month_cos",
+      "source": "Calendar",
+      "factor": "Factor_2",
+      "correlation": 0.4039003174071244,
+      "p_value": 9.360988605311529e-18,
+      "n_obs": 416,
+      "granger_causal": false,
+      "optimal_lag": null,
+      "leakage_risk": "low",
+      "composite_score": 48.468038088854925
+    },
+    {
+      "variable": "month_sin",
+      "source": "Calendar",
+      "factor": "Factor_4",
+      "correlation": 0.3888540382573647,
+      "p_value": 1.818179584499128e-16,
+      "n_obs": 416,
+      "granger_causal": false,
+      "optimal_lag": null,
+      "leakage_risk": "low",
+      "composite_score": 46.66248459088376
+    },
+    {
+      "variable": "fire_count_detrended",
+      "source": "FIRMS",
+      "factor": "Factor_1",
+      "correlation": 0.3825534423998254,
+      "p_value": 8.535079955330762e-15,
+      "n_obs": 383,
+      "granger_causal": false,
+      "optimal_lag": null,
+      "leakage_risk": "low",
+      "composite_score": 45.90641308797905
+    },
+    {
+      "variable": "fire_count_detrended",
+      "source": "FIRMS",
+      "factor": "Factor_5",
+      "correlation": 0.3366269603337491,
+      "p_value": 1.3347269938542318e-11,
+      "n_obs": 383,
+      "granger_causal": false,
+      "optimal_lag": null,
+      "leakage_risk": "low",
+      "composite_score": 40.39523524004989
+    },
+    {
+      "variable": "month_cos",
+      "source": "Calendar",
+      "factor": "Factor_4",
+      "correlation": 0.3083848821332612,
+      "p_value": 1.2908036529346492e-10,
+      "n_obs": 416,
+      "granger_causal": false,
+      "optimal_lag": null,
+      "leakage_risk": "low",
+      "composite_score": 37.00618585599134
+    },
+    {
+      "variable": "frp_sum_detrended",
+      "source": "FIRMS",
+      "factor": "Factor_1",
+      "correlation": 0.303791318390552,
+      "p_value": 1.2796833853680395e-09,
+      "n_obs": 383,
+      "granger_causal": false,
+      "optimal_lag": null,
+      "leakage_risk": "low",
+      "composite_score": 36.45495820686624
+    },
+    {
+      "variable": "frp_sum_detrended",
+      "source": "FIRMS",
+      "factor": "Factor_5",
+      "correlation": 0.3000174068698375,
+      "p_value": 2.0877939900268264e-09,
+      "n_obs": 383,
+      "granger_causal": false,
+      "optimal_lag": null,
+      "leakage_risk": "low",
+      "composite_score": 36.0020888243805
+    }
+  ],
+  "factor_interpretations": {
+    "Factor_1": {
+      "interpretation": "Seasonal/cyclical pattern in conflict dynamics",
+      "top_correlates": [
+        {
+          "variable": "month_cos",
+          "source": "Calendar",
+          "r": -0.6054691241369755
+        },
+        {
+          "variable": "fire_count_detrended",
+          "source": "FIRMS",
+          "r": 0.3825534423998254
+        },
+        {
+          "variable": "frp_sum_detrended",
+          "source": "FIRMS",
+          "r": 0.303791318390552
+        }
+      ],
+      "variance_explained": 0
+    },
+    "Factor_2": {
+      "interpretation": "Seasonal/cyclical pattern in conflict dynamics",
+      "top_correlates": [
+        {
+          "variable": "month_cos",
+          "source": "Calendar",
+          "r": -0.4039003174071244
+        },
+        {
+          "variable": "month_sin",
+          "source": "Calendar",
+          "r": 0.2514639221058006
+        },
+        {
+          "variable": "frp_sum_detrended",
+          "source": "FIRMS",
+          "r": -0.1443926674032188
+        }
+      ],
+      "variance_explained": 0
+    },
+    "Factor_3": {
+      "interpretation": "Seasonal/cyclical pattern in conflict dynamics",
+      "top_correlates": [
+        {
+          "variable": "month_cos",
+          "source": "Calendar",
+          "r": 0.4601943355041356
+        },
+        {
+          "variable": "fire_count_detrended",
+          "source": "FIRMS",
+          "r": -0.293402602866722
+        },
+        {
+          "variable": "frp_sum_detrended",
+          "source": "FIRMS",
+          "r": -0.2492310483372847
+        }
+      ],
+      "variance_explained": 0
+    },
+    "Factor_4": {
+      "interpretation": "Seasonal/cyclical pattern in conflict dynamics",
+      "top_correlates": [
+        {
+          "variable": "month_sin",
+          "source": "Calendar",
+          "r": 0.3888540382573647
+        },
+        {
+          "variable": "month_cos",
+          "source": "Calendar",
+          "r": -0.3083848821332612
+        }
+      ],
+      "variance_explained": 0
+    },
+    "Factor_5": {
+      "interpretation": "Seasonal/cyclical pattern in conflict dynamics",
+      "top_correlates": [
+        {
+          "variable": "month_sin",
+          "source": "Calendar",
+          "r": 0.8147079601537305
+        },
+        {
+          "variable": "fire_count_detrended",
+          "source": "FIRMS",
+          "r": -0.3366269603337491
+        },
+        {
+          "variable": "frp_sum_detrended",
+          "source": "FIRMS",
+          "r": -0.3000174068698375
+        }
+      ],
+      "variance_explained": 0
+    }
+  },
+  "recommendations": [
+    "Consider adding these independent variables to the model: month_sin, month_cos, month_cos. These show significant correlation with residual factors and low leakage risk.",
+    "NASA FIRMS satellite fire data shows strong correlation with residual factors. This is truly independent (satellite-based) and captures military activity intensity not currently in the model.",
+    "Strong seasonal patterns detected in residuals. Consider adding cyclical month encoding (sin/cos) to capture seasonal effects on conflict dynamics."
+  ]
+}

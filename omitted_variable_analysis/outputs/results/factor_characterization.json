@@ -1,0 +1,1425 @@
+{
+  "source_loadings": {
+    "deepstate": [
+      0.0933471490459686,
+      0.03464366741563109,
+      0.08322250748645853,
+      0.049186239471997725,
+      0.08286550663072954
+    ],
+    "equipment": [
+      0.05286755485327116,
+      0.022764901650537336,
+      0.04585465492148485,
+      0.03320399332068129,
+      0.0446290790652191
+    ],
+    "firms": [
+      0.02364792537853299,
+      0.08640482683022994,
+      0.05295813877213126,
+      0.08675961407078873,
+      0.022754223927525647
+    ],
+    "ucdp": [
+      0.03445932259880161,
+      0.07513740103847037,
+      0.02974369919926782,
+      0.0635017338693918,
+      0.06305352827378859
+    ]
+  },
+  "feature_info": [
+    [
+      "deepstate",
+      0,
+      "n_polygons"
+    ],
+    [
+      "deepstate",
+      1,
+      "n_points"
+    ],
+    [
+      "deepstate",
+      2,
+      "n_linestrings"
+    ],
+    [
+      "deepstate",
+      3,
+      "polygon_occupied"
+    ],
+    [
+      "deepstate",
+      4,
+      "polygon_liberated"
+    ],
+    [
+      "deepstate",
+      5,
+      "polygon_contested"
+    ],
+    [
+      "deepstate",
+      6,
+      "polygon_unknown"
+    ],
+    [
+      "deepstate",
+      7,
+      "area_occupied_km2"
+    ],
+    [
+      "deepstate",
+      8,
+      "area_liberated_km2"
+    ],
+    [
+      "deepstate",
+      9,
+      "area_contested_km2"
+    ],
+    [
+      "deepstate",
+      10,
+      "area_total_km2"
+    ],
+    [
+      "deepstate",
+      11,
+      "area_occupied_delta"
+    ],
+    [
+      "deepstate",
+      12,
+      "area_liberated_delta"
+    ],
+    [
+      "deepstate",
+      13,
+      "area_contested_delta"
+    ],
+    [
+      "deepstate",
+      14,
+      "arrows_N"
+    ],
+    [
+      "deepstate",
+      15,
+      "arrows_NE"
+    ],
+    [
+      "deepstate",
+      16,
+      "arrows_E"
+    ],
+    [
+      "deepstate",
+      17,
+      "arrows_SE"
+    ],
+    [
+      "deepstate",
+      18,
+      "arrows_S"
+    ],
+    [
+      "deepstate",
+      19,
+      "arrows_SW"
+    ],
+    [
+      "deepstate",
+      20,
+      "arrows_W"
+    ],
+    [
+      "deepstate",
+      21,
+      "arrows_NW"
+    ],
+    [
+      "deepstate",
+      22,
+      "arrows_total"
+    ],
+    [
+      "deepstate",
+      23,
+      "arrows_eastward"
+    ],
+    [
+      "deepstate",
+      24,
+      "arrows_westward"
+    ],
+    [
+      "deepstate",
+      25,
+      "units_enemy"
+    ],
+    [
+      "deepstate",
+      26,
+      "units_airport"
+    ],
+    [
+      "deepstate",
+      27,
+      "units_headquarter"
+    ],
+    [
+      "deepstate",
+      28,
+      "units_capital"
+    ],
+    [
+      "deepstate",
+      29,
+      "units_naval"
+    ],
+    [
+      "deepstate",
+      30,
+      "units_belarus"
+    ],
+    [
+      "deepstate",
+      31,
+      "units_special"
+    ],
+    [
+      "deepstate",
+      32,
+      "units_clown"
+    ],
+    [
+      "deepstate",
+      33,
+      "units_other"
+    ],
+    [
+      "deepstate",
+      34,
+      "units_total"
+    ],
+    [
+      "deepstate",
+      35,
+      "units_per_polygon"
+    ],
+    [
+      "deepstate",
+      36,
+      "airports_count"
+    ],
+    [
+      "deepstate",
+      37,
+      "centroid_lat"
+    ],
+    [
+      "deepstate",
+      38,
+      "centroid_lon"
+    ],
+    [
+      "deepstate",
+      39,
+      "lat_spread"
+    ],
+    [
+      "deepstate",
+      40,
+      "lon_spread"
+    ],
+    [
+      "deepstate",
+      41,
+      "frontline_approx_km"
+    ],
+    [
+      "deepstate",
+      42,
+      "territory_fragmentation"
+    ],
+    [
+      "deepstate",
+      43,
+      "days_since_feb24"
+    ],
+    [
+      "deepstate",
+      44,
+      "week_of_year"
+    ],
+    [
+      "deepstate",
+      45,
+      "month_of_year"
+    ],
+    [
+      "deepstate",
+      46,
+      "color_green"
+    ],
+    [
+      "deepstate",
+      47,
+      "color_red"
+    ],
+    [
+      "deepstate",
+      48,
+      "color_tan"
+    ],
+    [
+      "deepstate",
+      49,
+      "color_dark"
+    ],
+    [
+      "deepstate",
+      50,
+      "color_other"
+    ],
+    [
+      "deepstate",
+      51,
+      "occupied_ratio"
+    ],
+    [
+      "deepstate",
+      52,
+      "liberated_ratio"
+    ],
+    [
+      "deepstate",
+      53,
+      "activity_intensity"
+    ],
+    [
+      "deepstate",
+      54,
+      "control_change_rate"
+    ],
+    [
+      "equipment",
+      0,
+      "aircraft_delta"
+    ],
+    [
+      "equipment",
+      1,
+      "aircraft_7day_avg"
+    ],
+    [
+      "equipment",
+      2,
+      "helicopter_delta"
+    ],
+    [
+      "equipment",
+      3,
+      "helicopter_7day_avg"
+    ],
+    [
+      "equipment",
+      4,
+      "tank_delta"
+    ],
+    [
+      "equipment",
+      5,
+      "tank_7day_avg"
+    ],
+    [
+      "equipment",
+      6,
+      "apc_delta"
+    ],
+    [
+      "equipment",
+      7,
+      "apc_7day_avg"
+    ],
+    [
+      "equipment",
+      8,
+      "field_artillery_delta"
+    ],
+    [
+      "equipment",
+      9,
+      "field_artillery_7day_avg"
+    ],
+    [
+      "equipment",
+      10,
+      "mrl_delta"
+    ],
+    [
+      "equipment",
+      11,
+      "mrl_7day_avg"
+    ],
+    [
+      "equipment",
+      12,
+      "anti_aircraft_delta"
+    ],
+    [
+      "equipment",
+      13,
+      "anti_aircraft_7day_avg"
+    ],
+    [
+      "equipment",
+      14,
+      "drone_delta"
+    ],
+    [
+      "equipment",
+      15,
+      "drone_7day_avg"
+    ],
+    [
+      "equipment",
+      16,
+      "naval_ship_delta"
+    ],
+    [
+      "equipment",
+      17,
+      "submarines_delta"
+    ],
+    [
+      "equipment",
+      18,
+      "vehicles_fuel_delta"
+    ],
+    [
+      "equipment",
+      19,
+      "vehicles_fuel_7day_avg"
+    ],
+    [
+      "equipment",
+      20,
+      "special_equipment_delta"
+    ],
+    [
+      "equipment",
+      21,
+      "special_equipment_7day_avg"
+    ],
+    [
+      "equipment",
+      22,
+      "cruise_missiles_delta"
+    ],
+    [
+      "equipment",
+      23,
+      "srbm_delta"
+    ],
+    [
+      "equipment",
+      24,
+      "total_losses_day"
+    ],
+    [
+      "equipment",
+      25,
+      "heavy_equipment_ratio"
+    ],
+    [
+      "equipment",
+      26,
+      "direction_encoded"
+    ],
+    [
+      "equipment",
+      27,
+      "aircraft_per_day"
+    ],
+    [
+      "equipment",
+      28,
+      "helicopter_per_day"
+    ],
+    [
+      "equipment",
+      29,
+      "tank_per_day"
+    ],
+    [
+      "equipment",
+      30,
+      "apc_per_day"
+    ],
+    [
+      "equipment",
+      31,
+      "field_artillery_per_day"
+    ],
+    [
+      "equipment",
+      32,
+      "anti_aircraft_per_day"
+    ],
+    [
+      "equipment",
+      33,
+      "drone_per_day"
+    ],
+    [
+      "equipment",
+      34,
+      "special_equipment_per_day"
+    ],
+    [
+      "firms",
+      0,
+      "fire_count"
+    ],
+    [
+      "firms",
+      1,
+      "day_fires"
+    ],
+    [
+      "firms",
+      2,
+      "night_fires"
+    ],
+    [
+      "firms",
+      3,
+      "frp_total"
+    ],
+    [
+      "firms",
+      4,
+      "frp_mean"
+    ],
+    [
+      "firms",
+      5,
+      "frp_max"
+    ],
+    [
+      "firms",
+      6,
+      "frp_min"
+    ],
+    [
+      "firms",
+      7,
+      "frp_std"
+    ],
+    [
+      "firms",
+      8,
+      "frp_median"
+    ],
+    [
+      "firms",
+      9,
+      "frp_p90"
+    ],
+    [
+      "firms",
+      10,
+      "frp_tiny"
+    ],
+    [
+      "firms",
+      11,
+      "frp_small"
+    ],
+    [
+      "firms",
+      12,
+      "frp_medium"
+    ],
+    [
+      "firms",
+      13,
+      "frp_large"
+    ],
+    [
+      "firms",
+      14,
+      "frp_extreme"
+    ],
+    [
+      "firms",
+      15,
+      "brightness_mean"
+    ],
+    [
+      "firms",
+      16,
+      "brightness_max"
+    ],
+    [
+      "firms",
+      17,
+      "brightness_min"
+    ],
+    [
+      "firms",
+      18,
+      "brightness_std"
+    ],
+    [
+      "firms",
+      19,
+      "bright_t31_mean"
+    ],
+    [
+      "firms",
+      20,
+      "scan_mean"
+    ],
+    [
+      "firms",
+      21,
+      "scan_max"
+    ],
+    [
+      "firms",
+      22,
+      "track_mean"
+    ],
+    [
+      "firms",
+      23,
+      "track_max"
+    ],
+    [
+      "firms",
+      24,
+      "conf_high"
+    ],
+    [
+      "firms",
+      25,
+      "conf_nominal"
+    ],
+    [
+      "firms",
+      26,
+      "conf_low"
+    ],
+    [
+      "firms",
+      27,
+      "conf_high_ratio"
+    ],
+    [
+      "firms",
+      28,
+      "type_0"
+    ],
+    [
+      "firms",
+      29,
+      "type_2"
+    ],
+    [
+      "firms",
+      30,
+      "type_3"
+    ],
+    [
+      "firms",
+      31,
+      "type_other"
+    ],
+    [
+      "firms",
+      32,
+      "lat_std"
+    ],
+    [
+      "firms",
+      33,
+      "lon_std"
+    ],
+    [
+      "firms",
+      34,
+      "centroid_lat"
+    ],
+    [
+      "firms",
+      35,
+      "centroid_lon"
+    ],
+    [
+      "firms",
+      36,
+      "fires_morning"
+    ],
+    [
+      "firms",
+      37,
+      "fires_midday"
+    ],
+    [
+      "firms",
+      38,
+      "fires_evening"
+    ],
+    [
+      "firms",
+      39,
+      "fires_night_hours"
+    ],
+    [
+      "firms",
+      40,
+      "day_night_ratio"
+    ],
+    [
+      "firms",
+      41,
+      "fires_per_km2_approx"
+    ],
+    [
+      "ucdp",
+      0,
+      "event_count"
+    ],
+    [
+      "ucdp",
+      1,
+      "state_based"
+    ],
+    [
+      "ucdp",
+      2,
+      "non_state"
+    ],
+    [
+      "ucdp",
+      3,
+      "one_sided"
+    ],
+    [
+      "ucdp",
+      4,
+      "deaths_best"
+    ],
+    [
+      "ucdp",
+      5,
+      "deaths_high"
+    ],
+    [
+      "ucdp",
+      6,
+      "deaths_low"
+    ],
+    [
+      "ucdp",
+      7,
+      "deaths_side_a"
+    ],
+    [
+      "ucdp",
+      8,
+      "deaths_side_b"
+    ],
+    [
+      "ucdp",
+      9,
+      "deaths_civilians"
+    ],
+    [
+      "ucdp",
+      10,
+      "deaths_unknown"
+    ],
+    [
+      "ucdp",
+      11,
+      "event_clarity_mean"
+    ],
+    [
+      "ucdp",
+      12,
+      "date_precision_mean"
+    ],
+    [
+      "ucdp",
+      13,
+      "where_precision_mean"
+    ],
+    [
+      "ucdp",
+      14,
+      "high_clarity_count"
+    ],
+    [
+      "ucdp",
+      15,
+      "precise_date_count"
+    ],
+    [
+      "ucdp",
+      16,
+      "precise_location_count"
+    ],
+    [
+      "ucdp",
+      17,
+      "sources_total"
+    ],
+    [
+      "ucdp",
+      18,
+      "sources_mean"
+    ],
+    [
+      "ucdp",
+      19,
+      "sources_max"
+    ],
+    [
+      "ucdp",
+      20,
+      "events_donetsk"
+    ],
+    [
+      "ucdp",
+      21,
+      "events_luhansk"
+    ],
+    [
+      "ucdp",
+      22,
+      "events_kharkiv"
+    ],
+    [
+      "ucdp",
+      23,
+      "events_kherson"
+    ],
+    [
+      "ucdp",
+      24,
+      "events_zaporizhzhia"
+    ],
+    [
+      "ucdp",
+      25,
+      "events_dnipro"
+    ],
+    [
+      "ucdp",
+      26,
+      "events_mykolaiv"
+    ],
+    [
+      "ucdp",
+      27,
+      "events_odesa"
+    ],
+    [
+      "ucdp",
+      28,
+      "events_chernihiv"
+    ],
+    [
+      "ucdp",
+      29,
+      "events_other"
+    ],
+    [
+      "ucdp",
+      30,
+      "districts_active"
+    ],
+    [
+      "ucdp",
+      31,
+      "events_urban"
+    ],
+    [
+      "ucdp",
+      32,
+      "events_rural"
+    ],
+    [
+      "ucdp",
+      33,
+      "geo_spread_lat"
+    ],
+    [
+      "ucdp",
+      34,
+      "geo_spread_lon"
+    ],
+    [
+      "ucdp",
+      35,
+      "russia_ukraine_events"
+    ],
+    [
+      "ucdp",
+      36,
+      "internal_events"
+    ],
+    [
+      "ucdp",
+      37,
+      "separatist_events"
+    ],
+    [
+      "ucdp",
+      38,
+      "govt_side_a"
+    ],
+    [
+      "ucdp",
+      39,
+      "rebel_side_a"
+    ],
+    [
+      "ucdp",
+      40,
+      "deaths_per_event"
+    ],
+    [
+      "ucdp",
+      41,
+      "civilian_ratio"
+    ],
+    [
+      "ucdp",
+      42,
+      "lethality_ratio"
+    ],
+    [
+      "ucdp",
+      43,
+      "eastern_front_ratio"
+    ],
+    [
+      "ucdp",
+      44,
+      "multi_source_ratio"
+    ],
+    [
+      "ucdp",
+      45,
+      "uncertainty_score"
+    ],
+    [
+      "ucdp",
+      46,
+      "conflict_intensity"
+    ],
+    [
+      "ucdp",
+      47,
+      "frontline_activity"
+    ]
+  ],
+  "factor_characterizations": [
+    {
+      "factor_index": 0,
+      "variance_explained": 0.1345491111278534,
+      "cumulative_variance": 0.1345491111278534,
+      "source_sensitivity": {
+        "deepstate": 0.0933471490459686,
+        "equipment": 0.05286755485327116,
+        "firms": 0.02364792537853299,
+        "ucdp": 0.03445932259880161
+      },
+      "dominant_source": "deepstate",
+      "top_features": [
+        {
+          "source": "deepstate",
+          "feature": "liberated_ratio",
+          "loading": 0.18701739609241486,
+          "abs_loading": 0.18701739609241486
+        },
+        {
+          "source": "deepstate",
+          "feature": "area_liberated_km2",
+          "loading": -0.18678665161132812,
+          "abs_loading": 0.18678665161132812
+        },
+        {
+          "source": "deepstate",
+          "feature": "frontline_approx_km",
+          "loading": -0.18222960829734802,
+          "abs_loading": 0.18222960829734802
+        },
+        {
+          "source": "deepstate",
+          "feature": "color_dark",
+          "loading": -0.18041594326496124,
+          "abs_loading": 0.18041594326496124
+        },
+        {
+          "source": "deepstate",
+          "feature": "territory_fragmentation",
+          "loading": 0.1779162883758545,
+          "abs_loading": 0.1779162883758545
+        },
+        {
+          "source": "deepstate",
+          "feature": "area_occupied_km2",
+          "loading": -0.17503981292247772,
+          "abs_loading": 0.17503981292247772
+        },
+        {
+          "source": "deepstate",
+          "feature": "color_green",
+          "loading": -0.17456978559494019,
+          "abs_loading": 0.17456978559494019
+        },
+        {
+          "source": "deepstate",
+          "feature": "polygon_occupied",
+          "loading": -0.16917039453983307,
+          "abs_loading": 0.16917039453983307
+        },
+        {
+          "source": "deepstate",
+          "feature": "occupied_ratio",
+          "loading": -0.16842329502105713,
+          "abs_loading": 0.16842329502105713
+        },
+        {
+          "source": "deepstate",
+          "feature": "area_total_km2",
+          "loading": -0.1667446494102478,
+          "abs_loading": 0.1667446494102478
+        }
+      ],
+      "temporal_properties": {
+        "autocorrelation_lag1": 0.9849916061581437,
+        "trend_correlation": -0.9504000506730853,
+        "trend_pvalue": 4.3189725525279874e-212,
+        "volatility_persistence": 0.9398028135488697
+      },
+      "statistics": {
+        "mean": 0.0,
+        "std": 4.8524322509765625,
+        "skewness": 1.6267021894454956,
+        "kurtosis": 1.9953479766845703
+      },
+      "interpretation": [
+        "primarily_affects_deepstate",
+        "source_specific_deepstate",
+        "highly_persistent",
+        "strongly_trending_decreasing",
+        "volatility_clustering",
+        "skewed_right",
+        "related_to_territorial"
+      ]
+    },
+    {
+      "factor_index": 1,
+      "variance_explained": 0.09161567687988281,
+      "cumulative_variance": 0.2261647880077362,
+      "source_sensitivity": {
+        "deepstate": 0.03464366741563109,
+        "equipment": 0.022764901650537336,
+        "firms": 0.08640482683022994,
+        "ucdp": 0.07513740103847037
+      },
+      "dominant_source": "firms",
+      "top_features": [
+        {
+          "source": "ucdp",
+          "feature": "govt_side_a",
+          "loading": 0.19539391994476318,
+          "abs_loading": 0.19539391994476318
+        },
+        {
+          "source": "ucdp",
+          "feature": "event_count",
+          "loading": 0.195393905043602,
+          "abs_loading": 0.195393905043602
+        },
+        {
+          "source": "ucdp",
+          "feature": "russia_ukraine_events",
+          "loading": 0.19493241608142853,
+          "abs_loading": 0.19493241608142853
+        },
+        {
+          "source": "ucdp",
+          "feature": "state_based",
+          "loading": 0.19179920852184296,
+          "abs_loading": 0.19179920852184296
+        },
+        {
+          "source": "ucdp",
+          "feature": "events_urban",
+          "loading": 0.18262916803359985,
+          "abs_loading": 0.18262916803359985
+        },
+        {
+          "source": "ucdp",
+          "feature": "events_other",
+          "loading": 0.177496075630188,
+          "abs_loading": 0.177496075630188
+        },
+        {
+          "source": "ucdp",
+          "feature": "high_clarity_count",
+          "loading": 0.1714940369129181,
+          "abs_loading": 0.1714940369129181
+        },
+        {
+          "source": "ucdp",
+          "feature": "sources_total",
+          "loading": 0.1710425764322281,
+          "abs_loading": 0.1710425764322281
+        },
+        {
+          "source": "ucdp",
+          "feature": "precise_date_count",
+          "loading": 0.1641116738319397,
+          "abs_loading": 0.1641116738319397
+        },
+        {
+          "source": "firms",
+          "feature": "frp_small",
+          "loading": -0.15967488288879395,
+          "abs_loading": 0.15967488288879395
+        }
+      ],
+      "temporal_properties": {
+        "autocorrelation_lag1": 0.7834794048106855,
+        "trend_correlation": 0.03720987991812297,
+        "trend_pvalue": 0.44910129170101853,
+        "volatility_persistence": 0.6243147635510147
+      },
+      "statistics": {
+        "mean": 2.934382621333498e-07,
+        "std": 4.004090309143066,
+        "skewness": -0.16073518991470337,
+        "kurtosis": 1.4785995483398438
+      },
+      "interpretation": [
+        "affects_multiple_sources_equally",
+        "source_specific_ucdp",
+        "highly_persistent",
+        "volatility_clustering",
+        "related_to_conflict_events"
+      ]
+    },
+    {
+      "factor_index": 2,
+      "variance_explained": 0.08505332469940186,
+      "cumulative_variance": 0.31121811270713806,
+      "source_sensitivity": {
+        "deepstate": 0.08322250748645853,
+        "equipment": 0.04585465492148485,
+        "firms": 0.05295813877213126,
+        "ucdp": 0.02974369919926782
+      },
+      "dominant_source": "deepstate",
+      "top_features": [
+        {
+          "source": "deepstate",
+          "feature": "lon_spread",
+          "loading": 0.23573414981365204,
+          "abs_loading": 0.23573414981365204
+        },
+        {
+          "source": "deepstate",
+          "feature": "activity_intensity",
+          "loading": -0.2295151948928833,
+          "abs_loading": 0.2295151948928833
+        },
+        {
+          "source": "deepstate",
+          "feature": "units_per_polygon",
+          "loading": -0.22770653665065765,
+          "abs_loading": 0.22770653665065765
+        },
+        {
+          "source": "deepstate",
+          "feature": "lat_spread",
+          "loading": 0.22683390974998474,
+          "abs_loading": 0.22683390974998474
+        },
+        {
+          "source": "deepstate",
+          "feature": "n_points",
+          "loading": -0.2235378623008728,
+          "abs_loading": 0.2235378623008728
+        },
+        {
+          "source": "deepstate",
+          "feature": "units_total",
+          "loading": -0.22175729274749756,
+          "abs_loading": 0.22175729274749756
+        },
+        {
+          "source": "deepstate",
+          "feature": "centroid_lon",
+          "loading": -0.21980735659599304,
+          "abs_loading": 0.21980735659599304
+        },
+        {
+          "source": "deepstate",
+          "feature": "units_enemy",
+          "loading": -0.2179618775844574,
+          "abs_loading": 0.2179618775844574
+        },
+        {
+          "source": "deepstate",
+          "feature": "arrows_S",
+          "loading": -0.18173007667064667,
+          "abs_loading": 0.18173007667064667
+        },
+        {
+          "source": "deepstate",
+          "feature": "units_headquarter",
+          "loading": -0.16938011348247528,
+          "abs_loading": 0.16938011348247528
+        }
+      ],
+      "temporal_properties": {
+        "autocorrelation_lag1": 0.9033348103465243,
+        "trend_correlation": -0.4879874784139324,
+        "trend_pvalue": 2.822417238536617e-26,
+        "volatility_persistence": 0.6733726220867524
+      },
+      "statistics": {
+        "mean": -2.2007868949458498e-07,
+        "std": 3.8580212593078613,
+        "skewness": 0.5062863230705261,
+        "kurtosis": -0.0049419403076171875
+      },
+      "interpretation": [
+        "affects_multiple_sources_equally",
+        "source_specific_deepstate",
+        "highly_persistent",
+        "trending_decreasing",
+        "volatility_clustering"
+      ]
+    },
+    {
+      "factor_index": 3,
+      "variance_explained": 0.0727754533290863,
+      "cumulative_variance": 0.38399356603622437,
+      "source_sensitivity": {
+        "deepstate": 0.049186239471997725,
+        "equipment": 0.03320399332068129,
+        "firms": 0.08675961407078873,
+        "ucdp": 0.0635017338693918
+      },
+      "dominant_source": "firms",
+      "top_features": [
+        {
+          "source": "firms",
+          "feature": "frp_total",
+          "loading": 0.2101958841085434,
+          "abs_loading": 0.2101958841085434
+        },
+        {
+          "source": "firms",
+          "feature": "frp_medium",
+          "loading": 0.20468415319919586,
+          "abs_loading": 0.20468415319919586
+        },
+        {
+          "source": "firms",
+          "feature": "type_0",
+          "loading": 0.20250645279884338,
+          "abs_loading": 0.20250645279884338
+        },
+        {
+          "source": "firms",
+          "feature": "day_fires",
+          "loading": 0.1946507841348648,
+          "abs_loading": 0.1946507841348648
+        },
+        {
+          "source": "firms",
+          "feature": "conf_nominal",
+          "loading": 0.19437460601329803,
+          "abs_loading": 0.19437460601329803
+        },
+        {
+          "source": "firms",
+          "feature": "fire_count",
+          "loading": 0.18652813136577606,
+          "abs_loading": 0.18652813136577606
+        },
+        {
+          "source": "firms",
+          "feature": "fires_morning",
+          "loading": 0.18077056109905243,
+          "abs_loading": 0.18077056109905243
+        },
+        {
+          "source": "firms",
+          "feature": "conf_high",
+          "loading": 0.16115953028202057,
+          "abs_loading": 0.16115953028202057
+        },
+        {
+          "source": "firms",
+          "feature": "frp_small",
+          "loading": 0.15679298341274261,
+          "abs_loading": 0.15679298341274261
+        },
+        {
+          "source": "firms",
+          "feature": "frp_large",
+          "loading": 0.15224558115005493,
+          "abs_loading": 0.15224558115005493
+        }
+      ],
+      "temporal_properties": {
+        "autocorrelation_lag1": 0.7744267848114141,
+        "trend_correlation": 0.13463505377347798,
+        "trend_pvalue": 0.00595413084989525,
+        "volatility_persistence": 0.6249810344059363
+      },
+      "statistics": {
+        "mean": 2.0173879988760746e-07,
+        "std": 3.5687122344970703,
+        "skewness": 0.9757477045059204,
+        "kurtosis": 2.751491069793701
+      },
+      "interpretation": [
+        "affects_multiple_sources_equally",
+        "source_specific_firms",
+        "highly_persistent",
+        "volatility_clustering",
+        "related_to_fire_activity"
+      ]
+    },
+    {
+      "factor_index": 4,
+      "variance_explained": 0.0602182000875473,
+      "cumulative_variance": 0.44421178102493286,
+      "source_sensitivity": {
+        "deepstate": 0.08286550663072954,
+        "equipment": 0.0446290790652191,
+        "firms": 0.022754223927525647,
+        "ucdp": 0.06305352827378859
+      },
+      "dominant_source": "deepstate",
+      "top_features": [
+        {
+          "source": "deepstate",
+          "feature": "arrows_N",
+          "loading": 0.23347695171833038,
+          "abs_loading": 0.23347695171833038
+        },
+        {
+          "source": "deepstate",
+          "feature": "arrows_westward",
+          "loading": 0.2177431881427765,
+          "abs_loading": 0.2177431881427765
+        },
+        {
+          "source": "deepstate",
+          "feature": "arrows_total",
+          "loading": 0.211841881275177,
+          "abs_loading": 0.211841881275177
+        },
+        {
+          "source": "deepstate",
+          "feature": "color_other",
+          "loading": -0.20756033062934875,
+          "abs_loading": 0.20756033062934875
+        },
+        {
+          "source": "deepstate",
+          "feature": "month_of_year",
+          "loading": -0.19519831240177155,
+          "abs_loading": 0.19519831240177155
+        },
+        {
+          "source": "ucdp",
+          "feature": "event_clarity_mean",
+          "loading": 0.19021381437778473,
+          "abs_loading": 0.19021381437778473
+        },
+        {
+          "source": "deepstate",
+          "feature": "week_of_year",
+          "loading": -0.179768905043602,
+          "abs_loading": 0.179768905043602
+        },
+        {
+          "source": "deepstate",
+          "feature": "arrows_SW",
+          "loading": 0.1539131999015808,
+          "abs_loading": 0.1539131999015808
+        },
+        {
+          "source": "deepstate",
+          "feature": "color_tan",
+          "loading": -0.1501762866973877,
+          "abs_loading": 0.1501762866973877
+        },
+        {
+          "source": "ucdp",
+          "feature": "high_clarity_count",
+          "loading": -0.1489909589290619,
+          "abs_loading": 0.1489909589290619
+        }
+      ],
+      "temporal_properties": {
+        "autocorrelation_lag1": 0.9159448246158324,
+        "trend_correlation": -0.1561541128542949,
+        "trend_pvalue": 0.0013984584630326576,
+        "volatility_persistence": 0.7335382953130278
+      },
+      "statistics": {
+        "mean": 0.0,
+        "std": 3.2462573051452637,
+        "skewness": 0.5080317258834839,
+        "kurtosis": -0.7596874237060547
+      },
+      "interpretation": [
+        "affects_multiple_sources_equally",
+        "source_specific_deepstate",
+        "highly_persistent",
+        "volatility_clustering",
+        "related_to_movement_direction"
+      ]
+    }
+  ],
+  "variance_explained": [
+    0.1345491111278534,
+    0.09161567687988281,
+    0.08505332469940186,
+    0.0727754533290863,
+    0.0602182000875473
+  ],
+  "metadata": {
+    "extraction_timestamp": "2026-01-20T16:46:24.830877",
+    "residual_type": "masked",
+    "n_factors": 5,
+    "method": "pca",
+    "n_samples": 416,
+    "total_features": 180,
+    "total_variance_explained": 0.44421178102493286,
+    "sources": [
+      "deepstate",
+      "equipment",
+      "firms",
+      "ucdp"
+    ]
+  }
+}

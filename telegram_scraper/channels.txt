@@ -1,0 +1,59 @@
+# Telegram Channels for Ukraine Conflict OSINT
+# One channel per line, comments start with #
+
+# ============================================================================
+# UKRAINIAN SOURCES
+# ============================================================================
+
+# Deep State - Most authoritative front line map, daily updates
+@DeepStateUA
+
+# General Staff UAF - Official military communiqués
+@GeneralStaffZSU
+
+# Ukrainian Land Forces - Official ground forces updates
+@landforcesofukraine
+
+# Kharkiv OVA - Regional administration (strike reports)
+@synaborok
+
+# Kyiv Independent - English-language news
+@kyivindependent
+
+# Suspilne News - Public broadcaster
+@suspaborilne
+
+# ============================================================================
+# RUSSIAN MILBLOGGERS
+# ============================================================================
+
+# Rybar - Maps, analysis, pro-Russian perspective
+@rybar
+
+# Two Majors - Front line commentary
+@dva_majors
+
+# Military Informant - Aggregated reports
+@miaborlinformant
+
+# WarGonzo - Embedded reporting
+@waborargonzo
+
+# Readovka - News aggregation
+@readaborovkanews
+
+# Fighterbomber - Russian aviation focus
+@fighaborter_bomber
+
+# ============================================================================
+# OSINT AGGREGATORS
+# ============================================================================
+
+# Ukraine Weapons Tracker - Equipment losses, geolocated
+@uaboraweapons
+
+# GeoConfirmed - Verified geolocations
+@geoconfirmed
+
+# Def Mon - Equipment tracking
+@daborefmon

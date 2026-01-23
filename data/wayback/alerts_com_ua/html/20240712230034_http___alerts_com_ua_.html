@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>Air Raid Alert API (Ukraine, UNOFFICIAL)</title>
+  <style>
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+    /* CSS for syntax highlighting */
+    pre > code.sourceCode { white-space: pre; position: relative; }
+    pre > code.sourceCode > span { line-height: 1.25; }
+    pre > code.sourceCode > span:empty { height: 1.2em; }
+    .sourceCode { overflow: visible; }
+    code.sourceCode > span { color: inherit; text-decoration: inherit; }
+    div.sourceCode { margin: 1em 0; }
+    pre.sourceCode { margin: 0; }
+    @media screen {
+    div.sourceCode { overflow: auto; }
+    }
+    @media print {
+    pre > code.sourceCode { white-space: pre-wrap; }
+    pre > code.sourceCode > span { display: inline-block; text-indent: -5em; padding-left: 5em; }
+    }
+    pre.numberSource code
+      { counter-reset: source-line 0; }
+    pre.numberSource code > span
+      { position: relative; left: -4em; counter-increment: source-line; }
+    pre.numberSource code > span > a:first-child::before
+      { content: counter(source-line);
+        position: relative; left: -1em; text-align: right; vertical-align: baseline;
+        border: none; display: inline-block;
+        -webkit-touch-callout: none; -webkit-user-select: none;
+        -khtml-user-select: none; -moz-user-select: none;
+        -ms-user-select: none; user-select: none;
+        padding: 0 4px; width: 4em;
+        background-color: #232629;
+        color: #7a7c7d;
+      }
+    pre.numberSource { margin-left: 3em; border-left: 1px solid #7a7c7d;  padding-left: 4px; }
+    div.sourceCode
+      { color: #cfcfc2; background-color: #232629; }
+    @media screen {
+    pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+    }
+    code span { color: #cfcfc2; } /* Normal */
+    code span.al { color: #95da4c; background-color: #4d1f24; font-weight: bold; } /* Alert */
+    code span.an { color: #3f8058; } /* Annotation */
+    code span.at { color: #2980b9; } /* Attribute */
+    code span.bn { color: #f67400; } /* BaseN */
+    code span.bu { color: #7f8c8d; } /* BuiltIn */
+    code span.cf { color: #fdbc4b; font-weight: bold; } /* ControlFlow */
+    code span.ch { color: #3daee9; } /* Char */
+    code span.cn { color: #27aeae; font-weight: bold; } /* Constant */
+    code span.co { color: #7a7c7d; } /* Comment */
+    code span.cv { color: #7f8c8d; } /* CommentVar */
+    code span.do { color: #a43340; } /* Documentation */
+    code span.dt { color: #2980b9; } /* DataType */
+    code span.dv { color: #f67400; } /* DecVal */
+    code span.er { color: #da4453; text-decoration: underline; } /* Error */
+    code span.ex { color: #0099ff; font-weight: bold; } /* Extension */
+    code span.fl { color: #f67400; } /* Float */
+    code span.fu { color: #8e44ad; } /* Function */
+    code span.im { color: #27ae60; } /* Import */
+    code span.in { color: #c45b00; } /* Information */
+    code span.kw { color: #cfcfc2; font-weight: bold; } /* Keyword */
+    code span.op { color: #cfcfc2; } /* Operator */
+    code span.ot { color: #27ae60; } /* Other */
+    code span.pp { color: #27ae60; } /* Preprocessor */
+    code span.re { color: #2980b9; background-color: #153042; } /* RegionMarker */
+    code span.sc { color: #3daee9; } /* SpecialChar */
+    code span.ss { color: #da4453; } /* SpecialString */
+    code span.st { color: #f44f4f; } /* String */
+    code span.va { color: #27aeae; } /* Variable */
+    code span.vs { color: #da4453; } /* VerbatimString */
+    code span.wa { color: #da4453; } /* Warning */
+  </style>
+  <link rel="stylesheet" href="./style.css" />
+  <!-- Global site tag (gtag.js) - Google Analytics -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-XJ7X2PD5HM"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+
+    gtag('config', 'G-XJ7X2PD5HM');
+  </script>
+  <link rel="stylesheet" type="text/css" href="/static/style.css" />
+  <!--[if lt IE 9]>
+    <script src="//cdnjs.cloudflare.com/ajax/libs/html5shiv/3.7.3/html5shiv-printshiv.min.js"></script>
+  <![endif]-->
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">Air Raid Alert API (Ukraine, UNOFFICIAL)</h1>
+</header>
+<p><em>(English version is <a href="/en">available here</a>.)</em></p>
+<p>Цей API дозволяє вам отримувати інформацію про повітряні тривоги в
+Україні в режимі реального часу.</p>
+<p>Наше джерело даних - Telegram-канал <a
+href="https://telegram.me/air_alert_ua">@air_alert_ua</a>.</p>
+<p>Події в середньому затримуются до 2-х секунд.</p>
+<p>Зараз надаємо інформацію лише про області (24 області та м. Київ).
+Крим відсутній зі списку, оскільки по ньому відсутня інформація. Але ми
+всі знаємо, що Крим - це Україна.</p>
+<p>Сервіс працює в двох режимах: HTTP та TCP.</p>
+<p>За посиланням доступна статична карта: <a
+href="https://alerts.com.ua/map.png"
+class="uri">https://alerts.com.ua/map.png</a></p>
+<p>Також ви можете отримувати історію всіх тривог у вигляді time series
+дампу (див. секцію A2).</p>
+<figure id="map">
+<img src="/map.png" alt="Карта Тривог" />
+<figcaption aria-hidden="true">Карта Тривог</figcaption>
+</figure>
+<div class="warning">
+<p>Зверніть увагу, що цей сервіс не є офіційним. Ми залишаємо за собою
+право не нести відповідальність за збої в нашій системі.</p>
+</div>
+<div class="warning">
+<p>Ви маєте право використовувати наше API в будь-яких цілях, зокрема в
+комерційних. Єдиний вийняток - це застосування нашого API для ведення
+підривної діяльності проти України, що є суворо забороненим. Такі дії
+будуть повідомлені в СБУ.</p>
+</div>
+<script type="text/javascript">
+var map = document.getElementById('map');
+window.setInterval(function() {
+  map.src = map.src.split('?')[0] + '?' + new Date().getTime();
+}, 5000);
+</script>
+<h3 id="наші-проєкти">Наші проєкти</h3>
+<ul>
+<li><a href="https://alerts.com.ua"
+class="uri">https://alerts.com.ua</a> - ви зараз тут.</li>
+<li><a href="https://t.me/spriaglo">Спшенгло💥</a> - хочете допомогти
+фінансово або просто підпискою? Долучайтесь!</li>
+</ul>
+<h2 id="a.-режим-http">A. Режим HTTP</h2>
+<h3 id="a1.-автентифікація">A1. Автентифікація</h3>
+<p>Вам потрібно ключ для роботи з цим API.</p>
+<ul>
+<li>Щоб отримати ключ, надішліть мені e-mail (<a href="mailto:a@dun.ai"
+class="email">a@dun.ai</a>) або повідомлення в Telegram (<a
+href="https://t.me/andunai">@andunai</a>). Щоб прискорити отримання
+ключа, допишіть в текст свого повідомлення хештег “#api”.</li>
+<li>Надсилайте ключ в кожному запиті в заголовку
+<code>X-API-Key</code>.</li>
+<li><strong>Для фронт-ендерів</strong>: вам знадобиться <a
+href="https://github.com/Yaffle/EventSource">polyfill для
+EventStream</a>, оскільки <a
+href="https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events">API
+EventStream в браузерах</a> не підтримує надсилання заголовків в
+запиті.</li>
+</ul>
+<p>Зверніть увагу, що це API має обмеження по частоті запитів:</p>
+<ul>
+<li>Максимальна частота запитів з одної адреси: 10/сек</li>
+<li>Максимальна частота запитів по одному API-ключу: 100/сек</li>
+<li>Максимальна частота запитів до ендпоїнту <code>/api/history</code>:
+1/хв</li>
+</ul>
+<p>Якщо ви перевищите зазначені ліміти, ви отримаєте HTTP 429.</p>
+<h3 id="a2.-ендпоїнти">A2. Ендпоїнти</h3>
+<h4 id="get-apistates"><code>GET /api/states</code></h4>
+<p>Повертає список областей з їхніми статусами.</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co"># $ curl https://alerts.com.ua/api/states -H &quot;X-API-Key: yourApiKey34421337&quot;</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="kw">{</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">&quot;states&quot;</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">{</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">&quot;id&quot;</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span><span class="kw">,</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">&quot;name&quot;</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;Вінницька область&quot;</span><span class="kw">,</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">&quot;name_en&quot;</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;Vinnytsia oblast&quot;</span><span class="kw">,</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">&quot;alert&quot;</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span><span class="kw">,</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">&quot;changed&quot;</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;2022-04-05T06:12:52+03:00&quot;</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">},</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">{</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">&quot;id&quot;</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span><span class="kw">,</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">&quot;name&quot;</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;Волинська область&quot;</span><span class="kw">,</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">&quot;name_en&quot;</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;Volyn oblast&quot;</span><span class="kw">,</span></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">&quot;alert&quot;</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span><span class="kw">,</span></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">&quot;changed&quot;</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;2022-04-05T06:13:06+03:00&quot;</span></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">},</span></span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a><span class="co">    # ...</span></span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">],</span></span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">&quot;last_update&quot;</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;2022-04-05T06:15:10.333210918+03:00&quot;</span></span>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a><span class="kw">}</span></span></code></pre></div>
+<p>Для економії трафіку можна додати <code>?short</code> до URL запиту,
+щоб отримувати лише поля <code>id</code> та <code>alert</code>.</p>
+<h4 id="get-apistatesid"><code>GET /api/states/&lt;ID&gt;</code></h4>
+<p>Повертає область та статус тривоги за її ID.</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co"># $ curl https://alerts.com.ua/api/states/12 -H &quot;X-API-Key: yourApiKey34421337&quot;</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="kw">{</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">&quot;state&quot;</span><span class="kw">:</span><span class="at"> </span><span class="kw">{</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">&quot;id&quot;</span><span class="kw">:</span><span class="at"> </span><span class="dv">12</span><span class="kw">,</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">&quot;name&quot;</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;Львівська область&quot;</span><span class="kw">,</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">&quot;name_en&quot;</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;Lviv oblast&quot;</span><span class="kw">,</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">&quot;alert&quot;</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span><span class="kw">,</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">&quot;changed&quot;</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;2022-04-05T06:13:12+03:00&quot;</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">},</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">&quot;last_update&quot;</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;2022-04-05T06:15:10.333210918+03:00&quot;</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a><span class="kw">}</span></span></code></pre></div>
+<h4
+id="get-apistateslive-get-apistatesliveid"><code>GET /api/states/live</code>
+&amp; <code>GET /api/states/live/&lt;ID&gt;</code></h4>
+<p><a
+href="https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events">SSE</a>-ендпоінт,
+який генерує події в режимі реального часу.</p>
+<p>Якщо передати параметр ID, то ви будете отримувати лише події,
+пов’язані з цією областю.</p>
+<p>Приклад клієнта: <a
+href="https://codesandbox.io/s/goofy-elgamal-mkdkzv?file=/src/App.js"
+class="uri">https://codesandbox.io/s/goofy-elgamal-mkdkzv?file=/src/App.js</a></p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="co"># $ curl https://alerts.com.ua/api/states/live -H &quot;X-API-Key: yourApiKey34421337&quot;</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="fu">event</span><span class="kw">:</span><span class="at"> hello</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="fu">data</span><span class="kw">:</span><span class="at"> </span><span class="ch">null</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="fu">event</span><span class="kw">:</span><span class="at"> ping</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="fu">data</span><span class="kw">:</span><span class="at"> </span><span class="ch">null</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a><span class="fu">event</span><span class="kw">:</span><span class="at"> ping</span></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a><span class="fu">data</span><span class="kw">:</span><span class="at"> </span><span class="ch">null</span></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a><span class="fu">event</span><span class="kw">:</span><span class="at"> update</span></span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a><span class="fu">data</span><span class="kw">:</span><span class="at"> </span><span class="kw">{</span><span class="st">&quot;state&quot;</span><span class="at">:{</span><span class="st">&quot;id&quot;</span><span class="at">:12</span><span class="kw">,</span><span class="st">&quot;name&quot;</span><span class="at">:</span><span class="st">&quot;Львівська область&quot;</span><span class="kw">,</span><span class="st">&quot;name_en&quot;</span><span class="at">:</span><span class="st">&quot;Lviv oblast&quot;</span><span class="kw">,</span><span class="st">&quot;alert&quot;</span><span class="at">:false</span><span class="kw">,</span><span class="st">&quot;changed&quot;</span><span class="at">:</span><span class="st">&quot;2022-04-05T06:14:56+03:00&quot;</span><span class="kw">}</span><span class="at">,&quot;notification_id&quot;:&quot;b7b5cb85-ddc0-11ec-90d3-c8b29b63332d&quot;}</span></span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a><span class="fu">event</span><span class="kw">:</span><span class="at"> ping</span></span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a><span class="fu">data</span><span class="kw">:</span><span class="at"> </span><span class="ch">null</span></span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a><span class="co"># ...</span></span></code></pre></div>
+<h4 id="get-apihistory"><code>GET /api/history</code></h4>
+<p>Повертає історію всіх тривог.</p>
+<p>Цей ендпоїнт можна викликати лише 1 раз на хвилину.</p>
+<div class="sourceCode" id="cb4"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="co"># $ curl https://alerts.com.ua/api/history -H &quot;X-API-Key: yourApiKey34421337&quot;</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="kw">[</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">{</span><span class="st">&quot;id&quot;</span><span class="at">:1</span><span class="kw">,</span><span class="st">&quot;date&quot;</span><span class="at">:</span><span class="st">&quot;2022-03-15T18:02:56+02:00&quot;</span><span class="kw">,</span><span class="st">&quot;state_id&quot;</span><span class="at">:9</span><span class="kw">,</span><span class="st">&quot;alert&quot;</span><span class="at">:false</span><span class="kw">},</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">{</span><span class="st">&quot;id&quot;</span><span class="at">:2</span><span class="kw">,</span><span class="st">&quot;date&quot;</span><span class="at">:</span><span class="st">&quot;2022-03-15T18:10:34+02:00&quot;</span><span class="kw">,</span><span class="st">&quot;state_id&quot;</span><span class="at">:1</span><span class="kw">,</span><span class="st">&quot;alert&quot;</span><span class="at">:true</span><span class="kw">},</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">{</span><span class="st">&quot;id&quot;</span><span class="at">:3</span><span class="kw">,</span><span class="st">&quot;date&quot;</span><span class="at">:</span><span class="st">&quot;2022-03-15T18:11:25+02:00&quot;</span><span class="kw">,</span><span class="st">&quot;state_id&quot;</span><span class="at">:5</span><span class="kw">,</span><span class="st">&quot;alert&quot;</span><span class="at">:true</span><span class="kw">},</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">{</span><span class="st">&quot;id&quot;</span><span class="at">:4</span><span class="kw">,</span><span class="st">&quot;date&quot;</span><span class="at">:</span><span class="st">&quot;2022-03-15T18:15:11+02:00&quot;</span><span class="kw">,</span><span class="st">&quot;state_id&quot;</span><span class="at">:10</span><span class="kw">,</span><span class="st">&quot;alert&quot;</span><span class="at">:true</span><span class="kw">},</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">{</span><span class="st">&quot;id&quot;</span><span class="at">:5</span><span class="kw">,</span><span class="st">&quot;date&quot;</span><span class="at">:</span><span class="st">&quot;2022-03-15T18:17:28+02:00&quot;</span><span class="kw">,</span><span class="st">&quot;state_id&quot;</span><span class="at">:8</span><span class="kw">,</span><span class="st">&quot;alert&quot;</span><span class="at">:true</span><span class="kw">},</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">{</span><span class="st">&quot;id&quot;</span><span class="at">:6</span><span class="kw">,</span><span class="st">&quot;date&quot;</span><span class="at">:</span><span class="st">&quot;2022-03-15T18:17:29+02:00&quot;</span><span class="kw">,</span><span class="st">&quot;state_id&quot;</span><span class="at">:12</span><span class="kw">,</span><span class="st">&quot;alert&quot;</span><span class="at">:true</span><span class="kw">},</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">{</span><span class="st">&quot;id&quot;</span><span class="at">:7</span><span class="kw">,</span><span class="st">&quot;date&quot;</span><span class="at">:</span><span class="st">&quot;2022-03-15T18:18:35+02:00&quot;</span><span class="kw">,</span><span class="st">&quot;state_id&quot;</span><span class="at">:16</span><span class="kw">,</span><span class="st">&quot;alert&quot;</span><span class="at">:true</span><span class="kw">},</span></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">{</span><span class="st">&quot;id&quot;</span><span class="at">:8</span><span class="kw">,</span><span class="st">&quot;date&quot;</span><span class="at">:</span><span class="st">&quot;2022-03-15T18:19:13+02:00&quot;</span><span class="kw">,</span><span class="st">&quot;state_id&quot;</span><span class="at">:2</span><span class="kw">,</span><span class="st">&quot;alert&quot;</span><span class="at">:true</span><span class="kw">},</span></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">{</span><span class="st">&quot;id&quot;</span><span class="at">:9</span><span class="kw">,</span><span class="st">&quot;date&quot;</span><span class="at">:</span><span class="st">&quot;2022-03-15T18:19:20+02:00&quot;</span><span class="kw">,</span><span class="st">&quot;state_id&quot;</span><span class="at">:25</span><span class="kw">,</span><span class="st">&quot;alert&quot;</span><span class="at">:true</span><span class="kw">},</span></span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">{</span><span class="st">&quot;id&quot;</span><span class="at">:10</span><span class="kw">,</span><span class="st">&quot;date&quot;</span><span class="at">:</span><span class="st">&quot;2022-03-15T18:22:29+02:00&quot;</span><span class="kw">,</span><span class="st">&quot;state_id&quot;</span><span class="at">:18</span><span class="kw">,</span><span class="st">&quot;alert&quot;</span><span class="at">:true</span><span class="kw">},</span></span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">{</span><span class="st">&quot;id&quot;</span><span class="at">:11</span><span class="kw">,</span><span class="st">&quot;date&quot;</span><span class="at">:</span><span class="st">&quot;2022-03-15T18:30:17+02:00&quot;</span><span class="kw">,</span><span class="st">&quot;state_id&quot;</span><span class="at">:24</span><span class="kw">,</span><span class="st">&quot;alert&quot;</span><span class="at">:true</span><span class="kw">},</span></span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a><span class="co">  # ...</span></span>
+<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a><span class="kw">]</span></span></code></pre></div>
+<h2 id="b.-режим-tcp">B. Режим TCP</h2>
+<p>Якщо ви хочете використати наше API в інтегрованих системах -
+наприклад, Arduino чи ESP8266, то вам буде значно простіше та економніше
+отримувати сповіщення через старі добрі TCP-сокети.</p>
+<p>TCP-сервер працює за адресою <code>tcp.alerts.com.ua</code> на порті
+<code>1024</code>.</p>
+<p>Приклад проекту для ESP8266: <a
+href="https://wokwi.com/projects/330842127136195154"
+class="uri">https://wokwi.com/projects/330842127136195154</a></p>
+<h3 id="b1.-структура-пакетів">B1. Структура пакетів</h3>
+<p>Всі повідомлення від сервера мають наступний формат:</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="ex">ТипПакета:Дані\n</span></span></code></pre></div>
+<p>Кожен пакет, що надсилається серверу та отримується від нього,
+повинен завершуватись ASCII-символом 0x10 (<code>\n</code>).</p>
+<table>
+<colgroup>
+<col style="width: 5%" />
+<col style="width: 38%" />
+<col style="width: 56%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: center;">Тип пакета</th>
+<th style="text-align: left;">Опис функції</th>
+<th style="text-align: left;">Опис даних</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: center;"><code>a</code></td>
+<td style="text-align: left;">auth-пакет, містить результат
+авторизації</td>
+<td style="text-align: left;"><code>ok</code>, <code>timeout</code> або
+<code>wrong_api_key</code></td>
+</tr>
+<tr class="even">
+<td style="text-align: center;"><code>p</code></td>
+<td style="text-align: left;">ping-пакет, надсилається сервером кожні 15
+секунд</td>
+<td style="text-align: left;">Випадкове число в діапазоні [0;10000)</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;"><code>s</code></td>
+<td style="text-align: left;">state-пакет, містить інформацію про зміну
+статусу тривоги в деякій області</td>
+<td style="text-align: left;">Номер області та статус тривоги.
+Наприклад, при активації тривоги в Львівській області міститиме текст
+<code>12=1</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="b2.-протокол-спілкування-з-tcp-сервером">B2. Протокол
+спілкування з TCP-сервером</h3>
+<ol type="1">
+<li><p>Клієнт під’єднується і впродовж 3 секунд надсилає свій API-ключ в
+ASCII-кодуванні:</p>
+<pre><code>yourApiKey34421337</code></pre>
+<p>Це - єдиний пакет, який клієнт надсилає серверові.</p>
+<p>Ви також можете повідомити сервер, що бажаєте отримувати статуси лише
+для однієї області. Для цього додайте через кому номер області після
+ключа, наприклад:</p>
+<pre><code>yourApiKey34421337,12</code></pre></li>
+<li><p>Сервер надсилає auth-пакет, який містить відповідь з інформацією
+про успішність авторизації:</p>
+<pre><code>a:ok</code></pre>
+<p>В разі невдалої авторизації або тайм-ауту замість <code>ok</code>
+буде тип помилки (див. попередню секцію).</p></li>
+<li><p>Сервер надсилає по одному state-пакету зі станами тривог в кожній
+області.</p></li>
+<li><p>Сервер періодично надсилає ping-пакети (кожні 15
+секунд).</p></li>
+<li><p>В разі зміни статусу тривоги в області, сервер надсилає
+state-пакет.</p></li>
+</ol>
+<p>Приклад TCP-сесії (префікс <code>&gt;</code> означає дані, надіслані
+клієнтом, <code>&lt;</code> - дані, надіслані сервером, а <code>#</code>
+- коментарі):</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode js"><code class="sourceCode javascript"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="op">&gt;</span> yourApiKey34421337     # Клієнт надіслав API<span class="op">-</span>ключ</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="op">&lt;</span> a<span class="op">:</span>ok                   # Авторизація успішна</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="op">&lt;</span> s<span class="op">:</span><span class="dv">1</span><span class="op">=</span><span class="dv">0</span>                  # Початкові дані про <span class="dv">25</span> областей</span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="op">&lt;</span> s<span class="op">:</span><span class="dv">2</span><span class="op">=</span><span class="dv">0</span></span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a><span class="op">&lt;</span> s<span class="op">:</span><span class="dv">3</span><span class="op">=</span><span class="dv">0</span></span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a><span class="op">...</span>                      # (пропущено <span class="dv">20</span> рядків)</span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a><span class="op">&lt;</span> s<span class="op">:</span><span class="dv">24</span><span class="op">=</span><span class="dv">0</span></span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a><span class="op">&lt;</span> s<span class="op">:</span><span class="dv">25</span><span class="op">=</span><span class="dv">0</span></span>
+<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a><span class="op">&lt;</span> p<span class="op">:</span><span class="dv">1241</span>                 # Пінг<span class="op">-</span>пакет</span>
+<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a><span class="op">&lt;</span> p<span class="op">:</span><span class="dv">2508</span>                 # <span class="op">...</span></span>
+<span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a><span class="op">&lt;</span> p<span class="op">:</span><span class="dv">1902</span></span>
+<span id="cb9-12"><a href="#cb9-12" aria-hidden="true" tabindex="-1"></a><span class="op">&lt;</span> p<span class="op">:</span><span class="dv">9028</span></span>
+<span id="cb9-13"><a href="#cb9-13" aria-hidden="true" tabindex="-1"></a><span class="op">&lt;</span> s<span class="op">:</span><span class="dv">12</span><span class="op">=</span><span class="dv">1</span>                 # У Львівській області тривога<span class="op">!</span></span>
+<span id="cb9-14"><a href="#cb9-14" aria-hidden="true" tabindex="-1"></a><span class="op">&lt;</span> p<span class="op">:</span><span class="dv">3819</span></span>
+<span id="cb9-15"><a href="#cb9-15" aria-hidden="true" tabindex="-1"></a><span class="op">&lt;</span> p<span class="op">:</span><span class="dv">9873</span></span>
+<span id="cb9-16"><a href="#cb9-16" aria-hidden="true" tabindex="-1"></a><span class="op">&lt;</span> s<span class="op">:</span><span class="dv">12</span><span class="op">=</span><span class="dv">0</span>                 # Відбій тривоги у Львівській області</span>
+<span id="cb9-17"><a href="#cb9-17" aria-hidden="true" tabindex="-1"></a><span class="op">&lt;</span> p<span class="op">:</span><span class="dv">8321</span>                 # Пінг<span class="op">-</span>пакет</span>
+<span id="cb9-18"><a href="#cb9-18" aria-hidden="true" tabindex="-1"></a><span class="op">&lt;</span> p<span class="op">:</span><span class="dv">3985</span>                 # <span class="op">...</span></span></code></pre></div>
+<h3 id="use-the-source-luke">Use the source, Luke</h3>
+<p>Цю штуку зробив <a href="https://dun.ai">Andrew Dunai</a>.</p>
+<p>Початковий код знаходиться тут: <a
+href="https://github.com/and3rson/raid"
+class="uri">https://github.com/and3rson/raid</a></p>
+<h3 id="але-навіщо">Але навіщо?</h3>
+<p>Я є прихильником відкритих даних та вільного програмного
+забезпечення.</p>
+<p>Я вважаю, що будь-яку <strong>інформацію, яка є відкритою,</strong>
+будь-хто повинен мати змогу <strong>опрацьовувати так, як йому
+заманеться</strong>, якщо тільки це не приносить комусь шкоди.</p>
+<blockquote>
+<p>“<em>Але ж… Хіба ”безкоштовний” і ”вільний” - не те саме?</em>”</p>
+</blockquote>
+<p>“Безкоштовний” (<em>“gratis”</em>) не є синонімом для “вільний”
+(<em>“libre”</em>).</p>
+<p>Для прикладу, Інстаграм - безкоштовний, але він не є вільний: вони
+змушують вас використовувати саме їх власний додаток і не дають повного
+контролю над своїми даними та доступом до них. Точніше, дають, але дуже
+обмежений доступ. Це і означає термін “невільний” в контексті
+комп’ютерних технологій.</p>
+<p>Не ставайте рабами постачальників.</p>
+<p>Давайте зробимо світ вільнішим.</p>
+<p>*stallman.jpg*</p>
+</body>
+</html>

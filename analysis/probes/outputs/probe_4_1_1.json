@@ -1,0 +1,22 @@
+{
+  "probe_id": "4.1.1",
+  "probe_name": "Named Operation Clustering",
+  "status": "completed",
+  "duration_seconds": 12.175725221633911,
+  "findings": {
+    "silhouette_score": 0.0,
+    "calinski_harabasz_score": 0.0,
+    "davies_bouldin_score": Infinity,
+    "variance_ratio": 0.0,
+    "n_samples_per_cluster": {},
+    "cluster_centroids": null,
+    "tsne_embeddings": null,
+    "operation_labels": null
+  },
+  "artifacts": {
+    "figures": [],
+    "tables": []
+  },
+  "recommendations": [],
+  "error_message": null
+}

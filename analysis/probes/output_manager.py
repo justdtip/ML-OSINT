@@ -48,7 +48,7 @@ class RunMetadata:
     daily_sources: List[str] = field(default_factory=list)
     monthly_sources: List[str] = field(default_factory=list)
     detrend_viirs: bool = False
-    use_disaggregated_equipment: bool = False
+    use_disaggregated_equipment: bool = True
 
     # Training configuration (from checkpoint)
     training_epochs: int = 0
@@ -63,6 +63,9 @@ class RunMetadata:
     phase_name: str = ""
     phase_description: str = ""
     optimizations_applied: List[str] = field(default_factory=list)
+
+    # Training run linkage (which training run these probes were run against)
+    training_run_id: str = ""
 
     # Environment
     device: str = ""

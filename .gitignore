@@ -202,3 +202,7 @@ sen2like/**/*.tif
 sen2like/**/*.pdf
 sen2like/**/product_template/
 deepstate-map-data/*.geojson*
+
+# Training run checkpoints (large files)
+analysis/training_runs/**/*.pt
+

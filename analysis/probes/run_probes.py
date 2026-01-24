@@ -128,6 +128,9 @@ class ProbeRunnerConfig:
     # Pipeline stage selection (1=JIM, 2=Unified, 3=HAN, None=all stages)
     pipeline_stage: Optional[int] = None
 
+    # Training run linkage (for loading from specific training runs)
+    training_run_id: Optional[str] = None
+
     # Data split for probes - 'test' is default for evaluation, 'train' covers all conflict phases
     # Use 'train' for probes that need to analyze patterns across all phases (clustering, temporal patterns)
     # Use 'all' to combine train+val+test for maximum coverage
@@ -231,11 +234,22 @@ for tier_num, tier_probes in [(1, TIER_1_PROBES), (2, TIER_2_PROBES), (3, TIER_3
             "SectorDefinition", "EntitySchemaSpec"
         ]
 
-        # Determine module
+        # Determine module based on probe ID (section.subsection.probe)
+        # Some subsections map to different modules than their main section
+        subsection = probe_id.split('.')[1] if '.' in probe_id else '0'
+
         if section == 1:
-            module = "data_artifact_probes"
+            # 1.4.x and 1.5.x are in statistical_analysis_probes
+            if subsection in ['4', '5']:
+                module = "statistical_analysis_probes"
+            else:
+                module = "data_artifact_probes"
         elif section == 2:
-            module = "cross_modal_fusion_probes"
+            # 2.3.x and 2.4.x are in model_interpretability_probes
+            if subsection in ['3', '4']:
+                module = "model_interpretability_probes"
+            else:
+                module = "cross_modal_fusion_probes"
         elif section == 3:
             module = "temporal_dynamics_probes"
         elif section == 4:
@@ -246,6 +260,8 @@ for tier_num, tier_probes in [(1, TIER_1_PROBES), (2, TIER_2_PROBES), (3, TIER_3
             module = "causal_importance_probes"
         elif section == 7:
             module = "tactical_readiness_probes"
+        elif section == 8:
+            module = "model_assessment_probes"
         else:
             module = "unknown"
 
@@ -375,17 +391,39 @@ class MasterProbeRunner:
             )
             import json
 
-            # Load training summary for configuration
+            # Load configuration from available sources
+            # Priority: 1) training_summary.json 2) training run's config.json 3) defaults
+            config_dict = {}
+
+            # Try training_summary.json first (standalone train_multi_resolution.py runs)
             training_summary_path = self.config.checkpoint_dir / "training_summary.json"
-            with open(training_summary_path, "r") as f:
-                training_summary = json.load(f)
-            config_dict = training_summary.get('config', {})
+            if training_summary_path.exists():
+                with open(training_summary_path, "r") as f:
+                    training_summary = json.load(f)
+                config_dict = training_summary.get('config', {})
+
+            # Also check training run's config.json (train_full_pipeline.py runs)
+            # This may have data config values like use_disaggregated_equipment
+            if self.config.training_run_id:
+                from pathlib import Path
+                training_run_dir = Path(self.config.checkpoint_dir).parent.parent
+                training_run_config_path = training_run_dir / "config.json"
+                if training_run_config_path.exists():
+                    with open(training_run_config_path, "r") as f:
+                        run_config = json.load(f)
+                    # Merge run config (lower priority than training_summary)
+                    for key in ['use_disaggregated_equipment', 'detrend_viirs']:
+                        if key in run_config and key not in config_dict:
+                            config_dict[key] = run_config[key]
 
             # Create data configuration
+            # Note: defaults are conservative for older checkpoints without these settings
             data_config = MultiResolutionConfig(
                 daily_seq_len=config_dict.get('daily_seq_len', 365),
                 monthly_seq_len=config_dict.get('monthly_seq_len', 12),
                 prediction_horizon=config_dict.get('prediction_horizon', 1),
+                use_disaggregated_equipment=config_dict.get('use_disaggregated_equipment', False),
+                detrend_viirs=config_dict.get('detrend_viirs', True),
             )
 
             # First create train dataset to get normalization stats
@@ -417,31 +455,33 @@ class MasterProbeRunner:
             # Get feature dimensions from dataset sample
             sample = self.dataset[0]
 
-            # Define source names
-            DAILY_SOURCE_NAMES = ['equipment', 'personnel', 'deepstate', 'firms', 'viina', 'viirs']
-            MONTHLY_SOURCE_NAMES = ['sentinel', 'hdx_conflict', 'hdx_food', 'hdx_rainfall', 'iom']
+            # Get source names dynamically from the sample
+            # This ensures we match the data config (e.g., disaggregated vs aggregated equipment)
+            daily_source_names = list(sample.daily_features.keys())
+            monthly_source_names = list(sample.monthly_features.keys())
 
-            # Build source configs
+            self.logger.info(f"Daily sources: {daily_source_names}")
+            self.logger.info(f"Monthly sources: {monthly_source_names}")
+
+            # Build source configs dynamically from the actual data
             daily_source_configs = {}
             monthly_source_configs = {}
 
-            for source_name in DAILY_SOURCE_NAMES:
-                if source_name in sample.daily_features:
-                    n_features = sample.daily_features[source_name].shape[-1]
-                    daily_source_configs[source_name] = SourceConfig(
-                        name=source_name,
-                        n_features=n_features,
-                        resolution='daily',
-                    )
+            for source_name in daily_source_names:
+                n_features = sample.daily_features[source_name].shape[-1]
+                daily_source_configs[source_name] = SourceConfig(
+                    name=source_name,
+                    n_features=n_features,
+                    resolution='daily',
+                )
 
-            for source_name in MONTHLY_SOURCE_NAMES:
-                if source_name in sample.monthly_features:
-                    n_features = sample.monthly_features[source_name].shape[-1]
-                    monthly_source_configs[source_name] = SourceConfig(
-                        name=source_name,
-                        n_features=n_features,
-                        resolution='monthly',
-                    )
+            for source_name in monthly_source_names:
+                n_features = sample.monthly_features[source_name].shape[-1]
+                monthly_source_configs[source_name] = SourceConfig(
+                    name=source_name,
+                    n_features=n_features,
+                    resolution='monthly',
+                )
 
             # Create model with correct parameters
             # Note: d_model=64 matches the trained checkpoint (2.3M params)
@@ -1429,6 +1469,10 @@ Examples:
     # Paths - use None as default to trigger dataclass defaults
     parser.add_argument("--checkpoint", type=str, default=None,
                         help="Path to model checkpoint (default: analysis/checkpoints/multi_resolution/best_checkpoint.pt)")
+    parser.add_argument("--training-run", type=str, default=None,
+                        help="Training run ID to load models from (e.g., 'run_24-01-2026_14-30')")
+    parser.add_argument("--list-training-runs", action="store_true",
+                        help="List all available training runs")
 
     # Run identification and phase tracking
     parser.add_argument("--run-id", type=str, default=None,
@@ -1504,6 +1548,29 @@ Examples:
             print("No differences found in compared fields.")
         return
 
+    # Handle list-training-runs command
+    if args.list_training_runs:
+        from training_output_manager import list_training_runs
+        training_runs = list_training_runs()
+        if not training_runs:
+            print("No training runs found.")
+        else:
+            print("\n" + "=" * 80)
+            print("Available Training Runs")
+            print("=" * 80 + "\n")
+            for run in training_runs:
+                run_id = run.get('run_id', 'Unknown')
+                stages_complete = sum(1 for i in range(1, 6) if run.get(f'stage{i}_complete', False))
+                d_model = run.get('d_model', '?')
+                multi_res = "Yes" if run.get('use_multi_resolution') else "No"
+                duration = run.get('total_duration_seconds', 0)
+                print(f"  {run_id}")
+                print(f"    Stages complete: {stages_complete}/5, d_model: {d_model}, multi_resolution: {multi_res}")
+                if duration > 0:
+                    print(f"    Duration: {duration/60:.1f} minutes")
+                print()
+        return
+
     # Create configuration
     device = args.device if args.device != "auto" else ("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -1528,6 +1595,38 @@ Examples:
     # Only override defaults if paths were explicitly provided
     if args.checkpoint is not None:
         config_kwargs["checkpoint_path"] = Path(args.checkpoint).resolve()
+
+    # Handle training run - load checkpoints from training run directory
+    training_run_config = None
+    if args.training_run is not None:
+        from training_output_manager import get_training_run, TRAINING_RUNS_DIR
+        training_manager = get_training_run(args.training_run)
+        if training_manager is None:
+            print(f"Error: Training run '{args.training_run}' not found.")
+            print(f"Available runs in: {TRAINING_RUNS_DIR}")
+            return
+
+        # Load training config
+        try:
+            training_run_config = training_manager.load_config()
+        except FileNotFoundError:
+            print(f"Warning: No config.json found in training run, using defaults")
+
+        # Set checkpoint paths from training run
+        han_dir = training_manager.get_stage_dir(3)
+        checkpoint_path = han_dir / "best_checkpoint.pt"
+        if checkpoint_path.exists():
+            config_kwargs["checkpoint_path"] = checkpoint_path
+            config_kwargs["checkpoint_dir"] = han_dir
+        else:
+            print(f"Warning: No HAN checkpoint found in {han_dir}")
+
+        # Link the probe run to the training run
+        config_kwargs["training_run_id"] = args.training_run
+        if not config_kwargs.get("phase_name"):
+            config_kwargs["phase_name"] = f"Training:{args.training_run}"
+        print(f"Loading models from training run: {args.training_run}")
+        print(f"  Training run directory: {training_manager.run_dir}")
 
     config = ProbeRunnerConfig(**config_kwargs)
 

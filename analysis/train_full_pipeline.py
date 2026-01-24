@@ -71,6 +71,13 @@ from config.paths import (
     HAN_BEST_MODEL, HAN_FINAL_MODEL,
 )
 
+# Training run output management
+from training_output_manager import (
+    TrainingRunManager,
+    STAGE_NAMES,
+    STAGE_DESCRIPTIONS,
+)
+
 # Backward compatibility alias
 # ANALYSIS_DIR is now imported from config.paths
 
@@ -236,6 +243,13 @@ class PipelineConfig:
     # - Uses learned no_observation_tokens for missing data (NO interpolation)
     # - Maintains data integrity throughout
     use_multi_resolution: bool = True  # Default to new architecture
+
+    # Data configuration options (optimization-implementation-plan.md §0.2, §0.3)
+    # Disaggregate equipment into drones/armor/artillery (excluding aircraft - negative correlation)
+    # Drones have highest MI=0.449 and lead casualties by 7-27 days
+    use_disaggregated_equipment: bool = True
+    # Apply first-order differencing to VIIRS to remove spurious trend correlation
+    detrend_viirs: bool = True
 
     # Checkpointing
     checkpoint_dir: str = str(PIPELINE_CHECKPOINT_DIR)
@@ -831,8 +845,8 @@ def train_multi_resolution_han_stage(
             daily_seq_len=365,  # Required for monthly aggregation architecture
             monthly_seq_len=12,
             prediction_horizon=1,
-            detrend_viirs=True,  # Remove spurious VIIRS correlation (Probe 1.2.3)
-            use_disaggregated_equipment=getattr(config, 'use_disaggregated_equipment', False),
+            detrend_viirs=config.detrend_viirs,  # Remove spurious VIIRS correlation (Probe 1.2.3)
+            use_disaggregated_equipment=config.use_disaggregated_equipment,  # Disaggregate equipment (Probe 1.1.2)
         )
 
         # Split ratios for train/val/test
@@ -912,6 +926,18 @@ def train_multi_resolution_han_stage(
         train_losses = history.get('train_history', {}).get('total', [])
         val_losses = history.get('val_history', {}).get('total', [])
 
+        # Get effective sources for metadata
+        effective_daily = data_config.get_effective_daily_sources()
+        effective_monthly = list(data_config.monthly_sources)
+
+        # Get feature dimensions per source from dataset
+        sample = train_dataset[0]
+        feature_dims = {}
+        for name, tensor in sample.daily_features.items():
+            feature_dims[name] = tensor.shape[-1]
+        for name, tensor in sample.monthly_features.items():
+            feature_dims[name] = tensor.shape[-1]
+
         results = {
             'history': history,
             'metrics': {
@@ -928,6 +954,29 @@ def train_multi_resolution_han_stage(
                 'daily_resolution_preserved': True,
                 'no_interpolation': True,
                 'uses_observation_masks': True,
+            },
+            # Data configuration (for probe compatibility)
+            'data_config': {
+                'effective_daily_sources': effective_daily,
+                'effective_monthly_sources': effective_monthly,
+                'n_daily_sources': len(effective_daily),
+                'n_monthly_sources': len(effective_monthly),
+                'daily_seq_len': data_config.daily_seq_len,
+                'monthly_seq_len': data_config.monthly_seq_len,
+                'detrend_viirs': data_config.detrend_viirs,
+                'use_disaggregated_equipment': data_config.use_disaggregated_equipment,
+                'feature_dims_per_source': feature_dims,
+            },
+            # Dataset statistics
+            'dataset_stats': {
+                'n_train_samples': len(train_dataset),
+                'n_val_samples': len(val_dataset),
+                'n_test_samples': len(test_dataset),
+            },
+            # Model info
+            'model_info': {
+                'n_params': n_params,
+                'd_model': config.d_model,
             }
         }
 
@@ -1319,18 +1368,22 @@ def train_tactical_stage(
 # MAIN PIPELINE
 # =============================================================================
 
-def run_pipeline(config: PipelineConfig) -> Dict[str, Any]:
+def run_pipeline(config: PipelineConfig, run_id: Optional[str] = None) -> Dict[str, Any]:
     """
     Run the full training pipeline.
 
     Args:
         config: Pipeline configuration
+        run_id: Optional custom run ID. If None, generates from timestamp.
 
     Returns:
         Dictionary with results from all stages
     """
-    # Setup
-    # If checkpoint_dir is absolute, use as-is; otherwise make relative to ANALYSIS_DIR
+    # Setup training run manager for organized output
+    run_manager = TrainingRunManager(run_id=run_id)
+    run_manager.setup()
+
+    # Also keep legacy checkpoint_dir for backward compatibility
     checkpoint_dir_path = Path(config.checkpoint_dir)
     if not checkpoint_dir_path.is_absolute():
         checkpoint_dir = ANALYSIS_DIR / config.checkpoint_dir
@@ -1338,18 +1391,48 @@ def run_pipeline(config: PipelineConfig) -> Dict[str, Any]:
         checkpoint_dir = checkpoint_dir_path
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
-    logger = setup_logging(checkpoint_dir / 'logs', config.verbose)
+    logger = setup_logging(run_manager.run_dir / 'logs', config.verbose)
     checkpoint_manager = CheckpointManager(checkpoint_dir)
     device = get_device(config.device)
 
     logger.info("=" * 70)
     logger.info("TACTICAL STATE PREDICTION - FULL TRAINING PIPELINE")
     logger.info("=" * 70)
-    logger.info(f"\nDevice: {device}")
-    logger.info(f"Checkpoint directory: {checkpoint_dir}")
+    logger.info(f"\nRun ID: {run_manager.run_id}")
+    logger.info(f"Run directory: {run_manager.run_dir}")
+    logger.info(f"Device: {device}")
 
-    # Save configuration
-    config.save(str(checkpoint_dir / 'pipeline_config.json'))
+    # Save configuration to run directory
+    run_manager.save_config(config)
+    config.save(str(checkpoint_dir / 'pipeline_config.json'))  # Legacy location
+
+    # Update run metadata with full config values
+    run_manager.update_metadata(
+        d_model=config.d_model,
+        use_multi_resolution=config.use_multi_resolution,
+        device=str(device),
+        # Data configuration flags (explicit values, not defaults)
+        detrend_viirs=config.detrend_viirs,
+        use_disaggregated_equipment=config.use_disaggregated_equipment,
+        # Training settings
+        batch_size=config.batch_size,
+        learning_rate=config.learning_rate,
+        weight_decay=config.weight_decay,
+        early_stopping_strategy=config.early_stopping_strategy,
+        use_swa=config.use_swa,
+    )
+
+    # Capture git commit hash for reproducibility
+    try:
+        import subprocess
+        git_hash = subprocess.check_output(
+            ['git', 'rev-parse', 'HEAD'],
+            cwd=str(PROJECT_ROOT),
+            stderr=subprocess.DEVNULL
+        ).decode('utf-8').strip()
+        run_manager.update_metadata(git_commit_hash=git_hash)
+    except Exception:
+        pass  # Git not available or not a repo
 
     results = {}
     start_time = time.time()
@@ -1378,6 +1461,10 @@ def run_pipeline(config: PipelineConfig) -> Dict[str, Any]:
         results['interpolation']['duration_seconds'] = time.time() - stage_start
 
         checkpoint_manager.save_stage_checkpoint(1, results)
+        run_manager.mark_stage_complete(
+            1, results['interpolation']['duration_seconds'],
+            metrics=results['interpolation'].get('metrics', {})
+        )
         logger.info(f"Stage 1 completed in {results['interpolation']['duration_seconds']:.1f}s")
 
     # Stage 2: Unified
@@ -1391,6 +1478,10 @@ def run_pipeline(config: PipelineConfig) -> Dict[str, Any]:
         results['unified']['duration_seconds'] = time.time() - stage_start
 
         checkpoint_manager.save_stage_checkpoint(2, results)
+        run_manager.mark_stage_complete(
+            2, results['unified']['duration_seconds'],
+            metrics=results['unified'].get('metrics', {})
+        )
         logger.info(f"Stage 2 completed in {results['unified']['duration_seconds']:.1f}s")
 
     # Stage 3: HAN (standard or multi-resolution)
@@ -1417,6 +1508,41 @@ def run_pipeline(config: PipelineConfig) -> Dict[str, Any]:
         results['han']['multi_resolution'] = config.use_multi_resolution
 
         checkpoint_manager.save_stage_checkpoint(3, results)
+        run_manager.mark_stage_complete(
+            3, results['han']['duration_seconds'],
+            metrics=results['han'].get('metrics', {})
+        )
+        # Update HAN-specific metadata
+        if 'metrics' in results['han']:
+            run_manager.update_metadata(
+                han_best_val_loss=results['han']['metrics'].get('final_val_loss', 0.0),
+            )
+        # Update data config metadata (critical for probe compatibility)
+        if 'data_config' in results['han']:
+            dc = results['han']['data_config']
+            run_manager.update_metadata(
+                effective_daily_sources=dc.get('effective_daily_sources', []),
+                effective_monthly_sources=dc.get('effective_monthly_sources', []),
+                n_daily_sources=dc.get('n_daily_sources', 0),
+                n_monthly_sources=dc.get('n_monthly_sources', 0),
+                daily_seq_len=dc.get('daily_seq_len', 365),
+                monthly_seq_len=dc.get('monthly_seq_len', 12),
+                feature_dims_per_source=dc.get('feature_dims_per_source', {}),
+            )
+        # Update dataset statistics
+        if 'dataset_stats' in results['han']:
+            ds = results['han']['dataset_stats']
+            run_manager.update_metadata(
+                n_train_samples=ds.get('n_train_samples', 0),
+                n_val_samples=ds.get('n_val_samples', 0),
+                n_test_samples=ds.get('n_test_samples', 0),
+            )
+        # Update model info
+        if 'model_info' in results['han']:
+            mi = results['han']['model_info']
+            run_manager.update_metadata(
+                han_n_params=mi.get('n_params', 0),
+            )
         logger.info(f"Stage 3 completed in {results['han']['duration_seconds']:.1f}s")
 
     # Stage 4: Temporal
@@ -1430,6 +1556,10 @@ def run_pipeline(config: PipelineConfig) -> Dict[str, Any]:
         results['temporal']['duration_seconds'] = time.time() - stage_start
 
         checkpoint_manager.save_stage_checkpoint(4, results)
+        run_manager.mark_stage_complete(
+            4, results['temporal']['duration_seconds'],
+            metrics=results['temporal'].get('metrics', {})
+        )
         logger.info(f"Stage 4 completed in {results['temporal']['duration_seconds']:.1f}s")
 
     # Stage 5: Tactical State
@@ -1443,6 +1573,10 @@ def run_pipeline(config: PipelineConfig) -> Dict[str, Any]:
         results['tactical']['duration_seconds'] = time.time() - stage_start
 
         checkpoint_manager.save_stage_checkpoint(5, results)
+        run_manager.mark_stage_complete(
+            5, results['tactical']['duration_seconds'],
+            metrics=results['tactical'].get('metrics', {})
+        )
         logger.info(f"Stage 5 completed in {results['tactical']['duration_seconds']:.1f}s")
 
     # Final evaluation and summary
@@ -1480,6 +1614,24 @@ def run_pipeline(config: PipelineConfig) -> Dict[str, Any]:
     # Save final results
     checkpoint_manager.save_pipeline_results(results)
     logger.info(f"\nResults saved to {checkpoint_dir / 'pipeline_results.json'}")
+
+    # Finalize training run and copy checkpoints to run directory
+    run_manager.finalize(total_duration=total_time)
+
+    # Copy checkpoints to organized run directory
+    from training_output_manager import copy_checkpoints_to_run
+    try:
+        copy_checkpoints_to_run(run_manager)
+        logger.info(f"\nCheckpoints copied to run directory: {run_manager.run_dir}")
+    except Exception as e:
+        logger.warning(f"Failed to copy checkpoints to run directory: {e}")
+
+    logger.info(f"\n{'=' * 70}")
+    logger.info(f"Training run complete: {run_manager.run_id}")
+    logger.info(f"Run directory: {run_manager.run_dir}")
+    logger.info(f"To run probes on this training run:")
+    logger.info(f"  python -m analysis.probes.run_probes --training-run {run_manager.run_id} --all")
+    logger.info(f"{'=' * 70}")
 
     return results
 

@@ -111,17 +111,19 @@ class MultiResolutionConfig:
     detrend_viirs: bool = True  # Apply first-order differencing to remove trend (Probe 1.2.3)
     exclude_viirs: bool = False  # Completely exclude VIIRS from the dataset
 
-    # Equipment disaggregation (Probe 1.1.2)
-    # Drones have highest mutual information (MI=0.449) and lead casualties by 7-27 days.
-    # When True, replaces aggregated "equipment" with separate drones/armor/artillery/aircraft.
-    use_disaggregated_equipment: bool = False  # Set True for optimized source separation
+    # Equipment disaggregation (Probe 1.1.2, optimization-implementation-plan.md §0.3)
+    # Drones have highest mutual information (MI=0.449, r=0.289) and lead casualties by 7-27 days.
+    # When True, replaces aggregated "equipment" with separate drones/armor/artillery.
+    # Note: "aircraft" is excluded due to negative correlation with casualties.
+    use_disaggregated_equipment: bool = True  # Set True for new runs with optimized source separation
 
     def get_effective_daily_sources(self) -> List[str]:
         """
         Get effective daily sources list based on configuration options.
 
         Handles:
-        - Equipment disaggregation: replaces 'equipment' with drones/armor/artillery/aircraft
+        - Equipment disaggregation: replaces 'equipment' with drones/armor/artillery
+          (aircraft excluded per optimization plan - negative correlation)
         - VIIRS exclusion: removes 'viirs' from sources
 
         Returns:
@@ -130,9 +132,14 @@ class MultiResolutionConfig:
         sources = list(self.daily_sources)
 
         # Handle equipment disaggregation
+        # Per optimization-implementation-plan.md §0.3:
+        # - drones: MI=0.449, r=0.289 (HIGHEST predictive value)
+        # - armor (APCs): r=0.221
+        # - artillery: Mixed signal
+        # - aircraft: EXCLUDED (negative correlation with casualties)
         if self.use_disaggregated_equipment and "equipment" in sources:
             idx = sources.index("equipment")
-            sources = sources[:idx] + ["drones", "armor", "artillery", "aircraft"] + sources[idx+1:]
+            sources = sources[:idx] + ["drones", "armor", "artillery"] + sources[idx+1:]
 
         # Handle VIIRS exclusion
         if self.exclude_viirs and "viirs" in sources:

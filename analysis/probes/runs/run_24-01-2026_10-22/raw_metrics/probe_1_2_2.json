@@ -1,0 +1,33 @@
+{
+  "probe_id": "1.2.2",
+  "probe_name": "VIIRS Feature Decomposition",
+  "status": "completed",
+  "duration_seconds": 0.2407538890838623,
+  "findings": [
+    {
+      "key_result": "Most important VIIRS feature: radiance_max",
+      "significance": "r=-0.0506, MI=0.0504",
+      "interpretation": "This feature contributes most to casualty prediction signal"
+    },
+    {
+      "key_result": "Found 7 highly correlated VIIRS feature pairs (|r| > 0.8)",
+      "significance": "[{'feature_1': 'radiance_mean', 'feature_2': 'radiance_min', 'correlation': np.float64(0.8572229612411902)}, {'feature_1': 'radiance_mean', 'feature_2': 'radiance_p50', 'correlation': np.float64(0.994131775902834)}, {'feature_1': 'radiance_mean', 'feature_2': 'radiance_p90', 'correlation': np.float64(0.9906214322947711)}]",
+      "interpretation": "High redundancy among VIIRS features - consider dimensionality reduction"
+    }
+  ],
+  "artifacts": {
+    "figures": [
+      "/Users/daniel.tipton/ML_OSINT/analysis/probes/runs/run_24-01-2026_10-22/figures/1_2_2_viirs_feature_decomposition.png"
+    ],
+    "tables": [
+      "/Users/daniel.tipton/ML_OSINT/analysis/probes/runs/run_24-01-2026_10-22/raw_metrics/1_2_2_viirs_feature_importance.csv"
+    ]
+  },
+  "recommendations": [
+    "Prioritize radiance_max in model feature selection",
+    "Apply PCA to reduce VIIRS feature redundancy",
+    "Investigate non-linear relationships for features with high MI but low r",
+    "Consider creating composite VIIRS index from top features"
+  ],
+  "error_message": null
+}

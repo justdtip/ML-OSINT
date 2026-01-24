@@ -1,10 +1,9 @@
 """
 Comprehensive Model Comparison Report
 
-Analyzes and compares three unified model variants:
+Analyzes and compares unified model variants:
 1. Cumulative Model - Uses raw cumulative equipment losses
 2. Delta Model - Uses only daily change (delta) equipment features
-3. Hybrid Model - Combines delta, rolling averages, and normalized cumulative features
 
 Generates detailed report on:
 - Architecture and parameter counts
@@ -48,11 +47,6 @@ from unified_interpolation_delta import (
     SOURCE_CONFIGS as DELTA_CONFIGS,
     UnifiedInterpolationModelDelta,
     extract_equipment_delta_features
-)
-from unified_interpolation_hybrid import (
-    SOURCE_CONFIGS as HYBRID_CONFIGS,
-    UnifiedInterpolationModelHybrid,
-    extract_hybrid_equipment_features
 )
 from interpolation_data_loaders import (
     DeepStateDataLoader,
@@ -109,22 +103,6 @@ def load_all_models(device):
         models['delta'] = {'model': model, 'configs': configs}
         print("Loaded delta model")
 
-    # Hybrid model
-    hybrid_path = MODEL_DIR / 'unified_interpolation_hybrid_best.pt'
-    if hybrid_path.exists():
-        state = torch.load(hybrid_path, map_location='cpu', weights_only=False)
-        from copy import deepcopy
-        configs = deepcopy(HYBRID_CONFIGS)
-        for name in configs:
-            key = f'encoders.{name}.feature_proj.0.weight'
-            if key in state:
-                configs[name].n_features = state[key].shape[1]
-        model = UnifiedInterpolationModelHybrid(configs, d_embed=64, nhead=4, num_fusion_layers=2)
-        model.load_state_dict(state)
-        model.to(device).eval()
-        models['hybrid'] = {'model': model, 'configs': configs}
-        print("Loaded hybrid model")
-
     return models
 
 
@@ -150,12 +128,6 @@ def load_data_for_model(model_type):
             if model_type == 'delta':
                 if hasattr(loader, 'feature_names'):
                     data, feat_names = extract_equipment_delta_features(data, loader.feature_names)
-                    feature_names[name] = feat_names
-                else:
-                    feature_names[name] = [f"feat_{i}" for i in range(data.shape[1])]
-            elif model_type == 'hybrid':
-                if hasattr(loader, 'feature_names'):
-                    data, feat_names = extract_hybrid_equipment_features(data, loader.feature_names)
                     feature_names[name] = feat_names
                 else:
                     feature_names[name] = [f"feat_{i}" for i in range(data.shape[1])]

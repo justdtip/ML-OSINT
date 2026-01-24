@@ -1,0 +1,13 @@
+{
+  "probe_id": "5.2.1",
+  "probe_name": "Event-Triggered Response Analysis",
+  "status": "completed",
+  "duration_seconds": 11.173941850662231,
+  "findings": {},
+  "artifacts": {
+    "figures": [],
+    "tables": []
+  },
+  "recommendations": [],
+  "error_message": null
+}

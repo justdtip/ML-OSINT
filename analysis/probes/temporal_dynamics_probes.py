@@ -97,7 +97,8 @@ from config.paths import (
     PROJECT_ROOT,
     ANALYSIS_DIR as CONFIG_ANALYSIS_DIR,
     MULTI_RES_CHECKPOINT_DIR,
-    PROBE_OUTPUT_DIR,
+    get_probe_figures_dir,
+    get_probe_metrics_dir,
 )
 
 warnings.filterwarnings('ignore', category=UserWarning)
@@ -110,8 +111,14 @@ warnings.filterwarnings('ignore', category=UserWarning)
 BASE_DIR = PROJECT_ROOT
 ANALYSIS_DIR = CONFIG_ANALYSIS_DIR
 CHECKPOINT_DIR = MULTI_RES_CHECKPOINT_DIR
-OUTPUT_DIR = PROBE_OUTPUT_DIR
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def get_output_dir():
+    """Get current output directory for figures."""
+    return get_probe_figures_dir()
+
+
+# Note: OUTPUT_DIR is now dynamic - use get_output_dir() instead
 
 # Conflict start and regime transitions
 CONFLICT_START = pd.Timestamp("2022-02-24")
@@ -395,7 +402,7 @@ class BaseProbe(ABC):
         self.model = model
         self.dataset = dataset
         self.device = device
-        self.output_dir = output_dir or OUTPUT_DIR
+        self.output_dir = output_dir or get_output_dir()
         self.model.eval()
 
     @property
@@ -1794,7 +1801,7 @@ class TemporalDynamicsProbeRunner:
         device: Optional[torch.device] = None,
     ):
         self.model_path = model_path or CHECKPOINT_DIR
-        self.output_dir = output_dir or OUTPUT_DIR
+        self.output_dir = output_dir or get_output_dir()
         self.device = device or torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
         self.model = None
@@ -2013,7 +2020,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--output-dir",
         type=str,
-        default=str(OUTPUT_DIR),
+        default=None,  # Will use get_output_dir() if not specified
         help="Output directory for results",
     )
     parser.add_argument(

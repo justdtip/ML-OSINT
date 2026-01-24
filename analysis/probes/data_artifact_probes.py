@@ -66,7 +66,8 @@ from config.paths import (
     DATA_DIR as CONFIG_DATA_DIR,
     ANALYSIS_DIR as CONFIG_ANALYSIS_DIR,
     MULTI_RES_CHECKPOINT_DIR,
-    PROBE_OUTPUT_DIR,
+    get_probe_figures_dir,
+    get_probe_metrics_dir,
 )
 
 # =============================================================================
@@ -76,11 +77,16 @@ from config.paths import (
 BASE_DIR = PROJECT_ROOT
 DATA_DIR = CONFIG_DATA_DIR
 ANALYSIS_DIR = CONFIG_ANALYSIS_DIR
-OUTPUT_DIR = PROBE_OUTPUT_DIR
 CHECKPOINT_DIR = MULTI_RES_CHECKPOINT_DIR
 
-# Ensure output directory exists
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+def get_output_dir():
+    """Get the current output directory for figures."""
+    return get_probe_figures_dir()
+
+
+# Note: OUTPUT_DIR references in this file now use get_output_dir() dynamically
+# The directory is created by the MasterProbeRunner before probes run
 
 # Source configurations
 DAILY_SOURCES = ['equipment', 'personnel', 'deepstate', 'firms', 'viina', 'viirs']
@@ -132,7 +138,7 @@ class ProbeResult:
         """Save result to YAML/JSON file."""
         if path is None:
             ext = '.yaml' if HAS_YAML else '.json'
-            path = OUTPUT_DIR / f"probe_{self.test_id.replace('.', '_')}{ext}"
+            path = get_probe_metrics_dir() / f"probe_{self.test_id.replace('.', '_')}{ext}"
         with open(path, 'w') as f:
             f.write(self.to_yaml())
         return path
@@ -176,14 +182,14 @@ class Probe(ABC):
 
     def save_figure(self, fig: plt.Figure, name: str) -> str:
         """Save a matplotlib figure and return the path."""
-        path = OUTPUT_DIR / f"{self.test_id.replace('.', '_')}_{name}.png"
+        path = get_output_dir() / f"{self.test_id.replace('.', '_')}_{name}.png"
         fig.savefig(path, dpi=150, bbox_inches='tight', facecolor='white')
         plt.close(fig)
         return str(path)
 
     def save_table(self, df: pd.DataFrame, name: str) -> str:
         """Save a DataFrame as CSV and return the path."""
-        path = OUTPUT_DIR / f"{self.test_id.replace('.', '_')}_{name}.csv"
+        path = get_probe_metrics_dir() / f"{self.test_id.replace('.', '_')}_{name}.csv"
         df.to_csv(path, index=True)
         return str(path)
 
@@ -2122,7 +2128,7 @@ class DataArtifactProbeSuite:
             }
 
         ext = '.yaml' if HAS_YAML else '.json'
-        summary_path = OUTPUT_DIR / f'probe_suite_summary{ext}'
+        summary_path = get_probe_metrics_dir() / f'probe_suite_summary{ext}'
         with open(summary_path, 'w') as f:
             if HAS_YAML:
                 yaml.dump(summary, f, default_flow_style=False)
@@ -2158,4 +2164,4 @@ if __name__ == "__main__":
         for finding in result.findings[:2]:
             print(f"  - {finding['key_result']}")
 
-    print(f"\nAll results saved to: {OUTPUT_DIR}")
+    print(f"\nAll results saved to: {get_output_dir()}")

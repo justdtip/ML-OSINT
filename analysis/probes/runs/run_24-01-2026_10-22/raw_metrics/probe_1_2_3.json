@@ -1,0 +1,43 @@
+{
+  "probe_id": "1.2.3",
+  "probe_name": "Trend Confounding Test",
+  "status": "completed",
+  "duration_seconds": 0.19663214683532715,
+  "findings": [
+    {
+      "key_result": "MINIMAL trend confounding",
+      "significance": "Mean correlation reduction after detrending: -8530.5%",
+      "interpretation": "High reduction indicates VIIRS-casualty correlation is largely spurious (both driven by time)"
+    },
+    {
+      "key_result": "radiance_mean: raw r=0.0079, detrended r=-0.0369",
+      "significance": "Correlation reduction: -366.9%",
+      "interpretation": "Large reduction = trend-driven; small reduction = robust signal"
+    },
+    {
+      "key_result": "radiance_std: raw r=-0.0298, detrended r=-0.0346",
+      "significance": "Correlation reduction: -16.2%",
+      "interpretation": "Large reduction = trend-driven; small reduction = robust signal"
+    },
+    {
+      "key_result": "pct_clear_sky: raw r=-0.0002, detrended r=0.0611",
+      "significance": "Correlation reduction: -25208.4%",
+      "interpretation": "Large reduction = trend-driven; small reduction = robust signal"
+    }
+  ],
+  "artifacts": {
+    "figures": [
+      "/Users/daniel.tipton/ML_OSINT/analysis/probes/runs/run_24-01-2026_10-22/figures/1_2_3_trend_confounding.png"
+    ],
+    "tables": [
+      "/Users/daniel.tipton/ML_OSINT/analysis/probes/runs/run_24-01-2026_10-22/raw_metrics/1_2_3_trend_confounding_analysis.csv"
+    ]
+  },
+  "recommendations": [
+    "Use first-differenced VIIRS features to remove trend confounding",
+    "Consider seasonal decomposition for more sophisticated detrending",
+    "Test model performance with and without detrended features",
+    "If confounding is strong, VIIRS dominance may be an artifact - verify with ablation"
+  ],
+  "error_message": null
+}

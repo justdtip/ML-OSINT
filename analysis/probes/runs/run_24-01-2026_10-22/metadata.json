@@ -1,0 +1,50 @@
+{
+  "run_id": "run_24-01-2026_10-22",
+  "run_timestamp": "2026-01-24T10:22:04.398147",
+  "model_checkpoint": "/Users/daniel.tipton/ML_OSINT/analysis/checkpoints/multi_resolution/best_checkpoint.pt",
+  "d_model": 64,
+  "nhead": 4,
+  "num_daily_layers": 3,
+  "num_monthly_layers": 2,
+  "num_fusion_layers": 2,
+  "num_params": 2267967,
+  "daily_seq_len": 365,
+  "monthly_seq_len": 12,
+  "daily_sources": [
+    "equipment",
+    "personnel",
+    "deepstate",
+    "firms",
+    "viina",
+    "viirs"
+  ],
+  "monthly_sources": [
+    "sentinel",
+    "hdx_conflict",
+    "hdx_food",
+    "hdx_rainfall",
+    "iom"
+  ],
+  "detrend_viirs": true,
+  "use_disaggregated_equipment": false,
+  "training_epochs": 49,
+  "best_epoch": 0,
+  "best_val_loss": 3.9069530963897705,
+  "task_names": [
+    "casualty",
+    "regime",
+    "transition",
+    "anomaly",
+    "forecast"
+  ],
+  "task_priors": {},
+  "phase_name": "",
+  "phase_description": "",
+  "optimizations_applied": [],
+  "device": "cpu",
+  "torch_version": "2.9.1",
+  "python_version": "3.13.7",
+  "probes_completed": 42,
+  "probes_failed": 4,
+  "total_duration_seconds": 1345.25905251503
+}

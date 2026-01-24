@@ -1,0 +1,13 @@
+{
+  "probe_id": "5.2.3",
+  "probe_name": "Semantic Anomaly Detection",
+  "status": "completed",
+  "duration_seconds": 11.068953275680542,
+  "findings": {},
+  "artifacts": {
+    "figures": [],
+    "tables": []
+  },
+  "recommendations": [],
+  "error_message": null
+}

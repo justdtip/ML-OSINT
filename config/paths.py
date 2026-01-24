@@ -102,7 +102,67 @@ TEMPORAL_PREDICTION_OUTPUT_DIR = ANALYSIS_OUTPUT_DIR / "temporal_prediction"
 # PROBE DIRECTORIES
 # ============================================================================
 
+# Legacy output directory (deprecated - kept for backward compatibility)
 PROBE_OUTPUT_DIR = ANALYSIS_DIR / "probes" / "outputs"
+
+# New organized run directory structure
+PROBE_RUNS_DIR = ANALYSIS_DIR / "probes" / "runs"
+
+# Current run output directories (set at runtime by the probe runner)
+# These are used by individual probe modules when saving figures/metrics
+_CURRENT_PROBE_RUN_DIR: Path = None
+_CURRENT_PROBE_FIGURES_DIR: Path = None
+_CURRENT_PROBE_METRICS_DIR: Path = None
+
+
+def set_current_probe_run(run_dir: Path, figures_dir: Path, metrics_dir: Path) -> None:
+    """Set the current probe run output directories.
+
+    Called by the MasterProbeRunner when starting a new run.
+    Individual probe modules should use get_probe_*_dir() functions.
+
+    Args:
+        run_dir: Base directory for the current run
+        figures_dir: Directory for figures within the run
+        metrics_dir: Directory for raw metrics within the run
+    """
+    global _CURRENT_PROBE_RUN_DIR, _CURRENT_PROBE_FIGURES_DIR, _CURRENT_PROBE_METRICS_DIR
+    _CURRENT_PROBE_RUN_DIR = run_dir
+    _CURRENT_PROBE_FIGURES_DIR = figures_dir
+    _CURRENT_PROBE_METRICS_DIR = metrics_dir
+
+
+def get_probe_run_dir() -> Path:
+    """Get the current probe run directory.
+
+    Returns:
+        Path to current run directory, or legacy PROBE_OUTPUT_DIR if not set
+    """
+    if _CURRENT_PROBE_RUN_DIR is not None:
+        return _CURRENT_PROBE_RUN_DIR
+    return PROBE_OUTPUT_DIR
+
+
+def get_probe_figures_dir() -> Path:
+    """Get the current probe figures directory.
+
+    Returns:
+        Path to figures directory for the current run
+    """
+    if _CURRENT_PROBE_FIGURES_DIR is not None:
+        return _CURRENT_PROBE_FIGURES_DIR
+    return PROBE_OUTPUT_DIR
+
+
+def get_probe_metrics_dir() -> Path:
+    """Get the current probe metrics directory.
+
+    Returns:
+        Path to raw_metrics directory for the current run
+    """
+    if _CURRENT_PROBE_METRICS_DIR is not None:
+        return _CURRENT_PROBE_METRICS_DIR
+    return PROBE_OUTPUT_DIR
 
 
 # ============================================================================

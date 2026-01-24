@@ -124,6 +124,23 @@ except ImportError as e:
     warnings.warn(f"Data artifact probes not available: {e}")
 
 # ============================================================================
+# Section 1.4-1.5: Statistical Analysis Probes
+# ============================================================================
+try:
+    from .statistical_analysis_probes import (
+        # Section 1.4: Statistical Correlation Analysis
+        MultiVariableCorrelationProbe,
+        SeasonalPatternProbe,
+
+        # Section 1.5: Neural Pattern Discovery
+        NeuralPatternMiningProbe,
+    )
+    _STATISTICAL_AVAILABLE = True
+except ImportError as e:
+    _STATISTICAL_AVAILABLE = False
+    warnings.warn(f"Statistical analysis probes not available: {e}")
+
+# ============================================================================
 # Section 2: Cross-Modal Fusion Validation
 # ============================================================================
 try:
@@ -321,6 +338,9 @@ def get_available_modules() -> Dict[str, bool]:
     """Check which probe modules are available."""
     return {
         "data_artifact": _DATA_ARTIFACT_AVAILABLE,
+        "statistical_analysis": _STATISTICAL_AVAILABLE,
+        "model_interpretability": _MODEL_INTERP_AVAILABLE,
+        "model_assessment": _MODEL_ASSESSMENT_AVAILABLE,
         "cross_modal_fusion": _CROSS_MODAL_AVAILABLE,
         "temporal_dynamics": _TEMPORAL_AVAILABLE,
         "semantic_structure": _SEMANTIC_STRUCTURE_AVAILABLE,
@@ -405,6 +425,20 @@ TIER_3_PROBES = [
     ("7.2.2", "Entity State Representation Design", "EntitySchemaSpec"),
     ("7.3.1", "Temporal Resolution Analysis", "ResolutionAnalysisProbe"),
     ("7.3.2", "Spatial Resolution Analysis", "ResolutionAnalysisProbe"),
+    # Statistical analysis probes (Section 1.4-1.5)
+    ("1.4.1", "Multi-Variable Correlation Analysis", "MultiVariableCorrelationProbe"),
+    ("1.4.2", "Seasonal Pattern Analysis", "SeasonalPatternProbe"),
+    ("1.5.1", "Neural Pattern Mining", "NeuralPatternMiningProbe"),
+    # Model interpretability probes (Section 2.3-2.4)
+    ("2.3.1", "JIM Module I/O Analysis", "JIMModuleIOProbe"),
+    ("2.3.2", "JIM Attention Pattern Analysis", "JIMAttentionAnalysisProbe"),
+    ("2.4.1", "Cross-Source Latent Analysis", "CrossSourceLatentProbe"),
+    ("2.4.2", "Delta Model Validation", "DeltaModelValidationProbe"),
+    # Model assessment probes (Section 8)
+    ("8.1.1", "Model Architecture Comparison", "ModelArchitectureComparisonProbe"),
+    ("8.1.2", "Reconstruction Performance Comparison", "ReconstructionPerformanceProbe"),
+    ("8.2.1", "Multi-Task Performance Assessment", "MultiTaskPerformanceProbe"),
+    ("8.2.2", "Training Dynamics Analysis", "TrainingDynamicsProbe"),
 ]
 
 
@@ -437,6 +471,65 @@ if _DATA_ARTIFACT_AVAILABLE:
         "GeographicVIIRSProbe",
         "PersonnelVIIRSMediationProbe",
         "DataArtifactProbeSuite",
+    ])
+
+if _STATISTICAL_AVAILABLE:
+    __all__.extend([
+        "MultiVariableCorrelationProbe",
+        "SeasonalPatternProbe",
+        "NeuralPatternMiningProbe",
+    ])
+
+# ============================================================================
+# Section 2.3-2.4: Model Interpretability Probes
+# ============================================================================
+try:
+    from .model_interpretability_probes import (
+        # Section 2.3: JIM Interpretability
+        JIMModuleIOProbe,
+        JIMAttentionAnalysisProbe,
+
+        # Section 2.4: Unified Model Validation
+        CrossSourceLatentProbe,
+        DeltaModelValidationProbe,
+    )
+    _MODEL_INTERP_AVAILABLE = True
+except ImportError as e:
+    _MODEL_INTERP_AVAILABLE = False
+    warnings.warn(f"Model interpretability probes not available: {e}")
+
+if _MODEL_INTERP_AVAILABLE:
+    __all__.extend([
+        "JIMModuleIOProbe",
+        "JIMAttentionAnalysisProbe",
+        "CrossSourceLatentProbe",
+        "DeltaModelValidationProbe",
+    ])
+
+# ============================================================================
+# Section 8: Model Assessment Probes
+# ============================================================================
+try:
+    from .model_assessment_probes import (
+        # Section 8.1: Cross-Model Comparison
+        ModelArchitectureComparisonProbe,
+        ReconstructionPerformanceProbe,
+
+        # Section 8.2: HAN Assessment
+        MultiTaskPerformanceProbe,
+        TrainingDynamicsProbe,
+    )
+    _MODEL_ASSESSMENT_AVAILABLE = True
+except ImportError as e:
+    _MODEL_ASSESSMENT_AVAILABLE = False
+    warnings.warn(f"Model assessment probes not available: {e}")
+
+if _MODEL_ASSESSMENT_AVAILABLE:
+    __all__.extend([
+        "ModelArchitectureComparisonProbe",
+        "ReconstructionPerformanceProbe",
+        "MultiTaskPerformanceProbe",
+        "TrainingDynamicsProbe",
     ])
 
 if _CROSS_MODAL_AVAILABLE:

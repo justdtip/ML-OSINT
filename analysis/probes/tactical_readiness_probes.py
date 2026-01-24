@@ -59,7 +59,8 @@ from config.paths import (
     PROJECT_ROOT,
     DATA_DIR as CONFIG_DATA_DIR,
     ANALYSIS_DIR as CONFIG_ANALYSIS_DIR,
-    PROBE_OUTPUT_DIR,
+    get_probe_figures_dir,
+    get_probe_metrics_dir,
 )
 
 # =============================================================================
@@ -69,10 +70,11 @@ from config.paths import (
 BASE_DIR = PROJECT_ROOT
 DATA_DIR = CONFIG_DATA_DIR
 ANALYSIS_DIR = CONFIG_ANALYSIS_DIR
-OUTPUT_DIR = PROBE_OUTPUT_DIR
 
-# Ensure output directory exists
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+def get_output_dir():
+    """Get current output directory for figures."""
+    return get_probe_figures_dir()
 
 
 # =============================================================================
@@ -1850,8 +1852,10 @@ class TacticalReadinessProbe:
     Runs all probes and generates comprehensive reports.
     """
 
-    def __init__(self, data_dir: Path = DATA_DIR, output_dir: Path = OUTPUT_DIR):
+    def __init__(self, data_dir: Path = DATA_DIR, output_dir: Path = None):
         self.data_dir = data_dir
+        if output_dir is None:
+            output_dir = get_output_dir()
         self.output_dir = output_dir
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -2079,7 +2083,7 @@ def main():
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=OUTPUT_DIR,
+        default=None,
         help="Path to output directory"
     )
     parser.add_argument(

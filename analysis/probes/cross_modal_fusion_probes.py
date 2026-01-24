@@ -47,14 +47,20 @@ from scipy.stats import pearsonr, spearmanr
 from torch import Tensor
 
 # Centralized path configuration
-from config.paths import PROBE_OUTPUT_DIR
+from config.paths import get_probe_figures_dir, get_probe_metrics_dir
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Default output directory
-DEFAULT_OUTPUT_DIR = PROBE_OUTPUT_DIR
+
+def get_output_dir():
+    """Get current output directory for figures."""
+    return get_probe_figures_dir()
+
+
+# Default output directory (set dynamically)
+DEFAULT_OUTPUT_DIR = None  # Use get_output_dir() instead
 
 
 def prepare_batch_for_model(batch: Dict[str, Any]) -> Dict[str, Any]:
@@ -83,10 +89,12 @@ class ProbeConfig:
     """Base configuration for all probes."""
     model: nn.Module
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
-    output_dir: Path = DEFAULT_OUTPUT_DIR
+    output_dir: Path = None  # Set dynamically in __post_init__
     random_seed: int = 42
 
     def __post_init__(self):
+        if self.output_dir is None:
+            self.output_dir = get_output_dir()
         self.output_dir = Path(self.output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         torch.manual_seed(self.random_seed)

@@ -1,0 +1,13 @@
+{
+  "probe_id": "6.2.1",
+  "probe_name": "Integrated Gradients",
+  "status": "completed",
+  "duration_seconds": 665.8525192737579,
+  "findings": {},
+  "artifacts": {
+    "figures": [],
+    "tables": []
+  },
+  "recommendations": [],
+  "error_message": null
+}

@@ -84,7 +84,8 @@ sns.set_palette("husl")
 from config.paths import (
     PROJECT_ROOT,
     ANALYSIS_DIR as CONFIG_ANALYSIS_DIR,
-    PROBE_OUTPUT_DIR,
+    get_probe_figures_dir,
+    get_probe_metrics_dir,
 )
 
 # =============================================================================
@@ -93,7 +94,11 @@ from config.paths import (
 
 BASE_DIR = PROJECT_ROOT
 ANALYSIS_DIR = CONFIG_ANALYSIS_DIR
-OUTPUT_DIR = PROBE_OUTPUT_DIR
+
+
+def get_output_dir():
+    """Get current output directory for figures."""
+    return get_probe_figures_dir()
 
 # Military operations with date ranges (start, end inclusive)
 MILITARY_OPERATIONS = {
@@ -173,8 +178,9 @@ GEOGRAPHIC_THEATERS = {
 
 def setup_output_dir() -> Path:
     """Create output directory for probe results."""
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    return OUTPUT_DIR
+    output_dir = get_output_dir()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    return output_dir
 
 
 def date_to_operation(date: Union[str, datetime, np.datetime64]) -> Optional[str]:
@@ -1370,7 +1376,7 @@ class SemanticStructureProbeRunner:
         self.casualty_data = casualty_data
         self.equipment_data = equipment_data
         self.territorial_data = territorial_data
-        self.output_dir = output_dir or OUTPUT_DIR
+        self.output_dir = output_dir or get_output_dir()
 
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1756,7 +1762,7 @@ def main():
         dates=dates,
         casualty_data=casualty_data,
         equipment_data=equipment_data,
-        output_dir=OUTPUT_DIR,
+        output_dir=get_output_dir(),
     )
 
     results = runner.run_all_probes()
@@ -1764,7 +1770,7 @@ def main():
     print()
     print("=" * 60)
     print("Probe analysis complete!")
-    print(f"Results saved to: {OUTPUT_DIR}")
+    print(f"Results saved to: {get_output_dir()}")
 
 
 if __name__ == "__main__":

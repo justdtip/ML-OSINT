@@ -1,0 +1,10 @@
+{
+  "probe_id": "3.1.2",
+  "probe_name": "Temporal Attention Patterns",
+  "status": "failed",
+  "duration_seconds": 2.138456106185913,
+  "findings": {},
+  "artifacts": {},
+  "recommendations": [],
+  "error_message": "'ProbeRunnerConfig' object has no attribute 'output_dir'"
+}

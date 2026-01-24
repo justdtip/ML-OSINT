@@ -49,6 +49,9 @@ warnings.filterwarnings("ignore", category=UserWarning)
 import numpy as np
 import torch
 
+# Import output manager for run organization
+from .output_manager import RunOutputManager, list_runs, compare_runs
+
 # ============================================================================
 # Configuration - Compute paths BEFORE any imports that might affect them
 # ============================================================================
@@ -98,8 +101,13 @@ class ProbeRunnerConfig:
     # Paths - defaults are absolute paths based on script location
     checkpoint_path: Path = field(default_factory=lambda: ANALYSIS_DIR / "checkpoints/multi_resolution/best_checkpoint.pt")
     checkpoint_dir: Path = field(default_factory=lambda: ANALYSIS_DIR / "checkpoints/multi_resolution")
-    output_dir: Path = field(default_factory=lambda: SCRIPT_DIR / "outputs")
     data_dir: Path = field(default_factory=lambda: PROJECT_DIR / "data")
+
+    # Run identification (for output organization)
+    run_id: Optional[str] = None  # Auto-generated if None
+    phase_name: str = ""  # e.g., "Phase0_Optimizations"
+    phase_description: str = ""  # Description of what this run tests
+    optimizations: List[str] = field(default_factory=list)  # List of optimizations applied
 
     # Device
     device: str = field(default_factory=lambda: "cuda" if torch.cuda.is_available() else "cpu")
@@ -117,6 +125,9 @@ class ProbeRunnerConfig:
     run_probe_ids: List[str] = field(default_factory=list)
     data_only: bool = False  # Run only probes that don't require model
 
+    # Pipeline stage selection (1=JIM, 2=Unified, 3=HAN, None=all stages)
+    pipeline_stage: Optional[int] = None
+
     # Data split for probes - 'test' is default for evaluation, 'train' covers all conflict phases
     # Use 'train' for probes that need to analyze patterns across all phases (clustering, temporal patterns)
     # Use 'all' to combine train+val+test for maximum coverage
@@ -126,8 +137,46 @@ class ProbeRunnerConfig:
         # Convert to Path objects if strings and resolve to absolute paths
         self.checkpoint_path = Path(self.checkpoint_path).resolve()
         self.checkpoint_dir = Path(self.checkpoint_dir).resolve()
-        self.output_dir = Path(self.output_dir).resolve()
         self.data_dir = Path(self.data_dir).resolve()
+
+
+# ============================================================================
+# Pipeline Stage to Probe Mapping
+# ============================================================================
+# Maps pipeline stages to the probe IDs that are relevant for each stage
+PIPELINE_STAGE_PROBES = {
+    # Stage 1: Joint Interpolation Models (JIM)
+    # Probes that analyze interpolation quality and JIM model behavior
+    1: [
+        # Data artifact probes (all use raw data, applicable to JIM output)
+        "1.1.1", "1.1.2", "1.1.3", "1.1.4",  # Equipment analysis
+        "1.2.1", "1.2.2", "1.2.3", "1.2.4",  # VIIRS analysis
+        "1.3.1",  # Personnel quality
+        "1.4.1", "1.4.2",  # Statistical correlation
+        "1.5.1",  # Neural pattern mining
+        # JIM-specific interpretability probes
+        "2.3.1",  # JIM Module I/O Analysis
+        "2.3.2",  # JIM Attention Pattern Analysis
+    ],
+    # Stage 2: Unified Cross-Source Model
+    # Probes that analyze cross-source relationships and unified embeddings
+    2: [
+        # All Stage 1 probes (unified model builds on interpolated data)
+        "1.1.1", "1.1.2", "1.1.3", "1.1.4",
+        "1.2.1", "1.2.2", "1.2.3", "1.2.4",
+        "1.3.1", "1.4.1", "1.4.2", "1.5.1",
+        "2.3.1", "2.3.2",
+        # Cross-source analysis probes
+        "2.4.1",  # Cross-Source Latent Analysis
+        "2.4.2",  # Delta Model Validation
+        # Model architecture comparison
+        "8.1.1",  # Model Architecture Comparison
+        "8.1.2",  # Reconstruction Performance Comparison
+    ],
+    # Stage 3: Hierarchical Attention Network (HAN)
+    # Full model - all probes applicable
+    3: None,  # None means all probes are applicable
+}
 
 
 # ============================================================================
@@ -246,9 +295,30 @@ class MasterProbeRunner:
         self.dataset = None
         self.dataloader = None
         self.isw_data = None
+        self._start_time = None
 
-        # Create output directory BEFORE setting up logging
-        self.config.output_dir.mkdir(parents=True, exist_ok=True)
+        # Setup output manager for organized run directories
+        self.output_manager = RunOutputManager(run_id=config.run_id)
+        self.output_manager.setup()
+
+        # Set global output directories for probe modules to use
+        from config.paths import set_current_probe_run
+        set_current_probe_run(
+            run_dir=self.output_manager.run_dir,
+            figures_dir=self.output_manager.figures_dir,
+            metrics_dir=self.output_manager.raw_metrics_dir,
+        )
+
+        # Set phase information if provided
+        if config.phase_name:
+            self.output_manager.set_phase_info(
+                phase_name=config.phase_name,
+                phase_description=config.phase_description,
+                optimizations=config.optimizations,
+            )
+
+        # Update metadata with device info
+        self.output_manager.update_metadata(device=config.device)
 
         # Now setup logging (which needs the output dir to exist)
         self.logger = self._setup_logging()
@@ -268,8 +338,8 @@ class MasterProbeRunner:
         ch.setFormatter(formatter)
         logger.addHandler(ch)
 
-        # File handler
-        log_file = self.config.output_dir / f"probe_run_{datetime.now():%Y%m%d_%H%M%S}.log"
+        # File handler - save to raw_metrics in run directory
+        log_file = self.output_manager.raw_metrics_dir / "probe_run.log"
         fh = logging.FileHandler(log_file)
         fh.setLevel(logging.DEBUG)
         fh.setFormatter(formatter)
@@ -278,9 +348,19 @@ class MasterProbeRunner:
         return logger
 
     def _load_model(self):
-        """Load the trained model from checkpoint."""
+        """Load the trained model from checkpoint based on pipeline stage."""
         if self.model is not None:
             return
+
+        # Dispatch to stage-specific loader if pipeline_stage is set
+        stage = self.config.pipeline_stage
+        if stage == 1:
+            self._load_stage1_models()
+            return
+        elif stage == 2:
+            self._load_stage2_model()
+            return
+        # Stage 3 or None: load Multi-Resolution HAN (default)
 
         self.logger.info(f"Loading model from {self.config.checkpoint_path}")
 
@@ -411,8 +491,160 @@ class MasterProbeRunner:
             self.logger.info(f"Daily sources: {list(daily_source_configs.keys())}")
             self.logger.info(f"Monthly sources: {list(monthly_source_configs.keys())}")
 
+            # Extract metadata for run comparison
+            self.output_manager.extract_model_metadata(
+                checkpoint_path=self.config.checkpoint_path,
+                model=self.model,
+                config=config_dict,
+            )
+            self.output_manager.extract_data_metadata(data_config)
+            self.output_manager.update_metadata(
+                daily_sources=list(daily_source_configs.keys()),
+                monthly_sources=list(monthly_source_configs.keys()),
+                task_names=['casualty', 'regime', 'transition', 'anomaly', 'forecast'],
+            )
+
+            # Extract training info from checkpoint
+            if 'history' in checkpoint:
+                history = checkpoint.get('history', {})
+                self.output_manager.update_metadata(
+                    training_epochs=len(history.get('train_history', {}).get('total', [])),
+                )
+            if 'best_epoch' in checkpoint:
+                self.output_manager.update_metadata(best_epoch=checkpoint['best_epoch'])
+            if 'best_val_loss' in checkpoint:
+                self.output_manager.update_metadata(best_val_loss=checkpoint['best_val_loss'])
+
         except Exception as e:
             self.logger.error(f"Failed to load model: {e}")
+            raise
+
+    def _load_stage1_models(self):
+        """Load Stage 1: Joint Interpolation Models (JIM)."""
+        self.logger.info("Loading Stage 1: Joint Interpolation Models")
+
+        try:
+            from config.paths import INTERP_MODEL_DIR
+
+            # Scan directory for all available JIM models
+            model_files = list(INTERP_MODEL_DIR.glob('interp_*_best.pt'))
+            if not model_files:
+                raise ValueError(f"No JIM models found in {INTERP_MODEL_DIR}")
+
+            # Load each model and store metadata
+            self.jim_models = {}
+            self.jim_model_info = {}
+
+            for model_path in sorted(model_files):
+                # Extract source name from filename (interp_<source>_best.pt)
+                source_name = model_path.stem.replace('interp_', '').replace('_best', '')
+                self.logger.info(f"  Loading JIM model: {source_name}")
+
+                try:
+                    state = torch.load(model_path, map_location=self.config.device, weights_only=False)
+
+                    # Store model state and metadata (don't instantiate model class)
+                    model_info = {
+                        'path': str(model_path),
+                        'state': state,
+                    }
+
+                    # Extract model config if available
+                    if isinstance(state, dict):
+                        if 'config' in state:
+                            model_info['config'] = state['config']
+                        if 'model_state_dict' in state:
+                            model_info['n_params'] = sum(
+                                v.numel() for v in state['model_state_dict'].values()
+                                if hasattr(v, 'numel')
+                            )
+
+                    self.jim_model_info[source_name] = model_info
+                    self.jim_models[source_name] = state  # Store raw state for probes
+
+                except Exception as e:
+                    self.logger.warning(f"    Failed to load {source_name}: {e}")
+
+            if not self.jim_models:
+                raise ValueError("No JIM models could be loaded")
+
+            self.logger.info(f"Loaded {len(self.jim_models)} JIM models")
+
+            # Set model to None for stage 1 (probes should use jim_models directly)
+            self.model = None
+
+            # Update metadata
+            self.output_manager.update_metadata(
+                pipeline_stage=1,
+                stage_name="Joint Interpolation Models (JIM)",
+                jim_models=list(self.jim_models.keys()),
+                n_jim_models=len(self.jim_models),
+                task_names=['interpolation'],
+            )
+
+        except Exception as e:
+            self.logger.error(f"Failed to load Stage 1 models: {e}")
+            raise
+
+    def _load_stage2_model(self):
+        """Load Stage 2: Unified Cross-Source Model."""
+        self.logger.info("Loading Stage 2: Unified Cross-Source Model")
+
+        try:
+            from config.paths import MODEL_DIR
+
+            # Find available unified models
+            model_paths = [
+                MODEL_DIR / 'unified_interpolation_delta_best.pt',
+                MODEL_DIR / 'unified_interpolation_best.pt',
+            ]
+
+            loaded_models = {}
+            for model_path in model_paths:
+                if model_path.exists():
+                    model_name = model_path.stem.replace('_best', '')
+                    self.logger.info(f"  Loading: {model_name}")
+
+                    state = torch.load(model_path, map_location=self.config.device, weights_only=False)
+
+                    # Store model state and metadata
+                    model_info = {
+                        'path': str(model_path),
+                        'state': state,
+                    }
+
+                    # Extract parameter count
+                    if isinstance(state, dict) and 'model_state_dict' in state:
+                        n_params = sum(
+                            v.numel() for v in state['model_state_dict'].values()
+                            if hasattr(v, 'numel')
+                        )
+                        model_info['n_params'] = n_params
+                        self.logger.info(f"    Parameters: {n_params:,}")
+
+                    loaded_models[model_name] = model_info
+
+            if not loaded_models:
+                raise ValueError(f"No unified models found at {MODEL_DIR}")
+
+            # Store all unified models for probes
+            self.unified_models = loaded_models
+
+            # Set model to None (probes should use unified_models directly)
+            self.model = None
+
+            self.logger.info(f"Loaded {len(loaded_models)} unified model(s): {list(loaded_models.keys())}")
+
+            # Update metadata
+            self.output_manager.update_metadata(
+                pipeline_stage=2,
+                stage_name="Unified Cross-Source Model",
+                unified_models=list(loaded_models.keys()),
+                task_names=['reconstruction', 'cross_source'],
+            )
+
+        except Exception as e:
+            self.logger.error(f"Failed to load Stage 2 model: {e}")
             raise
 
     def _load_isw_data(self):
@@ -476,6 +708,14 @@ class MasterProbeRunner:
         # Filter for data-only if requested
         if self.config.data_only:
             probes = [p for p in probes if not p.requires_model]
+
+        # Filter by pipeline stage if specified
+        if self.config.pipeline_stage is not None:
+            stage = self.config.pipeline_stage
+            stage_probe_ids = PIPELINE_STAGE_PROBES.get(stage)
+            if stage_probe_ids is not None:  # None means all probes allowed (stage 3)
+                probes = [p for p in probes if p.id in stage_probe_ids]
+                self.logger.info(f"Filtered to {len(probes)} probes for pipeline stage {stage}")
 
         return probes
 
@@ -600,7 +840,7 @@ class MasterProbeRunner:
                     result = probe.run(num_samples=self.config.num_samples)
                 except TypeError:
                     result = probe.run()
-                result.save(self.config.output_dir)
+                result.save(self.output_manager.figures_dir)
                 # Get figure paths - result has 'figures' dict, not 'figure_paths'
                 figure_paths = list(result.figures.keys()) if hasattr(result, 'figures') else []
                 return {
@@ -1033,14 +1273,14 @@ class MasterProbeRunner:
         return self.run_all()
 
     def _save_result(self, result: MasterProbeResult):
-        """Save individual probe result."""
-        result_path = self.config.output_dir / f"probe_{result.probe_id.replace('.', '_')}.json"
+        """Save individual probe result to raw_metrics."""
+        result_path = self.output_manager.get_metrics_path(f"probe_{result.probe_id.replace('.', '_')}")
         with open(result_path, 'w') as f:
             json.dump(result.to_dict(), f, indent=2, default=str)
 
     def generate_report(self):
         """Generate comprehensive markdown report."""
-        report_path = self.config.output_dir / "probe_battery_report.md"
+        report_path = self.output_manager.report_path
 
         with open(report_path, 'w') as f:
             f.write("# Multi-Resolution HAN Probe Battery Report\n\n")
@@ -1110,13 +1350,25 @@ class MasterProbeRunner:
 
         self.logger.info(f"Report generated: {report_path}")
 
-        # Also save as JSON
-        json_path = self.config.output_dir / "probe_battery_results.json"
+        # Also save as JSON in raw_metrics
+        json_path = self.output_manager.get_metrics_path("probe_battery_results")
         with open(json_path, 'w') as f:
             json.dump(
                 {pid: r.to_dict() for pid, r in self.results.items()},
                 f, indent=2, default=str
             )
+
+        # Finalize metadata
+        total = len(self.results)
+        completed = sum(1 for r in self.results.values() if r.status == "completed")
+        failed = sum(1 for r in self.results.values() if r.status == "failed")
+        total_duration = sum(r.duration_seconds for r in self.results.values())
+
+        self.output_manager.finalize(
+            probes_completed=completed,
+            probes_failed=failed,
+            total_duration=total_duration,
+        )
 
         self.logger.info(f"JSON results saved: {json_path}")
 
@@ -1170,13 +1422,29 @@ Examples:
     parser.add_argument("--section", type=int, choices=list(range(1, 8)), help="Run specific section (1-7)")
     parser.add_argument("--probe", nargs="+", help="Run specific probe(s) by ID")
     parser.add_argument("--data-only", action="store_true", help="Run only data probes (no model required)")
+    parser.add_argument("--pipeline-stage", type=int, choices=[1, 2, 3],
+                        help="Run probes for specific pipeline stage: 1=JIM, 2=Unified, 3=HAN (default: 3)")
     parser.add_argument("--list", action="store_true", help="List available probes")
 
     # Paths - use None as default to trigger dataclass defaults
     parser.add_argument("--checkpoint", type=str, default=None,
-                        help="Path to model checkpoint (default: analysis/checkpoints/multi_resolution/checkpoint_epoch_99.pt)")
-    parser.add_argument("--output-dir", type=str, default=None,
-                        help="Output directory for results (default: analysis/probes/outputs)")
+                        help="Path to model checkpoint (default: analysis/checkpoints/multi_resolution/best_checkpoint.pt)")
+
+    # Run identification and phase tracking
+    parser.add_argument("--run-id", type=str, default=None,
+                        help="Custom run ID (default: auto-generated timestamp)")
+    parser.add_argument("--phase", type=str, default="",
+                        help="Phase name for tracking (e.g., 'Phase0_Optimizations')")
+    parser.add_argument("--phase-desc", type=str, default="",
+                        help="Description of what this run tests")
+    parser.add_argument("--optimizations", nargs="+", default=[],
+                        help="List of optimizations applied (e.g., --optimizations 'VIIRS detrending' 'Task priors')")
+
+    # Run management
+    parser.add_argument("--list-runs", action="store_true",
+                        help="List all previous probe runs")
+    parser.add_argument("--compare-runs", nargs="+",
+                        help="Compare metadata across runs (provide run IDs)")
 
     # Execution options
     parser.add_argument("--batch-size", type=int, default=8, help="Batch size")
@@ -1198,10 +1466,48 @@ Examples:
         list_probes()
         return
 
+    # Handle list-runs command
+    if args.list_runs:
+        runs = list_runs()
+        if not runs:
+            print("No previous probe runs found.")
+        else:
+            print("\n" + "=" * 80)
+            print("Previous Probe Runs")
+            print("=" * 80 + "\n")
+            for run in runs:
+                phase = run.get('phase_name', 'Unknown')
+                completed = run.get('probes_completed', 0)
+                failed = run.get('probes_failed', 0)
+                d_model = run.get('d_model', '?')
+                detrend = "Yes" if run.get('detrend_viirs') else "No"
+                print(f"  {run['run_id']}")
+                print(f"    Phase: {phase}, d_model: {d_model}, detrend_viirs: {detrend}")
+                print(f"    Probes: {completed} completed, {failed} failed")
+                print()
+        return
+
+    # Handle compare-runs command
+    if args.compare_runs:
+        comparison = compare_runs(args.compare_runs)
+        print("\n" + "=" * 80)
+        print("Run Comparison")
+        print("=" * 80 + "\n")
+        if comparison["differences"]:
+            print("Differences found:")
+            for key, values in comparison["differences"].items():
+                print(f"  {key}:")
+                for i, val in enumerate(values):
+                    run_id = args.compare_runs[i] if i < len(args.compare_runs) else f"Run {i}"
+                    print(f"    {run_id}: {val}")
+        else:
+            print("No differences found in compared fields.")
+        return
+
     # Create configuration
     device = args.device if args.device != "auto" else ("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Build config kwargs, only including explicitly provided paths
+    # Build config kwargs
     config_kwargs = {
         "device": device,
         "batch_size": args.batch_size,
@@ -1211,14 +1517,17 @@ Examples:
         "run_section": args.section,
         "run_probe_ids": args.probe or [],
         "data_only": args.data_only,
+        "pipeline_stage": args.pipeline_stage,
         "probe_split": args.probe_split,
+        "run_id": args.run_id,
+        "phase_name": args.phase,
+        "phase_description": args.phase_desc,
+        "optimizations": args.optimizations,
     }
 
     # Only override defaults if paths were explicitly provided
     if args.checkpoint is not None:
         config_kwargs["checkpoint_path"] = Path(args.checkpoint).resolve()
-    if args.output_dir is not None:
-        config_kwargs["output_dir"] = Path(args.output_dir).resolve()
 
     config = ProbeRunnerConfig(**config_kwargs)
 
@@ -1240,7 +1549,11 @@ Examples:
     completed = sum(1 for r in results.values() if r.status == "completed")
     failed = sum(1 for r in results.values() if r.status == "failed")
     print(f"Completed: {completed}, Failed: {failed}")
-    print(f"Results saved to: {config.output_dir}")
+    print(f"Run ID: {runner.output_manager.run_id}")
+    print(f"Results saved to: {runner.output_manager.run_dir}")
+    print(f"  - Report: {runner.output_manager.report_path}")
+    print(f"  - Figures: {runner.output_manager.figures_dir}")
+    print(f"  - Metrics: {runner.output_manager.raw_metrics_dir}")
 
 
 if __name__ == "__main__":

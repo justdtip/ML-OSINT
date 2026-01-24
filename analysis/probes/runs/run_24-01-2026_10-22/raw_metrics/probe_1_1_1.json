@@ -1,0 +1,34 @@
+{
+  "probe_id": "1.1.1",
+  "probe_name": "Encoding Variance Comparison",
+  "status": "completed",
+  "duration_seconds": 0.25568723678588867,
+  "findings": [
+    {
+      "key_result": "Coefficient of Variation - Cumulative: 0.5655, Delta: 2.3887, Rolling-7: 1.4988",
+      "significance": "Delta encoding has 4.22x higher relative variance",
+      "interpretation": "Cumulative encoding has very low CV due to monotonic increase, potentially masking daily variation signal"
+    },
+    {
+      "key_result": "Stationarity: Cumulative 1/3 stationary, Delta 3/3 stationary",
+      "significance": "ADF test p < 0.05 indicates stationarity",
+      "interpretation": "Non-stationary cumulative series may cause trend confounding in neural networks"
+    }
+  ],
+  "artifacts": {
+    "figures": [
+      "/Users/daniel.tipton/ML_OSINT/analysis/probes/runs/run_24-01-2026_10-22/figures/1_1_1_encoding_comparison.png"
+    ],
+    "tables": [
+      "/Users/daniel.tipton/ML_OSINT/analysis/probes/runs/run_24-01-2026_10-22/raw_metrics/1_1_1_encoding_variance_stats.csv",
+      "/Users/daniel.tipton/ML_OSINT/analysis/probes/runs/run_24-01-2026_10-22/raw_metrics/1_1_1_stationarity_tests.csv"
+    ]
+  },
+  "recommendations": [
+    "Consider using delta encoding instead of cumulative to capture daily variation",
+    "Apply 7-day rolling average to reduce noise while preserving signal",
+    "Test model performance with different encodings in ablation study",
+    "Consider log-transform for delta values to handle large spikes"
+  ],
+  "error_message": null
+}

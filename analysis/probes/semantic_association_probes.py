@@ -87,7 +87,8 @@ from config.paths import (
     PROJECT_ROOT,
     ANALYSIS_DIR as CONFIG_ANALYSIS_DIR,
     ISW_EMBEDDINGS_DIR,
-    PROBE_OUTPUT_DIR,
+    get_probe_figures_dir,
+    get_probe_metrics_dir,
 )
 
 # =============================================================================
@@ -97,7 +98,11 @@ from config.paths import (
 BASE_DIR = PROJECT_ROOT
 EMBEDDING_DIR = ISW_EMBEDDINGS_DIR
 ANALYSIS_DIR = CONFIG_ANALYSIS_DIR
-OUTPUT_DIR = PROBE_OUTPUT_DIR / "semantic_results"
+
+
+def get_output_dir():
+    """Get current output directory for figures."""
+    return get_probe_figures_dir()
 
 # Key conflict events for event-triggered analysis
 MAJOR_EVENTS = {
@@ -1584,7 +1589,9 @@ class SemanticAssociationProbeRunner:
         )
     """
 
-    def __init__(self, output_dir: Path = OUTPUT_DIR):
+    def __init__(self, output_dir: Path = None):
+        if output_dir is None:
+            output_dir = get_output_dir()
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
 

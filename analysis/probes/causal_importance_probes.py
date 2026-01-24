@@ -65,7 +65,8 @@ SourceName = str
 from config.paths import (
     PROJECT_ROOT,
     MULTI_RES_CHECKPOINT_DIR,
-    PROBE_OUTPUT_DIR,
+    get_probe_figures_dir,
+    get_probe_metrics_dir,
 )
 
 # Constants
@@ -74,9 +75,10 @@ DAILY_SOURCES = ['equipment', 'personnel', 'deepstate', 'firms', 'viina', 'viirs
 MONTHLY_SOURCES = ['sentinel', 'hdx_conflict', 'hdx_food', 'hdx_rainfall', 'iom']
 ALL_SOURCES = DAILY_SOURCES + MONTHLY_SOURCES
 
-# Output directory
-OUTPUT_DIR = PROBE_OUTPUT_DIR
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+def get_output_dir():
+    """Get current output directory for figures."""
+    return get_probe_figures_dir()
 
 
 # =============================================================================
@@ -1445,7 +1447,7 @@ class CausalImportanceReport:
         self,
         model: nn.Module,
         device: torch.device,
-        output_dir: Path = OUTPUT_DIR,
+        output_dir: Path = None,
         verbose: bool = True,
     ):
         """
@@ -1459,6 +1461,8 @@ class CausalImportanceReport:
         """
         self.model = model
         self.device = device
+        if output_dir is None:
+            output_dir = get_output_dir()
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.verbose = verbose
@@ -2099,7 +2103,7 @@ if __name__ == "__main__":
 
         print("\n" + "=" * 70)
         print("Causal Importance Analysis Complete!")
-        print(f"Results saved to: {OUTPUT_DIR}")
+        print(f"Results saved to: {get_output_dir()}")
         print("=" * 70)
 
     except ImportError as e:

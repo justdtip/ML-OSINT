@@ -1,0 +1,39 @@
+{
+  "probe_id": "1.2.4",
+  "probe_name": "Geographic VIIRS Decomposition",
+  "status": "completed",
+  "duration_seconds": 0.17126679420471191,
+  "findings": [
+    {
+      "key_result": "Found 6 geographic tiles: ['h19v03', 'h19v04', 'h20v03', 'h20v04', 'h21v03', 'h21v04']",
+      "significance": "Regional breakdown is available",
+      "interpretation": "Can analyze regional variation in nightlight patterns"
+    },
+    {
+      "key_result": "Radiance variation across tiles: 1.35",
+      "significance": "Range from 2.21 to 3.56",
+      "interpretation": "Large variation suggests regional differences in conflict intensity or urbanization"
+    },
+    {
+      "key_result": "Tile with highest casualty correlation: h20v04 (r=-0.0055)",
+      "significance": "p-value: 8.63e-01",
+      "interpretation": "This region may be most relevant for casualty prediction"
+    }
+  ],
+  "artifacts": {
+    "figures": [
+      "/Users/daniel.tipton/ML_OSINT/analysis/probes/runs/run_24-01-2026_10-22/figures/1_2_4_geographic_decomposition.png"
+    ],
+    "tables": [
+      "/Users/daniel.tipton/ML_OSINT/analysis/probes/runs/run_24-01-2026_10-22/raw_metrics/1_2_4_tile_statistics.csv",
+      "/Users/daniel.tipton/ML_OSINT/analysis/probes/runs/run_24-01-2026_10-22/raw_metrics/1_2_4_tile_casualty_correlations.csv"
+    ]
+  },
+  "recommendations": [
+    "Consider using tile-specific features for regional conflict modeling",
+    "Weight tiles by their casualty correlation in ensemble",
+    "Investigate why certain tiles show stronger correlation with casualties",
+    "Create regional VIIRS composite index from most predictive tiles"
+  ],
+  "error_message": null
+}

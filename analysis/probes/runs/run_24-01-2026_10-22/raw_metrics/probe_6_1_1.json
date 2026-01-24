@@ -1,0 +1,13 @@
+{
+  "probe_id": "6.1.1",
+  "probe_name": "Source Zeroing Interventions",
+  "status": "completed",
+  "duration_seconds": 8.516937017440796,
+  "findings": {},
+  "artifacts": {
+    "figures": [],
+    "tables": []
+  },
+  "recommendations": [],
+  "error_message": null
+}

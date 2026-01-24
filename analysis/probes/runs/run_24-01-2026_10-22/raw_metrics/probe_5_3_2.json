@@ -1,0 +1,13 @@
+{
+  "probe_id": "5.3.2",
+  "probe_name": "Missing Semantic Interpolation",
+  "status": "completed",
+  "duration_seconds": 11.238714933395386,
+  "findings": {},
+  "artifacts": {
+    "figures": [],
+    "tables": []
+  },
+  "recommendations": [],
+  "error_message": null
+}

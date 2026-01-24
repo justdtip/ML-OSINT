@@ -75,7 +75,7 @@ except ImportError:
 from config.paths import (
     PROJECT_ROOT,
     ANALYSIS_DIR as CONFIG_ANALYSIS_DIR,
-    PROBE_OUTPUT_DIR,
+    get_probe_figures_dir,
 )
 
 # =============================================================================
@@ -85,11 +85,16 @@ from config.paths import (
 BASE_DIR = PROJECT_ROOT
 ANALYSIS_DIR = CONFIG_ANALYSIS_DIR
 PROBE_DIR = ANALYSIS_DIR / "probes"
-OUTPUT_DIR = PROBE_OUTPUT_DIR
-FIGURE_DIR = OUTPUT_DIR / "figures"
 
-# Ensure directories exist
-FIGURE_DIR.mkdir(parents=True, exist_ok=True)
+
+def get_output_dir():
+    """Get current output directory for figures."""
+    return get_probe_figures_dir()
+
+
+def get_figure_dir():
+    """Get current figure directory (same as output dir in new structure)."""
+    return get_probe_figures_dir()
 
 
 # =============================================================================
@@ -210,7 +215,7 @@ TASK_COLORS = {
 def save_figure(
     fig: plt.Figure,
     name: str,
-    output_dir: Path = FIGURE_DIR,
+    output_dir: Path = None,
     formats: List[str] = ['png', 'pdf'],
     dpi: int = 300,
     transparent: bool = False,
@@ -231,7 +236,7 @@ def save_figure(
     return paths
 
 
-def load_probe_results(probe_id: str, output_dir: Path = OUTPUT_DIR) -> Dict[str, Any]:
+def load_probe_results(probe_id: str, output_dir: Path = None) -> Dict[str, Any]:
     """Load probe results from YAML file."""
     import yaml
     yaml_path = output_dir / f"probe_{probe_id.replace('.', '_')}.yaml"
@@ -241,7 +246,7 @@ def load_probe_results(probe_id: str, output_dir: Path = OUTPUT_DIR) -> Dict[str
     return {}
 
 
-def load_json_results(filename: str, output_dir: Path = OUTPUT_DIR) -> Dict[str, Any]:
+def load_json_results(filename: str, output_dir: Path = None) -> Dict[str, Any]:
     """Load results from JSON file."""
     json_path = output_dir / filename
     if json_path.exists():
@@ -2312,8 +2317,8 @@ class ProbeResultDashboard:
 # =============================================================================
 
 def generate_all_figures(
-    results_dir: Path = OUTPUT_DIR,
-    output_dir: Path = FIGURE_DIR,
+    results_dir: Path = None,
+    output_dir: Path = None,
     style: StyleConfig = None,
 ) -> Dict[str, List[Path]]:
     """
@@ -2457,7 +2462,7 @@ def generate_all_figures(
 def generate_section_figures(
     section: str,
     results: Dict[str, Any],
-    output_dir: Path = FIGURE_DIR,
+    output_dir: Path = None,
     style: StyleConfig = None,
 ) -> List[Path]:
     """
@@ -2533,10 +2538,10 @@ if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description='Generate probe visualizations')
-    parser.add_argument('--results-dir', type=Path, default=OUTPUT_DIR,
-                       help='Directory containing probe results')
-    parser.add_argument('--output-dir', type=Path, default=FIGURE_DIR,
-                       help='Directory to save figures')
+    parser.add_argument('--results-dir', type=Path, default=None,
+                       help='Directory containing probe results (default: current run)')
+    parser.add_argument('--output-dir', type=Path, default=None,
+                       help='Directory to save figures (default: current run)')
     parser.add_argument('--dark-mode', action='store_true',
                        help='Use dark mode style')
     parser.add_argument('--section', type=str, default=None,

@@ -1,0 +1,10 @@
+{
+  "probe_id": "3.2.2",
+  "probe_name": "Latent Velocity Prediction",
+  "status": "failed",
+  "duration_seconds": 1.9038629531860352,
+  "findings": {},
+  "artifacts": {},
+  "recommendations": [],
+  "error_message": "'ProbeRunnerConfig' object has no attribute 'output_dir'"
+}

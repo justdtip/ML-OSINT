@@ -1,4 +1,0 @@
-,category,best_lag,best_lag_corr,lag_interpretation
-0,drones,-7,0.31965553211714326,equipment leads
-1,apcs,0,0.2207397385368487,concurrent
-2,tanks,14,-0.05876220037962495,equipment lags

@@ -3,7 +3,7 @@
   "temporal_gap": 14,
   "epochs_interpolation": 100,
   "epochs_unified": 100,
-  "epochs_han": 200,
+  "epochs_han": 5,
   "epochs_temporal": 150,
   "epochs_tactical": 100,
   "d_model": 64,

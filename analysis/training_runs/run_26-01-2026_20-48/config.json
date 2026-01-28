@@ -1,0 +1,22 @@
+{
+  "daily_seq_len": 365,
+  "monthly_seq_len": 12,
+  "prediction_horizon": 1,
+  "d_model": 128,
+  "nhead": 8,
+  "num_daily_layers": 3,
+  "num_monthly_layers": 2,
+  "num_fusion_layers": 2,
+  "dropout": 0.1,
+  "batch_size": 8,
+  "accumulation_steps": 4,
+  "learning_rate": 0.0001,
+  "weight_decay": 0.01,
+  "epochs": 200,
+  "patience": 30,
+  "warmup_epochs": 10,
+  "use_disaggregated_equipment": true,
+  "detrend_viirs": true,
+  "use_isw_alignment": true,
+  "isw_weight": 0.1
+}

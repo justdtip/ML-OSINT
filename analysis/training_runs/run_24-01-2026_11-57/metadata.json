@@ -1,0 +1,95 @@
+{
+  "run_id": "run_24-01-2026_11-57",
+  "run_timestamp": "2026-01-24T11:57:21.462349",
+  "run_dir": "/Users/daniel.tipton/ML_OSINT/analysis/training_runs/run_24-01-2026_11-57",
+  "d_model": 64,
+  "use_multi_resolution": true,
+  "detrend_viirs": true,
+  "use_disaggregated_equipment": false,
+  "stage1_complete": true,
+  "stage2_complete": true,
+  "stage3_complete": true,
+  "stage4_complete": true,
+  "stage5_complete": true,
+  "stage1_duration": 402.06208205223083,
+  "stage2_duration": 245.45773005485535,
+  "stage3_duration": 6122.049431085587,
+  "stage4_duration": 104.04657316207886,
+  "stage5_duration": 5.4183549880981445,
+  "stage1_metrics": {
+    "sentinel2": {
+      "best_val_mae": 0.1997851079160517,
+      "final_val_mae": 0.21148761835965244,
+      "epochs_trained": 38
+    },
+    "sentinel1": {
+      "best_val_mae": 0.19947324286807666,
+      "final_val_mae": 0.21231946755539288,
+      "epochs_trained": 37
+    },
+    "sentinel3": {
+      "best_val_mae": 0.1995830156586387,
+      "final_val_mae": 0.2078923447565599,
+      "epochs_trained": 39
+    },
+    "s5p_gases": {
+      "best_val_mae": 0.2009976262396032,
+      "final_val_mae": 0.21145499836314807,
+      "epochs_trained": 36
+    },
+    "deepstate": {
+      "best_val_mae": 0.14453521681328615,
+      "final_val_mae": 0.1447723681728045,
+      "epochs_trained": 100
+    },
+    "equipment_totals": {
+      "best_val_mae": 0.16903385978478652,
+      "final_val_mae": 0.16903385978478652,
+      "epochs_trained": 100
+    }
+  },
+  "stage2_metrics": {
+    "best_val_mae": 0.14255203764575222,
+    "final_val_mae": 0.1436503190650708,
+    "epochs_trained": 93
+  },
+  "stage3_metrics": {
+    "final_train_loss": 2.0592193722724916,
+    "final_val_loss": 1.9098751544952393,
+    "best_val_loss": 1.9098751544952393,
+    "best_epoch": 199,
+    "test_metrics": {
+      "regime_loss": 0.07088630646467209,
+      "transition_loss": 0.273892879486084,
+      "casualty_loss": 2.0715553760528564,
+      "anomaly_loss": 1.5746820736239897e-06,
+      "forecast_loss": 1.367918258665668e-07,
+      "total_loss": 0.4832672546955024
+    },
+    "epochs_trained": 200
+  },
+  "stage4_metrics": {
+    "final_train_loss": 7.438210582733154,
+    "final_val_loss": 38.81866893768311,
+    "overall_mean_corr": 0.12613457411692344,
+    "epochs_trained": 148
+  },
+  "stage5_metrics": {
+    "final_train_loss": 0.927136038740476,
+    "final_val_loss": 4.28157639503479,
+    "final_train_acc": 0.4005235602094241,
+    "final_val_acc": 0.16,
+    "final_trans_acc": 0.01,
+    "epochs_trained": 35
+  },
+  "n_jim_models": 0,
+  "n_unified_models": 0,
+  "han_best_epoch": 0,
+  "han_best_val_loss": 1.9098751544952393,
+  "han_n_params": 0,
+  "total_duration_seconds": 6879.059359073639,
+  "device": "mps",
+  "torch_version": "2.9.1",
+  "python_version": "3.13.7",
+  "errors": []
+}

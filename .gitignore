@@ -121,6 +121,11 @@ outputs/analysis/
 !outputs/analysis/.gitkeep
 
 # =============================================================================
+# Probe Run Outputs (generated analysis artifacts)
+# =============================================================================
+analysis/probes/runs/
+
+# =============================================================================
 # Data Files (large - use download scripts to acquire)
 # =============================================================================
 # Nested git repositories

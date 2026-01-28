@@ -69,11 +69,54 @@ from config.paths import (
     get_probe_metrics_dir,
 )
 
-# Constants
-TASKS = ['regime', 'casualty', 'anomaly', 'forecast']
-DAILY_SOURCES = ['equipment', 'personnel', 'deepstate', 'firms', 'viina', 'viirs']
-MONTHLY_SOURCES = ['sentinel', 'hdx_conflict', 'hdx_food', 'hdx_rainfall', 'iom']
+# Task key mapping for consistent resolution between task names and output keys
+from .task_key_mapping import (
+    TASK_NAMES,
+    TASK_OUTPUT_KEYS,
+    get_output_key,
+    extract_task_output,
+    has_task_output,
+)
+
+# Constants - use centralized task names
+TASKS = TASK_NAMES[:4]  # ['regime', 'casualty', 'anomaly', 'forecast']
+
+# Default source lists (used when dynamic detection is not possible)
+# These are overridden by detect_sources_from_batch() when actual data is available
+DEFAULT_DAILY_SOURCES = ['equipment', 'personnel', 'deepstate', 'firms', 'viina', 'viirs']
+DEFAULT_MONTHLY_SOURCES = ['sentinel', 'hdx_conflict', 'hdx_food', 'hdx_rainfall', 'iom']
+
+# Module-level source lists (updated dynamically from batch data)
+DAILY_SOURCES = DEFAULT_DAILY_SOURCES.copy()
+MONTHLY_SOURCES = DEFAULT_MONTHLY_SOURCES.copy()
 ALL_SOURCES = DAILY_SOURCES + MONTHLY_SOURCES
+
+
+def detect_sources_from_batch(batch: Dict[str, Any]) -> Tuple[List[str], List[str]]:
+    """Detect source names from a batch dictionary.
+
+    This function updates the module-level source lists based on actual data,
+    supporting both aggregated (6 daily sources) and disaggregated (8 daily sources)
+    configurations.
+
+    Args:
+        batch: Batch dictionary with 'daily_features' and 'monthly_features' keys
+
+    Returns:
+        Tuple of (daily_sources, monthly_sources) lists
+    """
+    global DAILY_SOURCES, MONTHLY_SOURCES, ALL_SOURCES
+
+    daily_sources = list(batch.get('daily_features', {}).keys())
+    monthly_sources = list(batch.get('monthly_features', {}).keys())
+
+    if daily_sources:
+        DAILY_SOURCES = daily_sources
+    if monthly_sources:
+        MONTHLY_SOURCES = monthly_sources
+    ALL_SOURCES = DAILY_SOURCES + MONTHLY_SOURCES
+
+    return daily_sources, monthly_sources
 
 
 def get_output_dir():
@@ -227,13 +270,35 @@ class ZeroingInterventionProbe(CausalProbe):
         super().__init__(model, device, verbose)
         self.include_daily = include_daily
         self.include_monthly = include_monthly
-
-        # Determine which sources to test
+        # Sources will be detected from batch in run() method
         self.sources_to_test = []
-        if include_daily:
-            self.sources_to_test.extend(DAILY_SOURCES)
-        if include_monthly:
-            self.sources_to_test.extend(MONTHLY_SOURCES)
+
+    def _detect_sources_from_batch(self, batch: Dict[str, Any]) -> List[str]:
+        """Detect sources to test from the actual batch data.
+
+        This method dynamically detects sources from the batch, supporting both
+        aggregated (6 daily sources) and disaggregated (8 daily sources) models.
+
+        Args:
+            batch: Model input batch with 'daily_features' and 'monthly_features' keys
+
+        Returns:
+            List of source names to test
+        """
+        sources = []
+        if self.include_daily:
+            daily_sources = list(batch.get('daily_features', {}).keys())
+            sources.extend(daily_sources)
+            self._log(f"  Detected daily sources: {daily_sources}")
+        if self.include_monthly:
+            monthly_sources = list(batch.get('monthly_features', {}).keys())
+            sources.extend(monthly_sources)
+            self._log(f"  Detected monthly sources: {monthly_sources}")
+
+        # Update module-level source lists for other components
+        detect_sources_from_batch(batch)
+
+        return sources
 
     def _get_task_metric(
         self,
@@ -244,18 +309,24 @@ class ZeroingInterventionProbe(CausalProbe):
         """
         Extract task-specific metric from model outputs.
 
+        Uses centralized task_key_mapping to resolve task names to output keys.
+
         Args:
             outputs: Model output dictionary
-            task: Task name
+            task: Task name (e.g., 'casualty', 'regime', 'anomaly', 'forecast')
             targets: Optional target tensors for computing loss
 
         Returns:
             Metric tensor (lower is better for losses, higher for accuracy)
         """
+        # Use centralized task key mapping to extract outputs
+        output_key = get_output_key(task)
+        task_output = extract_task_output(outputs, task)
+
         if task == 'regime':
             # For regime, return mean logit magnitude as proxy for confidence
-            if 'regime_logits' in outputs:
-                logits = outputs['regime_logits']
+            if task_output is not None:
+                logits = task_output
                 probs = F.softmax(logits, dim=-1)
                 # Return negative entropy (higher = more confident)
                 entropy = -(probs * torch.log(probs + 1e-8)).sum(dim=-1)
@@ -264,21 +335,20 @@ class ZeroingInterventionProbe(CausalProbe):
 
         elif task == 'casualty':
             # For casualty, return mean prediction magnitude
-            if 'casualty_pred' in outputs:
-                pred = outputs['casualty_pred']
-                return pred.abs().mean()
+            if task_output is not None:
+                return task_output.abs().mean()
             return torch.tensor(0.0, device=self.device)
 
         elif task == 'anomaly':
             # For anomaly, return mean anomaly score
-            if 'anomaly_score' in outputs:
-                return outputs['anomaly_score'].mean()
+            if task_output is not None:
+                return task_output.mean()
             return torch.tensor(0.0, device=self.device)
 
         elif task == 'forecast':
             # For forecast, return mean forecast magnitude
-            if 'forecast_pred' in outputs:
-                return outputs['forecast_pred'].abs().mean()
+            if task_output is not None:
+                return task_output.abs().mean()
             return torch.tensor(0.0, device=self.device)
 
         return torch.tensor(0.0, device=self.device)
@@ -335,6 +405,10 @@ class ZeroingInterventionProbe(CausalProbe):
         """
         tasks = tasks or TASKS
         results = []
+
+        # Dynamically detect sources from the batch
+        # This supports both aggregated (6 sources) and disaggregated (8 sources) models
+        self.sources_to_test = self._detect_sources_from_batch(batch)
 
         # Get baseline outputs
         self._log("Computing baseline predictions...")
@@ -438,8 +512,10 @@ class ZeroingInterventionProbe(CausalProbe):
                 (r.source, r.absolute_change) for r in ranked
             ]
 
-        # Group by source
-        for source in ALL_SOURCES:
+        # Group by source - use sources from actual results, not hardcoded list
+        # This handles both aggregated and disaggregated models correctly
+        tested_sources = set(r.source for r in self.results)
+        for source in tested_sources:
             source_results = [r for r in self.results if r.source == source]
             if not source_results:
                 continue
@@ -569,13 +645,17 @@ class ShufflingInterventionProbe(CausalProbe):
         """
         Compute distance between baseline and intervened predictions.
 
-        Uses task-appropriate distance metrics.
+        Uses task-appropriate distance metrics and centralized task key mapping.
         """
+        # Use centralized task key mapping
+        baseline_output = extract_task_output(baseline_outputs, task)
+        intervened_output = extract_task_output(intervened_outputs, task)
+
         if task == 'regime':
-            if 'regime_logits' not in baseline_outputs:
+            if baseline_output is None:
                 return 0.0
-            baseline_probs = F.softmax(baseline_outputs['regime_logits'], dim=-1)
-            intervened_probs = F.softmax(intervened_outputs['regime_logits'], dim=-1)
+            baseline_probs = F.softmax(baseline_output, dim=-1)
+            intervened_probs = F.softmax(intervened_output, dim=-1)
             # KL divergence
             kl_div = F.kl_div(
                 torch.log(intervened_probs + 1e-8),
@@ -585,21 +665,21 @@ class ShufflingInterventionProbe(CausalProbe):
             return kl_div.item()
 
         elif task == 'casualty':
-            if 'casualty_pred' not in baseline_outputs:
+            if baseline_output is None:
                 return 0.0
-            diff = baseline_outputs['casualty_pred'] - intervened_outputs['casualty_pred']
+            diff = baseline_output - intervened_output
             return diff.abs().mean().item()
 
         elif task == 'anomaly':
-            if 'anomaly_score' not in baseline_outputs:
+            if baseline_output is None:
                 return 0.0
-            diff = baseline_outputs['anomaly_score'] - intervened_outputs['anomaly_score']
+            diff = baseline_output - intervened_output
             return diff.abs().mean().item()
 
         elif task == 'forecast':
-            if 'forecast_pred' not in baseline_outputs:
+            if baseline_output is None:
                 return 0.0
-            diff = baseline_outputs['forecast_pred'] - intervened_outputs['forecast_pred']
+            diff = baseline_output - intervened_output
             return diff.abs().mean().item()
 
         return 0.0
@@ -860,19 +940,19 @@ class MeanSubstitutionProbe(CausalProbe):
             )
 
             for task in tasks:
-                # Compute prediction distance
-                if task == 'regime' and 'regime_logits' in baseline_outputs:
-                    baseline_probs = F.softmax(baseline_outputs['regime_logits'], dim=-1)
-                    mean_probs = F.softmax(mean_outputs['regime_logits'], dim=-1)
-                    diff = (baseline_probs - mean_probs).abs().mean().item()
-                elif task == 'casualty' and 'casualty_pred' in baseline_outputs:
-                    diff = (baseline_outputs['casualty_pred'] - mean_outputs['casualty_pred']).abs().mean().item()
-                elif task == 'anomaly' and 'anomaly_score' in baseline_outputs:
-                    diff = (baseline_outputs['anomaly_score'] - mean_outputs['anomaly_score']).abs().mean().item()
-                elif task == 'forecast' and 'forecast_pred' in baseline_outputs:
-                    diff = (baseline_outputs['forecast_pred'] - mean_outputs['forecast_pred']).abs().mean().item()
-                else:
+                # Compute prediction distance using centralized task key mapping
+                baseline_output = extract_task_output(baseline_outputs, task)
+                mean_output = extract_task_output(mean_outputs, task)
+
+                if baseline_output is None or mean_output is None:
                     diff = 0.0
+                elif task == 'regime':
+                    baseline_probs = F.softmax(baseline_output, dim=-1)
+                    mean_probs = F.softmax(mean_output, dim=-1)
+                    diff = (baseline_probs - mean_probs).abs().mean().item()
+                else:
+                    # For casualty, anomaly, forecast - all use simple difference
+                    diff = (baseline_output - mean_output).abs().mean().item()
 
                 # Compare to zeroing if available
                 key = f"{source}_{task}"
@@ -1042,16 +1122,21 @@ class IntegratedGradientsProbe(CausalProbe):
             month_boundaries=modified_batch['month_boundaries'],
         )
 
-        # Get task-specific output for gradient
-        if task == 'regime' and 'regime_logits' in outputs:
+        # Get task-specific output for gradient using centralized task key mapping
+        task_output = extract_task_output(outputs, task)
+
+        if task_output is None:
+            return torch.zeros_like(features)
+
+        if task == 'regime':
             # Use max logit for gradient
-            target = outputs['regime_logits'].max(dim=-1).values.mean()
-        elif task == 'casualty' and 'casualty_pred' in outputs:
-            target = outputs['casualty_pred'].sum()
-        elif task == 'anomaly' and 'anomaly_score' in outputs:
-            target = outputs['anomaly_score'].sum()
-        elif task == 'forecast' and 'forecast_pred' in outputs:
-            target = outputs['forecast_pred'].sum()
+            target = task_output.max(dim=-1).values.mean()
+        elif task == 'casualty':
+            target = task_output.sum()
+        elif task == 'anomaly':
+            target = task_output.sum()
+        elif task == 'forecast':
+            target = task_output.sum()
         else:
             return torch.zeros_like(features)
 
@@ -1321,17 +1406,20 @@ class AttentionKnockoutProbe(CausalProbe):
             month_boundaries=batch['month_boundaries'],
         )
 
-        # Compute baseline metrics
+        # Compute baseline metrics using centralized task key mapping
         baseline_metrics = {}
         for task in tasks:
-            if task == 'regime' and 'regime_logits' in baseline_outputs:
-                baseline_metrics[task] = F.softmax(baseline_outputs['regime_logits'], dim=-1).max(dim=-1).values.mean().item()
-            elif task == 'casualty' and 'casualty_pred' in baseline_outputs:
-                baseline_metrics[task] = baseline_outputs['casualty_pred'].abs().mean().item()
-            elif task == 'anomaly' and 'anomaly_score' in baseline_outputs:
-                baseline_metrics[task] = baseline_outputs['anomaly_score'].mean().item()
-            elif task == 'forecast' and 'forecast_pred' in baseline_outputs:
-                baseline_metrics[task] = baseline_outputs['forecast_pred'].abs().mean().item()
+            task_output = extract_task_output(baseline_outputs, task)
+            if task_output is None:
+                baseline_metrics[task] = 0.0
+            elif task == 'regime':
+                baseline_metrics[task] = F.softmax(task_output, dim=-1).max(dim=-1).values.mean().item()
+            elif task == 'casualty':
+                baseline_metrics[task] = task_output.abs().mean().item()
+            elif task == 'anomaly':
+                baseline_metrics[task] = task_output.mean().item()
+            elif task == 'forecast':
+                baseline_metrics[task] = task_output.abs().mean().item()
             else:
                 baseline_metrics[task] = 0.0
 
@@ -1495,6 +1583,11 @@ class CausalImportanceReport:
             tasks: Tasks to analyze
         """
         tasks = tasks or TASKS
+
+        # Detect sources from batch first, updating module-level lists
+        # This ensures all probes and visualizations use correct sources
+        daily_sources, monthly_sources = detect_sources_from_batch(batch)
+        self._log(f"Detected sources: daily={daily_sources}, monthly={monthly_sources}")
 
         self._log("\n" + "=" * 70)
         self._log("CAUSAL IMPORTANCE VALIDATION")

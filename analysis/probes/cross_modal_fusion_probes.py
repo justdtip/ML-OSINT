@@ -49,6 +49,21 @@ from torch import Tensor
 # Centralized path configuration
 from config.paths import get_probe_figures_dir, get_probe_metrics_dir
 
+# Task key mapping for consistent task/output key resolution
+from .task_key_mapping import (
+    TASK_OUTPUT_KEYS,
+    get_output_key,
+    extract_task_output,
+    has_task_output,
+)
+
+# Import centralized batch preparation that filters training-only keys
+from . import (
+    prepare_batch_for_model,
+    TRAINING_ONLY_KEYS,
+    MODEL_FORWARD_EXCLUDE_KEYS,
+)
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -61,23 +76,6 @@ def get_output_dir():
 
 # Default output directory (set dynamically)
 DEFAULT_OUTPUT_DIR = None  # Use get_output_dir() instead
-
-
-def prepare_batch_for_model(batch: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Prepare a batch from the dataloader for the model's forward method.
-
-    Maps dataloader keys to model's expected parameter names.
-    The collate function returns 'month_boundary_indices' but model expects 'month_boundaries'.
-    """
-    result = {}
-    for key, value in batch.items():
-        if key == 'month_boundary_indices':
-            result['month_boundaries'] = value
-        elif key not in ('batch_size', 'sample_indices', 'daily_seq_lens', 'monthly_seq_lens'):
-            # Skip metadata keys that aren't model inputs
-            result[key] = value
-    return result
 
 
 # =============================================================================
@@ -122,9 +120,22 @@ class AttentionFlowProbeConfig(ProbeConfig):
 
 @dataclass
 class AblationProbeConfig(ProbeConfig):
-    """Configuration for ablation studies."""
+    """Configuration for ablation studies.
+
+    Task names can be either simple names ('casualty', 'regime', 'anomaly', 'forecast')
+    or model output keys ('casualty_pred', 'regime_logits', 'anomaly_score', 'forecast_pred').
+    The probe automatically resolves to the correct output key using the centralized
+    task_key_mapping module.
+
+    The MultiResolutionHAN model outputs:
+      - 'casualty_pred': Casualty prediction tensor
+      - 'regime_logits': Regime classification logits
+      - 'anomaly_score': Anomaly detection scores
+      - 'forecast_pred': Forecast prediction tensor
+    """
     ablation_mode: str = "zero"  # 'zero', 'mean', 'noise', 'shuffle'
     tasks: List[str] = field(
+        # Use simple task names - they'll be resolved to output keys automatically
         default_factory=lambda: ["casualty", "regime", "anomaly"]
     )
     num_samples: int = 500  # Number of test samples
@@ -240,17 +251,95 @@ class SourceRepresentationExtractor:
 
     This extractor registers hooks on the appropriate encoder layers to capture
     individual source representations before and after fusion.
+
+    Source names are detected dynamically from the model's encoder dictionaries,
+    supporting both aggregated (6 daily sources) and disaggregated (8 daily sources)
+    configurations.
     """
 
-    # Source names in the model
-    DAILY_SOURCES = ['equipment', 'personnel', 'deepstate', 'firms', 'viina']
-    MONTHLY_SOURCES = ['sentinel', 'hdx_conflict', 'hdx_food', 'hdx_rainfall', 'iom']
+    # Default source names (used when model encoders are not available)
+    # These are overridden by actual encoder keys when the model is available
+    DEFAULT_DAILY_SOURCES = ['equipment', 'personnel', 'deepstate', 'firms', 'viina', 'viirs']
+    DEFAULT_MONTHLY_SOURCES = ['sentinel', 'hdx_conflict', 'hdx_food', 'hdx_rainfall', 'iom']
+
+    # Class-level attributes for backwards compatibility (updated by instances)
+    DAILY_SOURCES = DEFAULT_DAILY_SOURCES.copy()
+    MONTHLY_SOURCES = DEFAULT_MONTHLY_SOURCES.copy()
     ALL_SOURCES = DAILY_SOURCES + MONTHLY_SOURCES
 
     def __init__(self, model: nn.Module):
         self.model = model
         self.hook_manager = IntermediateRepresentationHook()
+
+        # Dynamically detect sources from model encoders
+        self._daily_sources = self._detect_daily_sources()
+        self._monthly_sources = self._detect_monthly_sources()
+        self._all_sources = self._daily_sources + self._monthly_sources
+
+        # Update class-level attributes for backwards compatibility
+        SourceRepresentationExtractor.DAILY_SOURCES = self._daily_sources
+        SourceRepresentationExtractor.MONTHLY_SOURCES = self._monthly_sources
+        SourceRepresentationExtractor.ALL_SOURCES = self._all_sources
+
+        logger.info(f"Detected daily sources: {self._daily_sources}")
+        logger.info(f"Detected monthly sources: {self._monthly_sources}")
+
         self._setup_hooks()
+
+    def _detect_daily_sources(self) -> List[str]:
+        """Detect daily source names from model's encoder dictionaries."""
+        if hasattr(self.model, 'daily_encoders') and self.model.daily_encoders:
+            return list(self.model.daily_encoders.keys())
+        elif hasattr(self.model, 'daily_source_configs') and self.model.daily_source_configs:
+            return list(self.model.daily_source_configs.keys())
+        else:
+            logger.warning("Could not detect daily sources from model, using defaults")
+            return self.DEFAULT_DAILY_SOURCES.copy()
+
+    def _detect_monthly_sources(self) -> List[str]:
+        """Detect monthly source names from model's encoder dictionaries."""
+        if hasattr(self.model, 'monthly_encoders') and self.model.monthly_encoders:
+            return list(self.model.monthly_encoders.keys())
+        elif hasattr(self.model, 'monthly_source_configs') and self.model.monthly_source_configs:
+            return list(self.model.monthly_source_configs.keys())
+        else:
+            logger.warning("Could not detect monthly sources from model, using defaults")
+            return self.DEFAULT_MONTHLY_SOURCES.copy()
+
+    @classmethod
+    def get_sources_from_batch(cls, batch: Dict[str, Any]) -> Tuple[List[str], List[str]]:
+        """Extract source names from a batch dictionary.
+
+        This is useful when you don't have access to the model but have a data batch.
+
+        Args:
+            batch: Batch dictionary with 'daily_features' and 'monthly_features' keys
+
+        Returns:
+            Tuple of (daily_sources, monthly_sources) lists
+        """
+        daily_sources = list(batch.get('daily_features', {}).keys())
+        monthly_sources = list(batch.get('monthly_features', {}).keys())
+        return daily_sources, monthly_sources
+
+    @classmethod
+    def update_sources_from_batch(cls, batch: Dict[str, Any]) -> Tuple[List[str], List[str]]:
+        """Update class-level source lists from a batch and return them.
+
+        Args:
+            batch: Batch dictionary with 'daily_features' and 'monthly_features' keys
+
+        Returns:
+            Tuple of (daily_sources, monthly_sources) lists
+        """
+        daily_sources, monthly_sources = cls.get_sources_from_batch(batch)
+        if daily_sources:
+            cls.DAILY_SOURCES = daily_sources
+        if monthly_sources:
+            cls.MONTHLY_SOURCES = monthly_sources
+        cls.ALL_SOURCES = cls.DAILY_SOURCES + cls.MONTHLY_SOURCES
+        logger.info(f"Updated sources from batch - daily: {cls.DAILY_SOURCES}, monthly: {cls.MONTHLY_SOURCES}")
+        return daily_sources, monthly_sources
 
     def _setup_hooks(self) -> None:
         """Set up hooks for all relevant model components."""
@@ -1293,10 +1382,24 @@ class AblationProbe(FusionProbe):
     ) -> ProbeResult:
         """Run ablation studies.
 
+        This probe measures source importance by comparing predictions with and without
+        each source. When explicit targets are unavailable (common with MultiResolutionDataset),
+        it uses baseline predictions as pseudo-targets to measure prediction deviation.
+
+        The key insight: if removing a source causes large prediction changes, that source
+        is important for the model's current behavior.
+
+        Metrics interpretation:
+        - prediction_deviation: How much predictions change when source is ablated (higher = more important)
+        - baseline: Reference performance (0.0 when using self-comparison mode)
+        - leave_one_out: Performance after ablation (negative MSE; closer to 0 = less change)
+        - performance_delta: baseline - loo (positive = source is necessary)
+
         Args:
             data_loader: PyTorch DataLoader
             task_evaluators: Dict mapping task name to evaluation function
-                Each evaluator takes (predictions, targets) and returns a metric
+                Each evaluator takes (predictions, targets) and returns a metric.
+                If None or empty, uses negative MSE for comparison.
 
         Returns:
             ProbeResult with ablation metrics
@@ -1304,19 +1407,34 @@ class AblationProbe(FusionProbe):
         logger.info("Running Ablation Probe...")
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        if task_evaluators is None:
-            # Default evaluators (simple accuracy/MSE)
+        # Handle both None and empty dict {} - both should trigger default evaluators
+        if task_evaluators is None or len(task_evaluators) == 0:
+            if task_evaluators is not None:
+                logger.warning(
+                    "Empty task_evaluators dict passed to AblationProbe.run(). "
+                    "Using default evaluators. Pass None instead of {} for default behavior."
+                )
+            # Default evaluators (negative MSE - higher is better, 0 means identical)
             task_evaluators = {
                 task: lambda pred, tgt: -F.mse_loss(pred, tgt).item()
                 for task in self.config.tasks
             }
 
-        all_sources = SourceRepresentationExtractor.ALL_SOURCES
+        # Dynamically detect sources from the first batch instead of using hardcoded list
+        # This supports both aggregated (6 sources) and disaggregated (8 sources) models
+        first_batch = next(iter(data_loader))
+        daily_sources, monthly_sources = SourceRepresentationExtractor.get_sources_from_batch(first_batch)
+        all_sources = daily_sources + monthly_sources
+        logger.info(f"Detected sources for ablation: daily={daily_sources}, monthly={monthly_sources}")
+
+        # Update class-level attributes for other components that might use them
+        SourceRepresentationExtractor.update_sources_from_batch(first_batch)
 
         # Collect baseline predictions
-        logger.info("Computing baseline performance...")
+        logger.info("Computing baseline predictions...")
         baseline_preds = {task: [] for task in self.config.tasks}
         baseline_targets = {task: [] for task in self.config.tasks}
+        has_explicit_targets = {task: False for task in self.config.tasks}
 
         for batch_idx, batch in enumerate(data_loader):
             batch = {k: v.to(self.config.device) if isinstance(v, Tensor) else v
@@ -1329,27 +1447,57 @@ class AblationProbe(FusionProbe):
                 outputs = self.model(**model_batch)
 
             # Extract predictions and targets per task
+            # Uses centralized task_key_mapping to resolve task names to output keys
             if isinstance(outputs, dict):
                 for task in self.config.tasks:
-                    if task in outputs:
-                        baseline_preds[task].append(outputs[task].cpu())
-                    if f"{task}_target" in batch:
-                        baseline_targets[task].append(batch[f"{task}_target"].cpu())
+                    # Try both the task name and mapped output key
+                    task_output = extract_task_output(outputs, task)
+                    if task_output is not None:
+                        baseline_preds[task].append(task_output.cpu())
+                    # Check for targets using both task name and output key
+                    output_key = get_output_key(task)
+                    target_keys = [f"{task}_target", f"{output_key}_target"]
+                    for target_key in target_keys:
+                        if target_key in batch:
+                            baseline_targets[task].append(batch[target_key].cpu())
+                            has_explicit_targets[task] = True
+                            break
 
             if batch_idx >= self.config.num_samples // data_loader.batch_size:
                 break
 
-        # Compute baseline metrics
+        # Concatenate baseline predictions for use as pseudo-targets
+        baseline_preds_concat = {}
         for task in self.config.tasks:
-            if baseline_preds[task] and baseline_targets[task]:
-                preds = torch.cat(baseline_preds[task])
-                targets = torch.cat(baseline_targets[task])
-                self.baseline_performance[task] = task_evaluators[task](preds, targets)
-                logger.info(f"  Baseline {task}: {self.baseline_performance[task]:.4f}")
+            if baseline_preds[task]:
+                baseline_preds_concat[task] = torch.cat(baseline_preds[task])
+
+        # Check if we have explicit targets; if not, use self-supervised mode
+        using_pseudo_targets = not any(has_explicit_targets.values())
+        if using_pseudo_targets:
+            logger.info(
+                "No explicit targets found in dataset. Using self-supervised ablation mode: "
+                "measuring prediction deviation from baseline (higher deviation = source is more important)."
+            )
+            # In self-supervised mode, baseline performance is 0 (predictions vs themselves)
+            for task in self.config.tasks:
+                if task in baseline_preds_concat:
+                    self.baseline_performance[task] = 0.0
+                    logger.info(f"  Baseline {task}: 0.0000 (self-comparison reference)")
+        else:
+            # Compute baseline metrics with explicit targets
+            for task in self.config.tasks:
+                if baseline_preds[task] and baseline_targets[task]:
+                    preds = baseline_preds_concat[task]
+                    targets = torch.cat(baseline_targets[task])
+                    self.baseline_performance[task] = task_evaluators[task](preds, targets)
+                    logger.info(f"  Baseline {task}: {self.baseline_performance[task]:.4f}")
 
         # Leave-One-Out ablation
         logger.info("Running Leave-One-Out ablation...")
         self.loo_performance = {source: {} for source in all_sources}
+        # Store raw prediction deviations for additional metrics
+        self._prediction_deviations = {source: {} for source in all_sources}
 
         for source in all_sources:
             logger.info(f"  Ablating {source}...")
@@ -1371,20 +1519,45 @@ class AblationProbe(FusionProbe):
 
                 if isinstance(outputs, dict):
                     for task in self.config.tasks:
-                        if task in outputs:
-                            loo_preds[task].append(outputs[task].cpu())
-                        if f"{task}_target" in batch:
-                            loo_targets[task].append(batch[f"{task}_target"].cpu())
+                        # Use centralized task key mapping
+                        task_output = extract_task_output(outputs, task)
+                        if task_output is not None:
+                            loo_preds[task].append(task_output.cpu())
+                        # Check for targets
+                        output_key = get_output_key(task)
+                        for target_key in [f"{task}_target", f"{output_key}_target"]:
+                            if target_key in batch:
+                                loo_targets[task].append(batch[target_key].cpu())
+                                break
 
                 if batch_idx >= self.config.num_samples // data_loader.batch_size:
                     break
 
             # Compute LOO metrics
             for task in self.config.tasks:
-                if loo_preds[task] and loo_targets[task]:
+                if loo_preds[task]:
                     preds = torch.cat(loo_preds[task])
-                    targets = torch.cat(loo_targets[task])
-                    self.loo_performance[source][task] = task_evaluators[task](preds, targets)
+
+                    if using_pseudo_targets and task in baseline_preds_concat:
+                        # Use baseline predictions as pseudo-targets
+                        # Truncate to match lengths (in case of batching differences)
+                        min_len = min(preds.shape[0], baseline_preds_concat[task].shape[0])
+                        preds_aligned = preds[:min_len]
+                        baseline_aligned = baseline_preds_concat[task][:min_len]
+
+                        # Compute deviation: negative MSE (closer to 0 = less deviation)
+                        self.loo_performance[source][task] = task_evaluators[task](
+                            preds_aligned, baseline_aligned
+                        )
+                        # Also store raw deviation (positive MSE) for interpretation
+                        deviation = F.mse_loss(preds_aligned, baseline_aligned).item()
+                        self._prediction_deviations[source][task] = deviation
+
+                    elif loo_targets[task]:
+                        # Use explicit targets
+                        targets = torch.cat(loo_targets[task])
+                        self.loo_performance[source][task] = task_evaluators[task](preds, targets)
+                        self._prediction_deviations[source][task] = 0.0  # N/A in this mode
 
         # Source Sufficiency tests
         logger.info("Running Source Sufficiency tests...")
@@ -1412,20 +1585,36 @@ class AblationProbe(FusionProbe):
 
                 if isinstance(outputs, dict):
                     for task in self.config.tasks:
-                        if task in outputs:
-                            suff_preds[task].append(outputs[task].cpu())
-                        if f"{task}_target" in batch:
-                            suff_targets[task].append(batch[f"{task}_target"].cpu())
+                        # Use centralized task key mapping
+                        task_output = extract_task_output(outputs, task)
+                        if task_output is not None:
+                            suff_preds[task].append(task_output.cpu())
+                        # Check for targets
+                        output_key = get_output_key(task)
+                        for target_key in [f"{task}_target", f"{output_key}_target"]:
+                            if target_key in batch:
+                                suff_targets[task].append(batch[target_key].cpu())
+                                break
 
                 if batch_idx >= self.config.num_samples // data_loader.batch_size:
                     break
 
             # Compute sufficiency metrics
             for task in self.config.tasks:
-                if suff_preds[task] and suff_targets[task]:
+                if suff_preds[task]:
                     preds = torch.cat(suff_preds[task])
-                    targets = torch.cat(suff_targets[task])
-                    self.sufficiency_performance[source][task] = task_evaluators[task](preds, targets)
+
+                    if using_pseudo_targets and task in baseline_preds_concat:
+                        # Compare single-source predictions to baseline
+                        min_len = min(preds.shape[0], baseline_preds_concat[task].shape[0])
+                        preds_aligned = preds[:min_len]
+                        baseline_aligned = baseline_preds_concat[task][:min_len]
+                        self.sufficiency_performance[source][task] = task_evaluators[task](
+                            preds_aligned, baseline_aligned
+                        )
+                    elif suff_targets[task]:
+                        targets = torch.cat(suff_targets[task])
+                        self.sufficiency_performance[source][task] = task_evaluators[task](preds, targets)
 
         # Compile metrics
         metrics = {
@@ -1433,6 +1622,8 @@ class AblationProbe(FusionProbe):
             "leave_one_out": self.loo_performance,
             "sufficiency": self.sufficiency_performance,
             "performance_delta": self._compute_performance_delta(),
+            "prediction_deviation": self._prediction_deviations,
+            "using_pseudo_targets": using_pseudo_targets,
         }
 
         interpretation = self._interpret_ablation_results(metrics)
@@ -1468,9 +1659,17 @@ class AblationProbe(FusionProbe):
         """Generate interpretation of ablation results."""
         interpretation = "Ablation Analysis Results:\n" + "=" * 35 + "\n\n"
 
-        interpretation += "Leave-One-Out Analysis:\n"
-        interpretation += "  Positive delta = source is necessary (removal hurts)\n"
-        interpretation += "  Negative delta = source is harmful (removal helps)\n\n"
+        using_pseudo_targets = metrics.get("using_pseudo_targets", False)
+
+        if using_pseudo_targets:
+            interpretation += "Mode: Self-Supervised (no explicit targets available)\n"
+            interpretation += "  Metric: Prediction deviation from baseline\n"
+            interpretation += "  Higher deviation = source is more important for predictions\n"
+            interpretation += "  Positive delta = source is necessary (removal changes predictions)\n\n"
+        else:
+            interpretation += "Mode: Supervised (using explicit targets)\n"
+            interpretation += "  Positive delta = source is necessary (removal hurts)\n"
+            interpretation += "  Negative delta = source is harmful (removal helps)\n\n"
 
         for task in self.config.tasks:
             interpretation += f"\nTask: {task}\n"
@@ -1480,49 +1679,101 @@ class AblationProbe(FusionProbe):
             else:
                 interpretation += f"  Baseline: {baseline_val}\n"
 
-            # Sort sources by importance (delta)
-            deltas = [(s, metrics['performance_delta'].get(s, {}).get(task, 0))
-                     for s in self.loo_performance]
-            deltas.sort(key=lambda x: x[1], reverse=True)
+            # In self-supervised mode, also show prediction deviations
+            if using_pseudo_targets and "prediction_deviation" in metrics:
+                interpretation += "  Source importance (by prediction deviation):\n"
+                deviations = [
+                    (s, metrics["prediction_deviation"].get(s, {}).get(task, 0))
+                    for s in self.loo_performance
+                ]
+                deviations.sort(key=lambda x: x[1], reverse=True)
+                for source, dev in deviations[:5]:  # Top 5
+                    interpretation += f"    {source}: deviation = {dev:.6f}\n"
+            else:
+                # Sort sources by importance (delta)
+                deltas = [(s, metrics['performance_delta'].get(s, {}).get(task, 0))
+                         for s in self.loo_performance]
+                deltas.sort(key=lambda x: x[1], reverse=True)
 
-            interpretation += "  Source importance (by performance delta):\n"
-            for source, delta in deltas[:5]:  # Top 5
-                interpretation += f"    {source}: delta = {delta:+.4f}\n"
+                interpretation += "  Source importance (by performance delta):\n"
+                for source, delta in deltas[:5]:  # Top 5
+                    interpretation += f"    {source}: delta = {delta:+.4f}\n"
 
         return interpretation
 
     def _generate_recommendations(self, metrics: Dict[str, Any]) -> List[str]:
         """Generate recommendations from ablation results."""
         recommendations = []
+        using_pseudo_targets = metrics.get("using_pseudo_targets", False)
 
-        # Find sources that hurt performance when removed
-        essential_sources = set()
-        redundant_sources = set()
+        if using_pseudo_targets:
+            # In self-supervised mode, use prediction deviation to determine importance
+            # Higher deviation means the source is more important
+            essential_sources = set()
+            low_impact_sources = set()
 
-        for source, deltas in metrics.get("performance_delta", {}).items():
-            avg_delta = np.mean([d for d in deltas.values() if d is not None])
-            if avg_delta > 0.1:
-                essential_sources.add(source)
-            elif avg_delta < -0.05:
-                redundant_sources.add(source)
+            deviations = metrics.get("prediction_deviation", {})
+            for source, task_devs in deviations.items():
+                if not task_devs:
+                    continue
+                valid_devs = [d for d in task_devs.values() if d is not None and d > 0]
+                if not valid_devs:
+                    continue
+                avg_deviation = np.mean(valid_devs)
+                if avg_deviation > 0.01:  # Significant deviation
+                    essential_sources.add(source)
+                elif avg_deviation < 0.0001:  # Minimal deviation
+                    low_impact_sources.add(source)
 
-        if essential_sources:
-            recommendations.append(
-                f"Essential sources (removal hurts): {', '.join(essential_sources)}"
-            )
-        if redundant_sources:
-            recommendations.append(
-                f"Potentially redundant sources (removal helps): {', '.join(redundant_sources)}"
-            )
+            if essential_sources:
+                recommendations.append(
+                    f"Important sources (high prediction deviation): {', '.join(sorted(essential_sources))}"
+                )
+            if low_impact_sources:
+                recommendations.append(
+                    f"Low-impact sources (minimal prediction change): {', '.join(sorted(low_impact_sources))}"
+                )
 
-        # Check sufficiency
-        for source, perfs in metrics.get("sufficiency", {}).items():
-            for task, perf in perfs.items():
-                baseline = metrics["baseline"].get(task, 0)
-                if baseline > 0 and perf / baseline > 0.9:
-                    recommendations.append(
-                        f"Source '{source}' alone achieves >90% of baseline for {task}"
-                    )
+            # Check sufficiency: sources that alone produce similar predictions to baseline
+            for source, perfs in metrics.get("sufficiency", {}).items():
+                for task, perf in perfs.items():
+                    # In pseudo-target mode, perf is negative MSE; closer to 0 means more similar
+                    if perf is not None and perf > -0.01:  # Very similar to baseline
+                        recommendations.append(
+                            f"Source '{source}' alone produces near-baseline predictions for {task}"
+                        )
+        else:
+            # Original supervised mode logic
+            essential_sources = set()
+            redundant_sources = set()
+
+            for source, deltas in metrics.get("performance_delta", {}).items():
+                valid_deltas = [d for d in deltas.values() if d is not None]
+                if not valid_deltas:
+                    continue
+                avg_delta = np.mean(valid_deltas)
+                if avg_delta > 0.1:
+                    essential_sources.add(source)
+                elif avg_delta < -0.05:
+                    redundant_sources.add(source)
+
+            if essential_sources:
+                recommendations.append(
+                    f"Essential sources (removal hurts): {', '.join(essential_sources)}"
+                )
+            if redundant_sources:
+                recommendations.append(
+                    f"Potentially redundant sources (removal helps): {', '.join(redundant_sources)}"
+                )
+
+            # Check sufficiency
+            for source, perfs in metrics.get("sufficiency", {}).items():
+                for task, perf in perfs.items():
+                    baseline = metrics["baseline"].get(task, 0)
+                    if baseline > 0 and perf / baseline > 0.9:
+                        recommendations.append(
+                            f"Source '{source}' alone achieves >90% of baseline for {task}"
+                        )
 
         return recommendations
 
@@ -1532,30 +1783,57 @@ class AblationProbe(FusionProbe):
             raise ValueError("No results to visualize. Run probe first.")
 
         artifacts = {}
-
-        # Leave-One-Out heatmap
-        fig, ax = plt.subplots(figsize=(14, 8))
+        using_pseudo_targets = self.results.metrics.get("using_pseudo_targets", False)
 
         sources = list(self.loo_performance.keys())
         tasks = self.config.tasks
 
-        delta_matrix = np.zeros((len(sources), len(tasks)))
-        for i, source in enumerate(sources):
-            for j, task in enumerate(tasks):
-                delta = self.results.metrics["performance_delta"].get(source, {}).get(task, 0)
-                delta_matrix[i, j] = delta
+        # Leave-One-Out heatmap
+        fig, ax = plt.subplots(figsize=(14, 8))
 
-        sns.heatmap(
-            delta_matrix,
-            annot=True,
-            fmt=".3f",
-            cmap="RdYlGn",
-            center=0,
-            xticklabels=tasks,
-            yticklabels=[s.replace("_pre_fusion", "") for s in sources],
-            ax=ax,
-        )
-        ax.set_title("Leave-One-Out Performance Delta\n(Positive = source is necessary)", fontsize=14)
+        # In self-supervised mode, show prediction deviation (positive MSE)
+        # In supervised mode, show performance delta
+        if using_pseudo_targets and "prediction_deviation" in self.results.metrics:
+            # Use prediction deviation for heatmap (higher = more important)
+            delta_matrix = np.zeros((len(sources), len(tasks)))
+            for i, source in enumerate(sources):
+                for j, task in enumerate(tasks):
+                    delta = self.results.metrics["prediction_deviation"].get(source, {}).get(task, 0)
+                    delta_matrix[i, j] = delta
+
+            sns.heatmap(
+                delta_matrix,
+                annot=True,
+                fmt=".4f",
+                cmap="YlOrRd",  # Yellow to Red: higher deviation = more important
+                xticklabels=tasks,
+                yticklabels=[s.replace("_pre_fusion", "") for s in sources],
+                ax=ax,
+            )
+            ax.set_title(
+                "Prediction Deviation When Source Ablated\n"
+                "(Higher = source is more important for predictions)",
+                fontsize=14
+            )
+        else:
+            delta_matrix = np.zeros((len(sources), len(tasks)))
+            for i, source in enumerate(sources):
+                for j, task in enumerate(tasks):
+                    delta = self.results.metrics["performance_delta"].get(source, {}).get(task, 0)
+                    delta_matrix[i, j] = delta
+
+            sns.heatmap(
+                delta_matrix,
+                annot=True,
+                fmt=".3f",
+                cmap="RdYlGn",
+                center=0,
+                xticklabels=tasks,
+                yticklabels=[s.replace("_pre_fusion", "") for s in sources],
+                ax=ax,
+            )
+            ax.set_title("Leave-One-Out Performance Delta\n(Positive = source is necessary)", fontsize=14)
+
         ax.set_xlabel("Task", fontsize=12)
         ax.set_ylabel("Ablated Source", fontsize=12)
         plt.tight_layout()
@@ -1582,13 +1860,24 @@ class AblationProbe(FusionProbe):
                     source_labels.append(source.replace("_pre_fusion", ""))
 
             if sufficiency_values:
-                colors = ['green' if v > baseline * 0.8 else 'orange' if v > baseline * 0.5 else 'red'
-                         for v in sufficiency_values]
-                ax.barh(source_labels, sufficiency_values, color=colors, edgecolor='black')
-                ax.axvline(x=baseline, color='blue', linestyle='--', label=f'Baseline ({baseline:.3f})')
-                ax.axvline(x=baseline * 0.8, color='green', linestyle=':', alpha=0.5)
-                ax.set_xlabel("Performance")
-                ax.set_title(f"Source Sufficiency: {task}")
+                if using_pseudo_targets:
+                    # In pseudo-target mode, values are negative MSE; closer to 0 = better
+                    # Convert to positive scale for visualization
+                    display_values = [-v for v in sufficiency_values]  # Now higher = more deviation
+                    colors = ['green' if v < 0.01 else 'orange' if v < 0.1 else 'red'
+                             for v in display_values]
+                    ax.barh(source_labels, display_values, color=colors, edgecolor='black')
+                    ax.axvline(x=0, color='blue', linestyle='--', label='Baseline (0 deviation)')
+                    ax.set_xlabel("Deviation from Baseline (MSE)")
+                    ax.set_title(f"Source Sufficiency: {task}\n(Lower = source alone approximates baseline)")
+                else:
+                    colors = ['green' if v > baseline * 0.8 else 'orange' if v > baseline * 0.5 else 'red'
+                             for v in sufficiency_values]
+                    ax.barh(source_labels, sufficiency_values, color=colors, edgecolor='black')
+                    ax.axvline(x=baseline, color='blue', linestyle='--', label=f'Baseline ({baseline:.3f})')
+                    ax.axvline(x=baseline * 0.8, color='green', linestyle=':', alpha=0.5)
+                    ax.set_xlabel("Performance")
+                    ax.set_title(f"Source Sufficiency: {task}")
                 ax.legend()
 
         plt.tight_layout()

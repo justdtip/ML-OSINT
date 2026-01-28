@@ -389,6 +389,94 @@ class ISWAlignmentProbe:
 
         return period_stats
 
+    def run(
+        self,
+        isw_embeddings: np.ndarray,
+        date_index: Dict[str, Any],
+        model_latents: Optional[np.ndarray] = None,
+    ) -> Dict[str, Any]:
+        """
+        Run the full ISW-Latent alignment probe.
+
+        This is the main entry point called by the probe runner.
+
+        Args:
+            isw_embeddings: [n_days, 1024] ISW embeddings array
+            date_index: Dict containing 'dates' key with list of date strings
+            model_latents: [n_days, latent_dim] model latent representations (optional)
+
+        Returns:
+            Dict with probe findings including alignment metrics and period analysis
+        """
+        # Extract dates from date_index
+        dates = date_index.get('dates', [])
+        if not dates:
+            return {
+                'error': 'No dates found in date_index',
+                'status': 'failed',
+            }
+
+        # Check if we have model latents
+        if model_latents is None:
+            return {
+                'error': 'No model_latents provided - cannot compute alignment',
+                'status': 'skipped',
+                'n_embeddings': len(isw_embeddings),
+                'date_range': f"{dates[0]} to {dates[-1]}" if dates else 'N/A',
+            }
+
+        # Dynamically set target dimension to match model latent dimension
+        self.target_dim = model_latents.shape[1]
+
+        # Fit projection and compute alignment
+        self.fit_projection(isw_embeddings)
+        alignment_results = self.compute_daily_alignment(
+            isw_embeddings=isw_embeddings,
+            latent_representations=model_latents,
+            dates=dates,
+            fit_projection=False,  # Already fitted above
+        )
+
+        # Analyze by conflict period
+        period_results = self.analyze_alignment_by_period(
+            daily_similarities=alignment_results['daily_similarities'],
+            dates=alignment_results['dates'],
+        )
+
+        # Build comprehensive findings
+        findings = {
+            'status': 'success',
+            'probe_id': '5.1.1',
+            'probe_name': 'ISW-Latent Correlation',
+            'summary': {
+                'mean_cosine_similarity': alignment_results['mean_similarity'],
+                'std_cosine_similarity': alignment_results['std_similarity'],
+                'min_similarity': alignment_results['min_similarity'],
+                'max_similarity': alignment_results['max_similarity'],
+                'median_similarity': alignment_results['median_similarity'],
+            },
+            'alignment_by_period': period_results,
+            'temporal_autocorrelation': alignment_results['alignment_autocorrelation'],
+            'highest_alignment_days': alignment_results['highest_alignment_days'],
+            'lowest_alignment_days': alignment_results['lowest_alignment_days'],
+            'n_days_analyzed': len(alignment_results['dates']),
+            'projection_method': self.projection_method,
+            'target_dimension': self.target_dim,
+        }
+
+        # Add interpretation
+        mean_sim = alignment_results['mean_similarity']
+        if mean_sim > 0.7:
+            interpretation = 'Strong alignment between ISW narrative and model latents'
+        elif mean_sim > 0.4:
+            interpretation = 'Moderate alignment - some semantic content captured'
+        else:
+            interpretation = 'Weak alignment - model may not effectively use ISW content'
+
+        findings['interpretation'] = interpretation
+
+        return findings
+
 
 class TopicExtractionProbe:
     """
@@ -616,6 +704,54 @@ class TopicExtractionProbe:
 
         return correlations
 
+    def run(
+        self,
+        isw_embeddings: np.ndarray,
+        date_index: Dict[str, int],
+        model_latents: np.ndarray,
+        numerical_sources: Optional[Dict[str, np.ndarray]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Run the full topic extraction probe and return findings.
+
+        Args:
+            isw_embeddings: [n_days, 1024] ISW embeddings
+            date_index: Dict mapping date strings to indices
+            model_latents: [n_days, latent_dim] model latent representations
+            numerical_sources: Optional dict mapping source name to arrays
+
+        Returns:
+            Dict with topic extraction results and source correlations
+        """
+        # Get dates from date_index
+        dates = date_index.get('dates', [])
+
+        # Extract topics from ISW embeddings
+        topic_results = self.extract_topics(isw_embeddings, dates)
+
+        # Compute topic-source correlations if numerical sources provided
+        source_correlations = None
+        if numerical_sources:
+            source_correlations = self.compute_topic_source_correlation(
+                topic_results, numerical_sources, dates
+            )
+
+        # Build results dictionary
+        results = {
+            'probe_name': 'TopicExtractionProbe',
+            'probe_id': '5.1.2',
+            'n_topics': topic_results['n_topics'],
+            'method': topic_results['method'],
+            'silhouette_score': topic_results.get('silhouette_score'),
+            'topic_stats': topic_results['topic_stats'],
+            'source_correlations': source_correlations,
+            'topic_labels': topic_results['topic_labels'].tolist() if isinstance(
+                topic_results['topic_labels'], np.ndarray
+            ) else topic_results['topic_labels'],
+        }
+
+        return results
+
 
 class ISWPredictiveContentProbe:
     """
@@ -723,6 +859,60 @@ class ISWPredictiveContentProbe:
             print(f"  {target_name}: R2={r2:.4f}, MSE={mse:.4f}, r={corr:.4f}")
 
         self.results = results
+        return results
+
+    def run(
+        self,
+        isw_embeddings: np.ndarray,
+        date_index: Dict[str, int],
+        model_latents: np.ndarray,
+        numerical_targets: Optional[Dict[str, np.ndarray]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Run the full ISW predictive content probe and return findings.
+
+        Args:
+            isw_embeddings: [n_days, 1024] ISW embeddings
+            date_index: Dict mapping date strings to indices
+            model_latents: [n_days, latent_dim] model latent representations
+            numerical_targets: Dict mapping target name to arrays (required)
+
+        Returns:
+            Dict with predictive power results for each target
+        """
+        # Get dates from date_index
+        dates = date_index.get('dates', [])
+
+        # Check for numerical targets
+        if numerical_targets is None or len(numerical_targets) == 0:
+            return {
+                'probe_name': 'ISWPredictiveContentProbe',
+                'probe_id': '5.1.3',
+                'skipped': True,
+                'reason': 'No numerical targets provided',
+            }
+
+        # Compute predictive power
+        predictive_results = self.compute_predictive_power(
+            isw_embeddings, numerical_targets, dates
+        )
+
+        # Build results dictionary
+        results = {
+            'probe_name': 'ISWPredictiveContentProbe',
+            'probe_id': '5.1.3',
+            'target_results': predictive_results,
+            'n_targets_evaluated': len(predictive_results),
+        }
+
+        # Add summary statistics
+        if predictive_results:
+            r2_scores = [v['r2_score'] for v in predictive_results.values()]
+            results['mean_r2'] = float(np.mean(r2_scores))
+            results['best_target'] = max(
+                predictive_results.items(), key=lambda x: x[1]['r2_score']
+            )[0]
+
         return results
 
 
@@ -895,6 +1085,97 @@ class EventResponseProbe:
             'n_events_analyzed': len(event_results),
         }
 
+    def run(
+        self,
+        isw_embeddings: np.ndarray,
+        date_index: Dict[str, Any],
+        model_latents: Optional[np.ndarray] = None,
+    ) -> Dict[str, Any]:
+        """
+        Run the full event-triggered response analysis probe.
+
+        This is the main entry point called by the probe runner.
+
+        Args:
+            isw_embeddings: [n_days, 1024] ISW embeddings array
+            date_index: Dict containing 'dates' key with list of date strings
+            model_latents: [n_days, latent_dim] model latent representations (optional)
+
+        Returns:
+            Dict with probe findings including event trajectories and response strength
+        """
+        # Extract dates from date_index
+        dates = date_index.get('dates', [])
+        if not dates:
+            return {
+                'error': 'No dates found in date_index',
+                'status': 'failed',
+            }
+
+        # Extract event trajectories
+        event_trajectories = self.extract_event_trajectories(
+            embeddings=isw_embeddings,
+            latents=model_latents,
+            dates=dates,
+        )
+
+        # Compute event response strength summary
+        event_summary = self.compute_event_response_strength(event_trajectories)
+
+        # Build comprehensive findings
+        findings = {
+            'status': 'success',
+            'probe_id': '5.2.1',
+            'probe_name': 'Event-Triggered Response Analysis',
+            'summary': event_summary,
+            'event_details': {},
+            'window_config': {
+                'window_before': self.window_before,
+                'window_after': self.window_after,
+            },
+        }
+
+        # Add per-event details (excluding window_dates which is a list)
+        for event_date, event_data in event_trajectories.items():
+            findings['event_details'][event_date] = {
+                'event_name': event_data['event_name'],
+                'event_type': event_data['event_type'],
+                'embedding_cosine_distance': event_data['embedding_cosine_distance'],
+                'embedding_euclidean_distance': event_data['embedding_euclidean_distance'],
+                'latent_cosine_distance': event_data['latent_cosine_distance'],
+                'latent_euclidean_distance': event_data['latent_euclidean_distance'],
+                'peak_velocity': event_data['peak_velocity'],
+                'peak_velocity_day': event_data['peak_velocity_day'],
+                'n_days_captured': event_data['n_days_captured'],
+            }
+
+        # Add interpretation based on mean response
+        mean_response = event_summary.get('mean_response', 0)
+        if mean_response > 0.1:
+            interpretation = 'Strong semantic shift around major events - model captures event dynamics well'
+        elif mean_response > 0.05:
+            interpretation = 'Moderate semantic response to events - model partially captures event dynamics'
+        else:
+            interpretation = 'Weak semantic response to events - model may not capture event-driven changes'
+
+        findings['interpretation'] = interpretation
+
+        # Group events by type for summary
+        event_types = {}
+        for event_date, event_data in event_trajectories.items():
+            event_type = event_data['event_type']
+            if event_type not in event_types:
+                event_types[event_type] = []
+            event_types[event_type].append({
+                'date': event_date,
+                'name': event_data['event_name'],
+                'embedding_shift': event_data['embedding_cosine_distance'],
+            })
+
+        findings['events_by_type'] = event_types
+
+        return findings
+
 
 class LagAnalysisProbe:
     """
@@ -1026,6 +1307,70 @@ class LagAnalysisProbe:
         self.results = results
         return results
 
+    def run(
+        self,
+        isw_embeddings: np.ndarray,
+        date_index: Dict[str, int],
+        model_latents: np.ndarray,
+        numerical_sources: Optional[Dict[str, np.ndarray]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Run the full lag analysis probe and return findings.
+
+        Args:
+            isw_embeddings: [n_days, 1024] ISW embeddings
+            date_index: Dict mapping date strings to indices
+            model_latents: [n_days, latent_dim] model latent representations
+            numerical_sources: Dict mapping source name to arrays (required)
+
+        Returns:
+            Dict with lag analysis results for each source
+        """
+        # Get dates from date_index
+        dates = date_index.get('dates', [])
+
+        # Check for numerical sources
+        if numerical_sources is None or len(numerical_sources) == 0:
+            return {
+                'probe_name': 'LagAnalysisProbe',
+                'probe_id': '5.2.2',
+                'skipped': True,
+                'reason': 'No numerical sources provided',
+            }
+
+        # Analyze all sources
+        lag_results = self.analyze_all_sources(isw_embeddings, numerical_sources, dates)
+
+        # Build results dictionary
+        results = {
+            'probe_name': 'LagAnalysisProbe',
+            'probe_id': '5.2.2',
+            'max_lag': self.max_lag,
+            'source_results': lag_results,
+            'n_sources_analyzed': len(lag_results),
+        }
+
+        # Add summary of lead/lag patterns
+        isw_leads = []
+        numerical_leads = []
+        synchronous = []
+
+        for source, data in lag_results.items():
+            if data['optimal_lag'] < 0:
+                isw_leads.append(source)
+            elif data['optimal_lag'] > 0:
+                numerical_leads.append(source)
+            else:
+                synchronous.append(source)
+
+        results['pattern_summary'] = {
+            'isw_leads': isw_leads,
+            'numerical_leads': numerical_leads,
+            'synchronous': synchronous,
+        }
+
+        return results
+
 
 class SemanticAnomalyProbe:
     """
@@ -1144,6 +1489,65 @@ class SemanticAnomalyProbe:
             'total_embedding_anomalies': len(embed_anomaly_set),
         }
 
+    def run(
+        self,
+        isw_embeddings: np.ndarray,
+        date_index: Dict[str, int],
+        model_latents: np.ndarray,
+        numerical_anomalies: Optional[Dict[str, List[str]]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Run the full semantic anomaly detection probe and return findings.
+
+        Args:
+            isw_embeddings: [n_days, 1024] ISW embeddings
+            date_index: Dict mapping date strings to indices
+            model_latents: [n_days, latent_dim] model latent representations
+            numerical_anomalies: Optional dict mapping source name to list of anomaly dates
+
+        Returns:
+            Dict with anomaly detection and comparison results
+        """
+        # Get dates from date_index
+        dates = date_index.get('dates', [])
+
+        # Detect embedding anomalies
+        embedding_anomalies = self.detect_embedding_anomalies(isw_embeddings, dates)
+
+        # Build results dictionary
+        results = {
+            'probe_name': 'SemanticAnomalyProbe',
+            'probe_id': '5.2.3',
+            'anomaly_threshold': self.anomaly_threshold,
+            'n_embedding_anomalies': embedding_anomalies['n_anomalies'],
+            'anomaly_fraction': embedding_anomalies['anomaly_fraction'],
+            'anomaly_dates': embedding_anomalies['anomaly_dates'],
+        }
+
+        # Compare with numerical anomalies if provided
+        if numerical_anomalies:
+            comparison_results = self.compare_anomalies(
+                embedding_anomalies, numerical_anomalies, dates
+            )
+            results['comparison'] = comparison_results
+
+            # Compute overall overlap metrics
+            total_overlap = sum(
+                c['overlap_count'] for c in comparison_results['source_comparisons'].values()
+            )
+            total_numerical = sum(
+                c['numerical_only_count'] + c['overlap_count']
+                for c in comparison_results['source_comparisons'].values()
+            )
+            results['cross_modal_overlap_ratio'] = (
+                float(total_overlap / total_numerical) if total_numerical > 0 else 0.0
+            )
+        else:
+            results['comparison'] = None
+            results['cross_modal_overlap_ratio'] = None
+
+        return results
+
 
 # =============================================================================
 # 5.3 COUNTERFACTUAL SEMANTIC PROBING
@@ -1177,17 +1581,25 @@ class CounterfactualProbe:
         Measure prediction change when ISW embedding is swapped.
 
         Args:
-            isw_embeddings: [n_days, embed_dim]
-            latent_representations: [n_days, latent_dim]
+            isw_embeddings: [n_isw_days, embed_dim] ISW embeddings (may be larger than latents)
+            latent_representations: [n_samples, latent_dim] Model latents (from training set)
             dates: Date strings
-            model_predictions: [n_days] or [n_days, n_targets] model outputs
+            model_predictions: [n_samples] or [n_samples, n_targets] model outputs
 
         Returns:
             Perturbation effect statistics
         """
         print("\nCounterfactual Semantic Perturbation Analysis:")
 
-        n_days = len(isw_embeddings)
+        # Use the minimum size to ensure valid indexing for all arrays
+        # ISW embeddings may cover more days than we have model latents for
+        n_isw = len(isw_embeddings)
+        n_latents = len(latent_representations) if latent_representations is not None else n_isw
+        n_dates = len(dates) if dates else n_isw
+        n_days = min(n_isw, n_latents, n_dates)
+
+        if n_isw != n_latents or n_isw != n_dates:
+            print(f"  Note: ISW={n_isw}, latents={n_latents}, dates={n_dates}. Using {n_days} aligned samples.")
 
         # For each sample, swap ISW with a random different day
         perturbation_effects = []
@@ -1258,6 +1670,62 @@ class CounterfactualProbe:
         print(f"  Mean latent change estimate: {results['mean_latent_change']:.4f}")
         if distance_latent_corr is not None:
             print(f"  Embedding-Latent correlation: {distance_latent_corr:.4f}")
+
+        return results
+
+    def run(
+        self,
+        isw_embeddings: np.ndarray,
+        date_index: Dict[str, int],
+        model_latents: np.ndarray,
+        model_predictions: Optional[np.ndarray] = None,
+    ) -> Dict[str, Any]:
+        """
+        Run the full counterfactual semantic perturbation probe and return findings.
+
+        Args:
+            isw_embeddings: [n_days, 1024] ISW embeddings
+            date_index: Dict mapping date strings to indices
+            model_latents: [n_days, latent_dim] model latent representations
+            model_predictions: Optional [n_days] or [n_days, n_targets] predictions
+
+        Returns:
+            Dict with counterfactual perturbation analysis results
+        """
+        # Get dates from date_index
+        dates = date_index.get('dates', [])
+
+        # Compute perturbation effects
+        perturbation_results = self.compute_perturbation_effects(
+            isw_embeddings, model_latents, dates, model_predictions
+        )
+
+        # Build results dictionary
+        results = {
+            'probe_name': 'CounterfactualProbe',
+            'probe_id': '5.3.1',
+            'n_perturbations': perturbation_results['n_perturbations'],
+            'mean_embedding_distance': perturbation_results['mean_embedding_distance'],
+            'std_embedding_distance': perturbation_results['std_embedding_distance'],
+            'mean_latent_change': perturbation_results['mean_latent_change'],
+            'distance_latent_correlation': perturbation_results['distance_latent_correlation'],
+            'mean_temporal_distance': perturbation_results['mean_temporal_distance'],
+        }
+
+        # Interpret the correlation strength
+        corr = perturbation_results['distance_latent_correlation']
+        if corr is not None:
+            if abs(corr) > 0.7:
+                results['interpretation'] = 'Strong embedding-latent coupling: model heavily relies on ISW content'
+            elif abs(corr) > 0.4:
+                results['interpretation'] = 'Moderate embedding-latent coupling: ISW content partially influences model'
+            else:
+                results['interpretation'] = 'Weak embedding-latent coupling: model may rely more on numerical features'
+        else:
+            results['interpretation'] = 'Unable to assess coupling (no latent data)'
+
+        # Include sample perturbation details
+        results['sample_perturbations'] = perturbation_results.get('perturbation_details', [])[:10]
 
         return results
 
@@ -1429,6 +1897,85 @@ class SemanticPredictorProbe:
 
         print(f"  Mean R2 across latent dims: {mean_r2:.4f}")
         print(f"  Mean cosine similarity: {np.mean(cos_sims):.4f}")
+
+        return results
+
+    def run(
+        self,
+        isw_embeddings: np.ndarray,
+        date_index: Dict[str, int],
+        model_latents: np.ndarray,
+    ) -> Dict[str, Any]:
+        """
+        Run the full semantic predictor probe and return findings.
+
+        This probe trains bidirectional predictors between ISW embeddings
+        and model latent representations to assess cross-modal predictability.
+
+        Args:
+            isw_embeddings: [n_days, 1024] ISW embeddings
+            date_index: Dict mapping date strings to indices
+            model_latents: [n_days, latent_dim] model latent representations
+
+        Returns:
+            Dict with bidirectional prediction results
+        """
+        # Get dates from date_index
+        dates = date_index.get('dates', [])
+
+        # Check for latent data
+        if model_latents is None or len(model_latents) == 0:
+            return {
+                'probe_name': 'SemanticPredictorProbe',
+                'probe_id': '5.3.2',
+                'skipped': True,
+                'reason': 'No model latent data provided',
+            }
+
+        # Train latent -> ISW predictor
+        latent_to_isw_results = self.train_latent_to_isw_predictor(
+            model_latents, isw_embeddings, dates
+        )
+
+        # Train ISW -> latent predictor
+        isw_to_latent_results = self.train_isw_to_latent_predictor(
+            isw_embeddings, model_latents, dates
+        )
+
+        # Build results dictionary
+        results = {
+            'probe_name': 'SemanticPredictorProbe',
+            'probe_id': '5.3.2',
+            'latent_to_isw': latent_to_isw_results,
+            'isw_to_latent': isw_to_latent_results,
+        }
+
+        # Assess bidirectional predictability
+        latent_to_isw_r2 = latent_to_isw_results['mean_r2']
+        isw_to_latent_r2 = isw_to_latent_results['mean_r2']
+
+        results['bidirectional_summary'] = {
+            'latent_to_isw_r2': latent_to_isw_r2,
+            'isw_to_latent_r2': isw_to_latent_r2,
+            'r2_difference': abs(latent_to_isw_r2 - isw_to_latent_r2),
+        }
+
+        # Interpret the asymmetry
+        if latent_to_isw_r2 > isw_to_latent_r2 + 0.1:
+            results['bidirectional_summary']['interpretation'] = (
+                'Latent representations contain more information about ISW content '
+                'than ISW contains about latents (numerical features dominate)'
+            )
+        elif isw_to_latent_r2 > latent_to_isw_r2 + 0.1:
+            results['bidirectional_summary']['interpretation'] = (
+                'ISW embeddings better predict latent states than vice versa '
+                '(semantic content strongly influences model)'
+            )
+        else:
+            results['bidirectional_summary']['interpretation'] = (
+                'Symmetric predictability between ISW and latent representations '
+                '(balanced semantic-numerical fusion)'
+            )
 
         return results
 

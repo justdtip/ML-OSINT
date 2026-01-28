@@ -101,6 +101,13 @@ from config.paths import (
     get_probe_metrics_dir,
 )
 
+# Task key mapping for consistent resolution between task names and output keys
+from .task_key_mapping import (
+    get_output_key,
+    extract_task_output,
+    has_task_output,
+)
+
 warnings.filterwarnings('ignore', category=UserWarning)
 
 
@@ -557,9 +564,10 @@ class ContextWindowProbe(BaseProbe):
                         month_boundaries=batch['month_boundaries'],
                     )
 
-                # Extract predictions and latents
-                if 'regime_logits' in outputs:
-                    preds = outputs['regime_logits'].argmax(dim=-1).cpu().numpy()
+                # Extract predictions and latents using centralized task key mapping
+                regime_output = extract_task_output(outputs, 'regime')
+                if regime_output is not None:
+                    preds = regime_output.argmax(dim=-1).cpu().numpy()
                     all_predictions.extend(preds.flatten().tolist())
                     all_labels.extend(labels.flatten().tolist())
 
@@ -1018,8 +1026,10 @@ class PredictiveHorizonProbe(BaseProbe):
                         month_boundaries=truncated_batch['month_boundaries'],
                     )
 
-                if 'regime_logits' in outputs:
-                    preds = outputs['regime_logits'].argmax(dim=-1).cpu().numpy()
+                # Use centralized task key mapping
+                regime_output = extract_task_output(outputs, 'regime')
+                if regime_output is not None:
+                    preds = regime_output.argmax(dim=-1).cpu().numpy()
                     all_predictions.extend(preds.flatten().tolist())
                     all_true_labels.extend(labels.flatten().tolist())
 
@@ -1828,10 +1838,14 @@ class TemporalDynamicsProbeRunner:
             config_dict = {}
 
         # Create data configuration
+        # NOTE: use_disaggregated_equipment and detrend_viirs must match training config
+        # to ensure consistent source configuration (6 vs 8 daily sources)
         data_config = MultiResolutionConfig(
             daily_seq_len=config_dict.get('daily_seq_len', 365),
             monthly_seq_len=config_dict.get('monthly_seq_len', 12),
             prediction_horizon=config_dict.get('prediction_horizon', 1),
+            use_disaggregated_equipment=config_dict.get('use_disaggregated_equipment', True),
+            detrend_viirs=config_dict.get('detrend_viirs', True),
         )
 
         # Load dataset
@@ -1839,28 +1853,33 @@ class TemporalDynamicsProbeRunner:
         self.dataset = MultiResolutionDataset(data_config, split='train')
         print(f"    Dataset size: {len(self.dataset)} samples")
 
-        # Get feature dimensions
+        # Get feature dimensions dynamically from dataset sample
+        # NOTE: Source names depend on use_disaggregated_equipment setting:
+        #   - use_disaggregated_equipment=True: drones, armor, artillery (8 daily sources)
+        #   - use_disaggregated_equipment=False: equipment (6 daily sources)
         sample = self.dataset[0]
         daily_source_configs = {}
         monthly_source_configs = {}
 
-        for source_name in ['equipment', 'personnel', 'deepstate', 'firms', 'viina', 'viirs']:
-            if source_name in sample.daily_features:
-                n_features = sample.daily_features[source_name].shape[-1]
-                daily_source_configs[source_name] = SourceConfig(
-                    name=source_name,
-                    n_features=n_features,
-                    resolution='daily',
-                )
+        # Build configs from actual sources in the sample (not hardcoded list)
+        for source_name, tensor in sample.daily_features.items():
+            n_features = tensor.shape[-1]
+            daily_source_configs[source_name] = SourceConfig(
+                name=source_name,
+                n_features=n_features,
+                resolution='daily',
+            )
 
-        for source_name in ['sentinel', 'hdx_conflict', 'hdx_food', 'hdx_rainfall', 'iom']:
-            if source_name in sample.monthly_features:
-                n_features = sample.monthly_features[source_name].shape[-1]
-                monthly_source_configs[source_name] = SourceConfig(
-                    name=source_name,
-                    n_features=n_features,
-                    resolution='monthly',
-                )
+        for source_name, tensor in sample.monthly_features.items():
+            n_features = tensor.shape[-1]
+            monthly_source_configs[source_name] = SourceConfig(
+                name=source_name,
+                n_features=n_features,
+                resolution='monthly',
+            )
+
+        print(f"    Daily sources: {list(daily_source_configs.keys())}")
+        print(f"    Monthly sources: {list(monthly_source_configs.keys())}")
 
         # Create model
         print("\n  Creating model...")

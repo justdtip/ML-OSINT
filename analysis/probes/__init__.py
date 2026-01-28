@@ -92,6 +92,83 @@ from typing import Dict, List, Optional, Any
 import warnings
 
 # ============================================================================
+# Training-Only Keys (keys from dataloader that should NOT be passed to model)
+# ============================================================================
+# These keys are produced by the dataloader/collate function for training loss
+# computation, but are NOT accepted by MultiResolutionHAN.forward().
+# The model's forward() accepts: daily_features, daily_masks, monthly_features,
+# monthly_masks, month_boundaries, and optionally 'targets'.
+TRAINING_ONLY_KEYS = frozenset({
+    # Autoregressive forecast training targets
+    'forecast_targets',
+    'forecast_masks',
+    # ISW alignment (computed separately in training loop, not passed to forward)
+    'isw_embedding',
+    'isw_mask',
+    # Target keys used for loss computation
+    'target',
+    'regime_target',
+    'casualty_target',
+    'anomaly_target',
+})
+
+# Metadata keys that are batch info, not model inputs
+BATCH_METADATA_KEYS = frozenset({
+    'batch_size',
+    'sample_indices',
+    'daily_seq_lens',
+    'monthly_seq_lens',
+    'daily_dates',
+    'monthly_dates',
+})
+
+# Combined set of all keys to exclude when calling model.forward()
+MODEL_FORWARD_EXCLUDE_KEYS = TRAINING_ONLY_KEYS | BATCH_METADATA_KEYS
+
+
+def prepare_batch_for_model(batch: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Prepare a batch from the dataloader for the model's forward method.
+
+    This function:
+    1. Maps dataloader keys to model's expected parameter names
+       (e.g., 'month_boundary_indices' -> 'month_boundaries')
+    2. Filters out training-only keys (forecast_targets, forecast_masks, etc.)
+    3. Filters out batch metadata keys (batch_size, sample_indices, etc.)
+
+    Args:
+        batch: Raw batch dict from the dataloader
+
+    Returns:
+        Filtered batch dict suitable for model.forward(**batch)
+    """
+    result = {}
+    for key, value in batch.items():
+        if key == 'month_boundary_indices':
+            # Rename to match model's expected parameter name
+            result['month_boundaries'] = value
+        elif key not in MODEL_FORWARD_EXCLUDE_KEYS:
+            result[key] = value
+    return result
+
+
+# ============================================================================
+# Task Key Mapping (centralized mapping between task names and model output keys)
+# ============================================================================
+from .task_key_mapping import (
+    TASK_NAMES,
+    TASK_OUTPUT_KEYS,
+    OUTPUT_KEY_TO_TASK,
+    ADDITIONAL_OUTPUT_KEYS,
+    get_output_key,
+    get_task_name,
+    extract_task_output,
+    has_task_output,
+    normalize_task_keys,
+    get_all_task_keys_for,
+)
+
+# ============================================================================
 # Section 1: Data Artifact Investigation
 # ============================================================================
 try:
@@ -330,6 +407,36 @@ except ImportError as e:
     _TACTICAL_AVAILABLE = False
     warnings.warn(f"Tactical readiness probes not available: {e}")
 
+# ============================================================================
+# Section 9: Architecture Component Validation (C1, C2, C3 Fixes)
+# ============================================================================
+try:
+    from .architecture_validation_probes import (
+        # Base classes
+        ArchitectureProbe,
+        ArchitectureProbeResult,
+
+        # Section 9.1: TemporalSourceGate Validation
+        GateWeightDynamicsProbe,
+        TemporalContextEffectProbe,
+
+        # Section 9.2: DailyTemporalEncoder Validation
+        MultiScalePatternProbe,
+        DailyEnrichmentProbe,
+
+        # Section 9.3: ISWAlignmentModule Validation
+        AlignmentQualityProbe,
+        ConflictPhaseAlignmentProbe,
+
+        # Runner
+        ARCHITECTURE_PROBES,
+        run_architecture_probes,
+    )
+    _ARCHITECTURE_AVAILABLE = True
+except ImportError as e:
+    _ARCHITECTURE_AVAILABLE = False
+    warnings.warn(f"Architecture validation probes not available: {e}")
+
 
 # ============================================================================
 # Module Availability Check
@@ -347,6 +454,7 @@ def get_available_modules() -> Dict[str, bool]:
         "semantic_association": _SEMANTIC_ASSOC_AVAILABLE,
         "causal_importance": _CAUSAL_AVAILABLE,
         "tactical_readiness": _TACTICAL_AVAILABLE,
+        "architecture_validation": _ARCHITECTURE_AVAILABLE,
     }
 
 
@@ -371,6 +479,10 @@ TIER_1_PROBES = [
     ("6.1.1", "Source Zeroing Interventions", "ZeroingInterventionProbe"),
     ("4.1.1", "Named Operation Clustering", "OperationClusteringProbe"),
     ("5.1.1", "ISW-Latent Correlation", "ISWAlignmentProbe"),
+    # Architecture validation probes (C1, C2, C3 fixes)
+    ("9.1.1", "Gate Weight Dynamics", "GateWeightDynamicsProbe"),
+    ("9.2.3", "Daily Temporal Enrichment", "DailyEnrichmentProbe"),
+    ("9.3.1", "ISW Alignment Quality", "AlignmentQualityProbe"),
 ]
 
 TIER_2_PROBES = [
@@ -439,6 +551,10 @@ TIER_3_PROBES = [
     ("8.1.2", "Reconstruction Performance Comparison", "ReconstructionPerformanceProbe"),
     ("8.2.1", "Multi-Task Performance Assessment", "MultiTaskPerformanceProbe"),
     ("8.2.2", "Training Dynamics Analysis", "TrainingDynamicsProbe"),
+    # Architecture validation probes (Section 9)
+    ("9.1.2", "Temporal Context Effect", "TemporalContextEffectProbe"),
+    ("9.2.1", "Multi-Scale Pattern Detection", "MultiScalePatternProbe"),
+    ("9.3.3", "Conflict Phase Alignment", "ConflictPhaseAlignmentProbe"),
 ]
 
 
@@ -446,6 +562,24 @@ TIER_3_PROBES = [
 # __all__ Export List
 # ============================================================================
 __all__ = [
+    # Batch preparation utilities
+    "TRAINING_ONLY_KEYS",
+    "BATCH_METADATA_KEYS",
+    "MODEL_FORWARD_EXCLUDE_KEYS",
+    "prepare_batch_for_model",
+
+    # Task key mapping utilities
+    "TASK_NAMES",
+    "TASK_OUTPUT_KEYS",
+    "OUTPUT_KEY_TO_TASK",
+    "ADDITIONAL_OUTPUT_KEYS",
+    "get_output_key",
+    "get_task_name",
+    "extract_task_output",
+    "has_task_output",
+    "normalize_task_keys",
+    "get_all_task_keys_for",
+
     # Availability utilities
     "get_available_modules",
     "print_availability_report",

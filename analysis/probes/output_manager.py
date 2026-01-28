@@ -42,6 +42,11 @@ class RunMetadata:
     num_fusion_layers: int = 0
     num_params: int = 0
 
+    # ISW alignment configuration
+    isw_alignment_mode: str = "auto"  # 'auto', 'enabled', 'disabled'
+    checkpoint_has_isw: bool = False  # Whether checkpoint contains ISW weights
+    use_isw_alignment: bool = False   # Effective ISW state (after mode applied)
+
     # Data configuration
     daily_seq_len: int = 0
     monthly_seq_len: int = 0
@@ -282,9 +287,26 @@ class RunOutputManager:
 
         Args:
             data_config: MultiResolutionConfig or similar
+
+        Note:
+            For daily_sources, we use get_effective_daily_sources() if available
+            to capture the actual sources used after disaggregation (e.g., when
+            use_disaggregated_equipment=True, 'equipment' becomes 'drones',
+            'armor', 'artillery').
         """
-        if hasattr(data_config, 'daily_sources'):
+        # Use effective daily sources (post-disaggregation) if method available,
+        # otherwise fall back to raw daily_sources attribute
+        if hasattr(data_config, 'get_effective_daily_sources'):
+            try:
+                effective_sources = data_config.get_effective_daily_sources()
+                self.update_metadata(daily_sources=list(effective_sources))
+            except Exception:
+                # Fall back to raw sources if method fails
+                if hasattr(data_config, 'daily_sources'):
+                    self.update_metadata(daily_sources=list(data_config.daily_sources))
+        elif hasattr(data_config, 'daily_sources'):
             self.update_metadata(daily_sources=list(data_config.daily_sources))
+
         if hasattr(data_config, 'monthly_sources'):
             self.update_metadata(monthly_sources=list(data_config.monthly_sources))
         if hasattr(data_config, 'detrend_viirs'):

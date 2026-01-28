@@ -35,6 +35,7 @@ Date: 2026-01-23
 import argparse
 import json
 import logging
+import re
 import sys
 import time
 from dataclasses import dataclass, field, asdict
@@ -74,24 +75,11 @@ from probes import (
     TIER_1_PROBES,
     TIER_2_PROBES,
     TIER_3_PROBES,
+    # Centralized batch preparation that filters training-only keys
+    prepare_batch_for_model,
+    TRAINING_ONLY_KEYS,
+    MODEL_FORWARD_EXCLUDE_KEYS,
 )
-
-
-def prepare_batch_for_model(batch: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Prepare a batch from the dataloader for the model's forward method.
-
-    Maps dataloader keys to model's expected parameter names.
-    The collate function returns 'month_boundary_indices' but model expects 'month_boundaries'.
-    """
-    result = {}
-    for key, value in batch.items():
-        if key == 'month_boundary_indices':
-            result['month_boundaries'] = value
-        elif key not in ('batch_size', 'sample_indices', 'daily_seq_lens', 'monthly_seq_lens'):
-            # Skip metadata keys that aren't model inputs
-            result[key] = value
-    return result
 
 
 @dataclass
@@ -135,6 +123,12 @@ class ProbeRunnerConfig:
     # Use 'train' for probes that need to analyze patterns across all phases (clustering, temporal patterns)
     # Use 'all' to combine train+val+test for maximum coverage
     probe_split: str = 'train'  # 'train', 'val', 'test', or 'all'
+
+    # ISW alignment control - allows testing modularity hypothesis
+    # 'auto': detect from checkpoint (default behavior)
+    # 'enabled': force ISW alignment on (even if checkpoint has no ISW weights)
+    # 'disabled': force ISW alignment off (discard ISW weights if present)
+    isw_alignment_mode: str = 'auto'  # 'auto', 'enabled', 'disabled'
 
     def __post_init__(self):
         # Convert to Path objects if strings and resolve to absolute paths
@@ -222,7 +216,9 @@ for tier_num, tier_probes in [(1, TIER_1_PROBES), (2, TIER_2_PROBES), (3, TIER_3
         requires_isw = probe_class in [
             "ISWAlignmentProbe", "TopicExtractionProbe", "ISWPredictiveContentProbe",
             "EventResponseProbe", "LagAnalysisProbe", "SemanticAnomalyProbe",
-            "CounterfactualProbe", "SemanticPredictorProbe"
+            "CounterfactualProbe", "SemanticPredictorProbe",
+            # Section 9: Architecture validation probes that need ISW
+            "AlignmentQualityProbe", "ConflictPhaseAlignmentProbe"
         ]
 
         requires_model = probe_class not in [
@@ -262,6 +258,8 @@ for tier_num, tier_probes in [(1, TIER_1_PROBES), (2, TIER_2_PROBES), (3, TIER_3
             module = "tactical_readiness_probes"
         elif section == 8:
             module = "model_assessment_probes"
+        elif section == 9:
+            module = "architecture_validation_probes"
         else:
             module = "unknown"
 
@@ -333,6 +331,21 @@ class MasterProbeRunner:
                 optimizations=config.optimizations,
             )
 
+        # Bug Fix #2: Propagate training_run_id to output_manager
+        # If training_run_id is not explicitly set but checkpoint path is provided,
+        # attempt to extract the training run ID from the checkpoint path.
+        # Example path: .../run_24-01-2026_15-13/stage3_han/best_checkpoint.pt
+        # should extract: run_24-01-2026_15-13
+        training_run_id = config.training_run_id
+        if training_run_id is None and config.checkpoint_path:
+            training_run_id = self._extract_training_run_id_from_path(config.checkpoint_path)
+            if training_run_id:
+                config.training_run_id = training_run_id  # Update config for later use
+
+        # Propagate training_run_id to output_manager metadata
+        if training_run_id:
+            self.output_manager.update_metadata(training_run_id=training_run_id)
+
         # Update metadata with device info
         self.output_manager.update_metadata(device=config.device)
 
@@ -362,6 +375,37 @@ class MasterProbeRunner:
         logger.addHandler(fh)
 
         return logger
+
+    def _extract_training_run_id_from_path(self, checkpoint_path: Path) -> Optional[str]:
+        """
+        Extract training run ID from checkpoint path.
+
+        Bug Fix #2: When a user specifies --checkpoint directly to a training run's
+        checkpoint file, we need to auto-detect the training_run_id from the path
+        to ensure config.json can be loaded for proper data configuration.
+
+        Args:
+            checkpoint_path: Path to the checkpoint file
+
+        Returns:
+            Extracted training run ID (e.g., 'run_24-01-2026_15-13') or None if not found
+
+        Example paths that should match:
+            .../training_runs/run_24-01-2026_15-13/stage3_han/best_checkpoint.pt
+            .../runs/run_24-01-2026_15-13/checkpoints/best_checkpoint.pt
+        """
+        # Convert to string for regex matching
+        path_str = str(checkpoint_path.resolve())
+
+        # Pattern matches 'run_DD-MM-YYYY_HH-MM' format
+        # This is the standard training run ID format used by training_output_manager.py
+        pattern = r'(run_\d{2}-\d{2}-\d{4}_\d{2}-\d{2})'
+        match = re.search(pattern, path_str)
+
+        if match:
+            return match.group(1)
+
+        return None
 
     def _load_model(self):
         """Load the trained model from checkpoint based on pipeline stage."""
@@ -405,28 +449,156 @@ class MasterProbeRunner:
             # Also check training run's config.json (train_full_pipeline.py runs)
             # This may have data config values like use_disaggregated_equipment
             if self.config.training_run_id:
-                from pathlib import Path
-                training_run_dir = Path(self.config.checkpoint_dir).parent.parent
+                # Derive training_run_dir from the actual checkpoint path, not checkpoint_dir.
+                # This is important when training_run_id was auto-extracted from checkpoint_path
+                # (Bug Fix #2) but checkpoint_dir kept its default value.
+                #
+                # Expected path structure:
+                #   .../training_runs/run_24-01-2026_15-13/stage3_han/best_checkpoint.pt
+                #                     ^^^^^^^^^^^^^^^^^^^^^ training_run_dir
+                #
+                # We search for the training_run_id in the checkpoint_path to find the correct dir.
+                checkpoint_path_str = str(self.config.checkpoint_path)
+                training_run_id = self.config.training_run_id
+
+                # Find the training run directory by locating the run ID in the path
+                if training_run_id in checkpoint_path_str:
+                    # Extract the path up to and including the training_run_id
+                    idx = checkpoint_path_str.find(training_run_id)
+                    training_run_dir = Path(checkpoint_path_str[:idx + len(training_run_id)])
+                else:
+                    # Fallback to the old method if run ID not found in path
+                    # (e.g., when --training-run was used and checkpoint_dir is correctly set)
+                    # checkpoint_dir is typically .../run_XXX/stage3_han/, so .parent gives run_XXX/
+                    training_run_dir = Path(self.config.checkpoint_dir).parent
+
                 training_run_config_path = training_run_dir / "config.json"
                 if training_run_config_path.exists():
+                    self.logger.info(f"Loading training config from: {training_run_config_path}")
                     with open(training_run_config_path, "r") as f:
                         run_config = json.load(f)
                     # Merge run config (lower priority than training_summary)
-                    for key in ['use_disaggregated_equipment', 'detrend_viirs']:
+                    # Include both data config and model architecture parameters
+                    merge_keys = [
+                        # Data config
+                        'use_disaggregated_equipment', 'detrend_viirs',
+                        # Model architecture
+                        'd_model', 'nhead', 'num_daily_layers', 'num_monthly_layers',
+                        'num_fusion_layers', 'dropout',
+                        # ISW config
+                        'use_isw_alignment', 'isw_weight',
+                    ]
+                    for key in merge_keys:
                         if key in run_config and key not in config_dict:
                             config_dict[key] = run_config[key]
+                            self.logger.info(f"  Loaded {key}={run_config[key]} from training config")
 
-            # Create data configuration
-            # Note: defaults are conservative for older checkpoints without these settings
-            data_config = MultiResolutionConfig(
-                daily_seq_len=config_dict.get('daily_seq_len', 365),
-                monthly_seq_len=config_dict.get('monthly_seq_len', 12),
-                prediction_horizon=config_dict.get('prediction_horizon', 1),
-                use_disaggregated_equipment=config_dict.get('use_disaggregated_equipment', False),
-                detrend_viirs=config_dict.get('detrend_viirs', True),
+            # CRITICAL: Pre-load checkpoint to detect source configuration
+            # We need to know what sources the checkpoint expects BEFORE creating the dataset
+            # to avoid mismatch between data sources and model architecture.
+            self.logger.info("Pre-loading checkpoint to detect source configuration...")
+            checkpoint_for_inspection = torch.load(
+                self.config.checkpoint_path,
+                map_location='cpu',  # Load to CPU for inspection
+                weights_only=False
             )
 
+            # Extract state dict for inspection
+            if 'model_state_dict' in checkpoint_for_inspection:
+                inspection_state_dict = checkpoint_for_inspection['model_state_dict']
+            else:
+                inspection_state_dict = checkpoint_for_inspection
+
+            # =========================================================================
+            # Infer use_disaggregated_equipment from checkpoint tensor shapes
+            # =========================================================================
+            # The most reliable method is to inspect the source_type_embedding shape:
+            # - daily_fusion.source_type_embedding.weight: [n_daily_sources, d_model]
+            # - 6 sources = aggregated (equipment, personnel, deepstate, firms, viina, viirs)
+            # - 8 sources = disaggregated (drones, armor, artillery, personnel, deepstate, firms, viina, viirs)
+            #
+            # This is more reliable than looking for encoder keys which may not exist
+            # in all checkpoint architectures.
+            # =========================================================================
+
+            inferred_disaggregated = None
+            inferred_n_daily_sources = None
+
+            # Primary method: Infer from source_type_embedding shape
+            if 'daily_fusion.source_type_embedding.weight' in inspection_state_dict:
+                embedding_shape = inspection_state_dict['daily_fusion.source_type_embedding.weight'].shape
+                inferred_n_daily_sources = embedding_shape[0]
+                if inferred_n_daily_sources == 6:
+                    inferred_disaggregated = False
+                    self.logger.info(f"Inferred from checkpoint: {inferred_n_daily_sources} daily sources")
+                    self.logger.info("  -> use_disaggregated_equipment=False (aggregated equipment)")
+                elif inferred_n_daily_sources == 8:
+                    inferred_disaggregated = True
+                    self.logger.info(f"Inferred from checkpoint: {inferred_n_daily_sources} daily sources")
+                    self.logger.info("  -> use_disaggregated_equipment=True (disaggregated: drones/armor/artillery)")
+                else:
+                    self.logger.warning(f"Unexpected number of daily sources in checkpoint: {inferred_n_daily_sources}")
+                    self.logger.warning("Cannot reliably infer use_disaggregated_equipment, will use config value")
+
+            # Fallback method: Look for named encoder keys (for alternative architectures)
+            if inferred_disaggregated is None:
+                checkpoint_daily_sources = set()
+                for key in inspection_state_dict.keys():
+                    if 'daily_source_encoders.' in key:
+                        parts = key.split('.')
+                        if len(parts) >= 2:
+                            source_idx = parts.index('daily_source_encoders') + 1
+                            if source_idx < len(parts):
+                                checkpoint_daily_sources.add(parts[source_idx])
+
+                if checkpoint_daily_sources:
+                    self.logger.info(f"Checkpoint daily sources from encoder keys: {sorted(checkpoint_daily_sources)}")
+                    checkpoint_has_disaggregated = 'drones' in checkpoint_daily_sources or 'armor' in checkpoint_daily_sources
+                    checkpoint_has_aggregated = 'equipment' in checkpoint_daily_sources
+
+                    if checkpoint_has_disaggregated and not checkpoint_has_aggregated:
+                        inferred_disaggregated = True
+                        self.logger.info("Inferred use_disaggregated_equipment=True from checkpoint (found drones/armor sources)")
+                    elif checkpoint_has_aggregated and not checkpoint_has_disaggregated:
+                        inferred_disaggregated = False
+                        self.logger.info("Inferred use_disaggregated_equipment=False from checkpoint (found equipment source)")
+
+            # Create data configuration
+            # Build kwargs dynamically to let MultiResolutionConfig dataclass defaults apply
+            # when config_dict is missing keys. This ensures consistency with the dataclass
+            # (e.g., use_disaggregated_equipment defaults to True in the dataclass).
+            data_config_kwargs = {
+                'daily_seq_len': config_dict.get('daily_seq_len', 365),
+                'monthly_seq_len': config_dict.get('monthly_seq_len', 12),
+                'prediction_horizon': config_dict.get('prediction_horizon', 1),
+            }
+
+            # Priority for use_disaggregated_equipment:
+            # 1. Inferred from checkpoint (most reliable)
+            # 2. Explicitly set in config_dict (from training_summary.json or config.json)
+            # 3. Dataclass default (True)
+            if inferred_disaggregated is not None:
+                data_config_kwargs['use_disaggregated_equipment'] = inferred_disaggregated
+                if 'use_disaggregated_equipment' in config_dict and config_dict['use_disaggregated_equipment'] != inferred_disaggregated:
+                    self.logger.warning(
+                        f"Config says use_disaggregated_equipment={config_dict['use_disaggregated_equipment']} "
+                        f"but checkpoint indicates {inferred_disaggregated}. Using inferred value from checkpoint."
+                    )
+            elif 'use_disaggregated_equipment' in config_dict:
+                data_config_kwargs['use_disaggregated_equipment'] = config_dict['use_disaggregated_equipment']
+
+            if 'detrend_viirs' in config_dict:
+                data_config_kwargs['detrend_viirs'] = config_dict['detrend_viirs']
+
+            data_config = MultiResolutionConfig(**data_config_kwargs)
+
+            # Log the data configuration being used for debugging
+            self.logger.info(f"Data config: use_disaggregated_equipment={data_config.use_disaggregated_equipment}, "
+                           f"detrend_viirs={data_config.detrend_viirs}")
+            self.logger.info(f"Effective daily sources: {data_config.get_effective_daily_sources()}")
+
             # First create train dataset to get normalization stats
+            self.logger.info("Creating training dataset for normalization stats...")
             train_dataset = MultiResolutionDataset(data_config, split='train')
             norm_stats = train_dataset.norm_stats
 
@@ -460,8 +632,29 @@ class MasterProbeRunner:
             daily_source_names = list(sample.daily_features.keys())
             monthly_source_names = list(sample.monthly_features.keys())
 
-            self.logger.info(f"Daily sources: {daily_source_names}")
-            self.logger.info(f"Monthly sources: {monthly_source_names}")
+            self.logger.info(f"Dataset daily sources: {daily_source_names}")
+            self.logger.info(f"Dataset monthly sources: {monthly_source_names}")
+
+            # Validate source count matches between dataset and checkpoint
+            n_dataset_daily = len(daily_source_names)
+
+            if inferred_n_daily_sources is not None and n_dataset_daily != inferred_n_daily_sources:
+                self.logger.error(
+                    f"SOURCE COUNT MISMATCH: Dataset has {n_dataset_daily} daily sources "
+                    f"but checkpoint expects {inferred_n_daily_sources}!"
+                )
+                self.logger.error(f"  Dataset sources: {daily_source_names}")
+                self.logger.error(
+                    f"  Expected: {'aggregated (6 sources)' if inferred_n_daily_sources == 6 else 'disaggregated (8 sources)'}"
+                )
+                raise RuntimeError(
+                    f"Model architecture mismatch: checkpoint expects {inferred_n_daily_sources} daily sources "
+                    f"but data config creates {n_dataset_daily}. "
+                    f"This indicates a bug in use_disaggregated_equipment inference. "
+                    f"Checkpoint source_type_embedding shape: [{inferred_n_daily_sources}, d_model]"
+                )
+            else:
+                self.logger.info(f"Source count validation passed: {n_dataset_daily} daily sources")
 
             # Build source configs dynamically from the actual data
             daily_source_configs = {}
@@ -483,28 +676,70 @@ class MasterProbeRunner:
                     resolution='monthly',
                 )
 
-            # Create model with correct parameters
-            # Note: d_model=64 matches the trained checkpoint (2.3M params)
-            # Previous default of 128 caused size mismatch errors
+            # Determine ISW alignment setting based on config mode
+            checkpoint_state = checkpoint_for_inspection.get('model_state_dict', checkpoint_for_inspection)
+            checkpoint_has_isw = any('isw_alignment' in key for key in checkpoint_state.keys())
+
+            if self.config.isw_alignment_mode == 'enabled':
+                use_isw_alignment = True
+                if checkpoint_has_isw:
+                    self.logger.info("ISW alignment ENABLED (forced) - checkpoint has ISW weights")
+                else:
+                    self.logger.warning("ISW alignment ENABLED (forced) - checkpoint lacks ISW weights, module will be randomly initialized")
+            elif self.config.isw_alignment_mode == 'disabled':
+                use_isw_alignment = False
+                if checkpoint_has_isw:
+                    self.logger.info("ISW alignment DISABLED (forced) - checkpoint ISW weights will be discarded")
+                else:
+                    self.logger.info("ISW alignment DISABLED (forced) - checkpoint has no ISW weights")
+            else:  # 'auto' mode - default behavior
+                use_isw_alignment = checkpoint_has_isw
+                if use_isw_alignment:
+                    self.logger.info("ISW alignment AUTO-DETECTED from checkpoint - enabling for model")
+
+            # =========================================================================
+            # Infer d_model from checkpoint if not in config
+            # The source_type_embedding shape is [n_sources, d_model]
+            # =========================================================================
+            if 'd_model' not in config_dict:
+                if 'daily_fusion.source_type_embedding.weight' in checkpoint_state:
+                    inferred_d_model = checkpoint_state['daily_fusion.source_type_embedding.weight'].shape[1]
+                    config_dict['d_model'] = inferred_d_model
+                    self.logger.info(f"Inferred d_model={inferred_d_model} from checkpoint source_type_embedding")
+                else:
+                    self.logger.warning("Could not infer d_model from checkpoint, using default=64")
+
+            # Infer nhead from checkpoint if not in config (from attention weights)
+            if 'nhead' not in config_dict:
+                # Try to find attention in_proj_weight to infer nhead
+                # Shape is [3*d_model, d_model] for multi-head attention
+                # We can't directly infer nhead, but common ratios are d_model/nhead = 16 or 32
+                d_model = config_dict.get('d_model', 64)
+                if d_model == 128:
+                    config_dict['nhead'] = 8  # Common config for d_model=128
+                    self.logger.info(f"Inferred nhead=8 for d_model=128")
+                elif d_model == 64:
+                    config_dict['nhead'] = 4  # Common config for d_model=64
+                    self.logger.info(f"Inferred nhead=4 for d_model=64")
+
+            # Create model with parameters from config (inferred or loaded)
             self.model = MultiResolutionHAN(
                 daily_source_configs=daily_source_configs,
                 monthly_source_configs=monthly_source_configs,
-                d_model=config_dict.get('d_model', 64),  # Match trained checkpoint
-                nhead=config_dict.get('nhead', 4),  # Match trained checkpoint
+                d_model=config_dict.get('d_model', 64),
+                nhead=config_dict.get('nhead', 4),
                 num_daily_layers=config_dict.get('num_daily_layers', 3),
                 num_monthly_layers=config_dict.get('num_monthly_layers', 2),
                 num_fusion_layers=config_dict.get('num_fusion_layers', 2),
                 num_temporal_layers=2,
                 dropout=0.0,  # No dropout for inference
+                use_isw_alignment=use_isw_alignment,
+                isw_dim=1024,  # Voyage embedding dimension
             )
 
-            # Load checkpoint
-            # Note: weights_only=False is needed for checkpoints saved with numpy arrays
-            checkpoint = torch.load(
-                self.config.checkpoint_path,
-                map_location=self.config.device,
-                weights_only=False
-            )
+            # Reuse the checkpoint we already loaded for inspection, but move to correct device
+            # This avoids loading the checkpoint twice
+            checkpoint = checkpoint_for_inspection
 
             # Handle state dict (may have 'model_state_dict' key)
             if 'model_state_dict' in checkpoint:
@@ -512,13 +747,47 @@ class MasterProbeRunner:
             else:
                 state_dict = checkpoint
 
-            # Load state dict (allow missing keys for flexibility)
-            self.model.load_state_dict(state_dict, strict=False)
+            # Move state dict tensors to the target device
+            state_dict = {k: v.to(self.config.device) if hasattr(v, 'to') else v
+                         for k, v in state_dict.items()}
+
+            # Load state dict with detailed mismatch reporting
+            # Using strict=False allows partial loading, but we log mismatches
+            # to help diagnose data configuration issues
+            load_result = self.model.load_state_dict(state_dict, strict=False)
+
+            # Check for missing or unexpected keys
+            if load_result.missing_keys:
+                self.logger.warning(f"Missing keys in checkpoint (model expects but checkpoint lacks): "
+                                  f"{len(load_result.missing_keys)} keys")
+                # Log a sample of missing keys for debugging
+                sample_missing = load_result.missing_keys[:5]
+                self.logger.warning(f"  Sample missing keys: {sample_missing}")
+
+                # Check if the mismatch is related to source encoders
+                source_mismatches = [k for k in load_result.missing_keys
+                                    if 'source_encoders' in k or 'source_attention' in k]
+                if source_mismatches:
+                    self.logger.error(
+                        f"SOURCE ENCODER MISMATCH DETECTED: {len(source_mismatches)} keys. "
+                        f"This likely means the checkpoint was trained with different data sources "
+                        f"(e.g., use_disaggregated_equipment mismatch). "
+                        f"Check that probe data config matches training config."
+                    )
+
+            if load_result.unexpected_keys:
+                self.logger.warning(f"Unexpected keys in checkpoint (checkpoint has but model lacks): "
+                                  f"{len(load_result.unexpected_keys)} keys")
+                sample_unexpected = load_result.unexpected_keys[:5]
+                self.logger.warning(f"  Sample unexpected keys: {sample_unexpected}")
+
             self.model.to(self.config.device)
             self.model.eval()
 
             # Also create a dataloader for batch processing
             from torch.utils.data import DataLoader
+            self.logger.info(f"Creating dataloader with batch_size={self.config.batch_size}, "
+                           f"dataset_size={len(self.dataset)}")
             self.dataloader = DataLoader(
                 self.dataset,
                 batch_size=self.config.batch_size,
@@ -527,7 +796,12 @@ class MasterProbeRunner:
                 collate_fn=multi_resolution_collate_fn
             )
 
+            # Validate dataloader was created successfully
+            if self.dataloader is None:
+                raise RuntimeError("DataLoader creation returned None - this should not happen")
+
             self.logger.info(f"Model loaded successfully with {sum(p.numel() for p in self.model.parameters()):,} parameters")
+            self.logger.info(f"Dataloader created with {len(self.dataloader)} batches")
             self.logger.info(f"Daily sources: {list(daily_source_configs.keys())}")
             self.logger.info(f"Monthly sources: {list(monthly_source_configs.keys())}")
 
@@ -538,10 +812,12 @@ class MasterProbeRunner:
                 config=config_dict,
             )
             self.output_manager.extract_data_metadata(data_config)
+            # Import task names from centralized mapping
+            from .task_key_mapping import TASK_NAMES
             self.output_manager.update_metadata(
                 daily_sources=list(daily_source_configs.keys()),
                 monthly_sources=list(monthly_source_configs.keys()),
-                task_names=['casualty', 'regime', 'transition', 'anomaly', 'forecast'],
+                task_names=TASK_NAMES,
             )
 
             # Extract training info from checkpoint
@@ -554,6 +830,13 @@ class MasterProbeRunner:
                 self.output_manager.update_metadata(best_epoch=checkpoint['best_epoch'])
             if 'best_val_loss' in checkpoint:
                 self.output_manager.update_metadata(best_val_loss=checkpoint['best_val_loss'])
+
+            # Record ISW alignment state for run comparison
+            self.output_manager.update_metadata(
+                isw_alignment_mode=self.config.isw_alignment_mode,
+                checkpoint_has_isw=checkpoint_has_isw,
+                use_isw_alignment=use_isw_alignment,
+            )
 
         except Exception as e:
             self.logger.error(f"Failed to load model: {e}")
@@ -847,7 +1130,8 @@ class MasterProbeRunner:
                     from probes.cross_modal_fusion_probes import AblationProbeConfig
                     config = AblationProbeConfig(model=self.model)
                     probe = probe_class(config)
-                    result = probe.run(self.dataloader, task_evaluators={})
+                    # Pass None to use default evaluators (empty dict {} would bypass defaults)
+                    result = probe.run(self.dataloader, task_evaluators=None)
                 else:
                     # Checkpoint comparison - use weights_only=False for loading checkpoints
                     from probes.cross_modal_fusion_probes import CheckpointProbeConfig
@@ -1044,9 +1328,49 @@ class MasterProbeRunner:
             # Prepare a single batch with correct key names for model
             raw_batch = next(iter(self.dataloader))
             batch = prepare_batch_for_model(raw_batch)
-            result = probe.run(batch)
+
+            # Move batch tensors to device
+            batch = self._move_batch_to_device(batch)
+
+            # Run the probe - returns a list of result objects
+            results_list = probe.run(batch)
+
+            # Use the probe's summarize() method to get aggregated findings
+            # The summarize() method is designed to collect all results and
+            # produce meaningful rankings, statistics, and insights
+            summary = probe.summarize()
+
+            # Extract key findings for the report
+            findings = {
+                'probe_type': summary.get('probe_type', probe_info.class_name),
+                'n_experiments': summary.get('n_experiments', len(results_list) if results_list else 0),
+                'timestamp': summary.get('timestamp', ''),
+            }
+
+            # Add task-specific rankings if available
+            if 'rankings' in summary:
+                findings['rankings'] = summary['rankings']
+            if 'by_task' in summary:
+                findings['by_task'] = summary['by_task']
+            if 'by_source' in summary:
+                findings['by_source'] = summary['by_source']
+
+            # Add probe-specific fields
+            if 'temporal_importance' in summary:
+                findings['temporal_importance'] = summary['temporal_importance']
+            if 'value_vs_deviation' in summary:
+                findings['value_vs_deviation'] = summary['value_vs_deviation']
+            if 'comparison_with_zeroing' in summary:
+                findings['comparison_with_zeroing'] = summary['comparison_with_zeroing']
+            if 'ig_vs_simple_gradients' in summary:
+                findings['ig_vs_simple_gradients'] = summary['ig_vs_simple_gradients']
+            if 'flow_graph' in summary:
+                findings['flow_graph'] = summary['flow_graph']
+            if 'critical_pathways' in summary:
+                findings['critical_pathways'] = summary['critical_pathways']
+
             return {
-                'findings': result.to_dict() if hasattr(result, 'to_dict') else {},
+                'findings': findings,
                 'artifacts': {'figures': [], 'tables': []},
                 'recommendations': []
             }
@@ -1152,8 +1476,123 @@ class MasterProbeRunner:
                     'recommendations': [f'Probe {probe_info.class_name} failed: {str(e)}']
                 }
 
+        # Model assessment probes (Section 8)
+        elif probe_info.section == 8:
+            try:
+                # Section 8 probes inherit from Probe and have run() method
+                probe = probe_class()
+                result = probe.run()
+
+                return {
+                    'findings': result.findings if hasattr(result, 'findings') else {},
+                    'artifacts': result.artifacts if hasattr(result, 'artifacts') else {},
+                    'recommendations': result.recommendations if hasattr(result, 'recommendations') else []
+                }
+            except Exception as e:
+                return {
+                    'findings': {
+                        'error': str(e),
+                        'probe': probe_info.class_name,
+                    },
+                    'artifacts': {'figures': [], 'tables': []},
+                    'recommendations': [f'Model assessment probe {probe_info.class_name} failed: {str(e)}']
+                }
+
+        # Architecture validation probes (Section 9)
+        elif probe_info.section == 9:
+            try:
+                # Section 9 probes use the ArchitectureProbe interface
+                # They require model, dataloader, device, and output_dir
+                if self.model is None:
+                    self._load_model()
+
+                if self.dataloader is None:
+                    return {
+                        'findings': {
+                            'error': 'DataLoader not available for architecture validation probes',
+                            'probe': probe_info.class_name,
+                        },
+                        'artifacts': {'figures': [], 'tables': []},
+                        'recommendations': [
+                            'Ensure model and dataloader are properly loaded.',
+                            'Use --pipeline-stage 3 or omit the flag for architecture validation probes.'
+                        ]
+                    }
+
+                # Get output directory from output manager
+                output_dir = self.output_manager.figures_dir
+
+                # Instantiate the probe
+                probe = probe_class(
+                    model=self.model,
+                    dataloader=self.dataloader,
+                    device=torch.device(self.config.device),
+                    output_dir=output_dir,
+                )
+
+                # Run the probe
+                result = probe.run()
+
+                # Convert ArchitectureProbeResult to standard format
+                findings = {
+                    'passed': result.passed,
+                    'metrics': result.metrics,
+                    'interpretation': result.interpretation,
+                }
+                if result.raw_data:
+                    findings['raw_data'] = result.raw_data
+
+                # Get visualization paths as strings
+                figure_paths = [str(p) for p in result.visualizations] if result.visualizations else []
+
+                return {
+                    'findings': findings,
+                    'artifacts': {'figures': figure_paths, 'tables': []},
+                    'recommendations': [] if result.passed else [
+                        f'Probe {probe_info.class_name} identified issues that may need attention.',
+                        f'Review interpretation: {result.interpretation[:200]}...' if len(result.interpretation) > 200 else result.interpretation
+                    ]
+                }
+            except Exception as e:
+                import traceback
+                self.logger.error(f"Architecture validation probe {probe_info.class_name} failed: {e}")
+                traceback.print_exc()
+                return {
+                    'findings': {
+                        'error': str(e),
+                        'probe': probe_info.class_name,
+                        'traceback': traceback.format_exc(),
+                    },
+                    'artifacts': {'figures': [], 'tables': []},
+                    'recommendations': [f'Architecture validation probe {probe_info.class_name} failed: {str(e)}']
+                }
+
         else:
             return {'findings': {}, 'artifacts': {}, 'recommendations': []}
+
+    def _move_batch_to_device(self, batch: Dict[str, Any]) -> Dict[str, Any]:
+        """Move all tensors in a batch to the configured device.
+
+        Args:
+            batch: Dictionary containing model inputs with nested dicts of tensors.
+
+        Returns:
+            Batch with all tensors moved to self.config.device.
+        """
+        moved_batch = {}
+        for key, value in batch.items():
+            if isinstance(value, dict):
+                # Handle nested dicts (daily_features, daily_masks, etc.)
+                moved_batch[key] = {
+                    k: v.to(self.config.device) if hasattr(v, 'to') else v
+                    for k, v in value.items()
+                }
+            elif hasattr(value, 'to'):
+                # Handle tensors directly (month_boundaries, etc.)
+                moved_batch[key] = value.to(self.config.device)
+            else:
+                moved_batch[key] = value
+        return moved_batch
 
     def _extract_latents(self) -> np.ndarray:
         """Extract latent representations from the model.
@@ -1166,9 +1605,33 @@ class MasterProbeRunner:
             Model outputs like 'casualty_pred' have shape [batch, seq, features].
             We take the last timestep to get [batch, features], then concatenate
             across batches to get [n_samples, features].
+
+        Raises:
+            RuntimeError: If model or dataloader failed to initialize.
         """
         if self.model is None:
             self._load_model()
+
+        # CRITICAL: Validate that dataloader was created successfully
+        # This can fail if:
+        # 1. Pipeline stage 1 or 2 was selected (they don't create dataloaders)
+        # 2. Model loading failed partway through
+        # 3. Data configuration mismatch between model and data sources
+        if self.dataloader is None:
+            stage = self.config.pipeline_stage
+            if stage in (1, 2):
+                raise RuntimeError(
+                    f"Dataloader is None: Pipeline stage {stage} does not support latent extraction. "
+                    f"Stage 1 (JIM) and Stage 2 (Unified) loaders don't create HAN dataloaders. "
+                    f"Use --pipeline-stage 3 or omit the flag for probes requiring latent extraction."
+                )
+            else:
+                raise RuntimeError(
+                    "Dataloader is None after model loading. This indicates a silent failure "
+                    "during model/data initialization. Check the logs for earlier errors. "
+                    "Common causes: 1) Checkpoint not found, 2) Data config mismatch "
+                    "(use_disaggregated_equipment, detrend_viirs), 3) Missing data files."
+                )
 
         latents = []
         with torch.no_grad():
@@ -1203,21 +1666,26 @@ class MasterProbeRunner:
 
                 # Get fused representation - use casualty predictions as proxy for latent
                 # The model doesn't directly expose internal representations
+                # Import helper from centralized task key mapping
+                from .task_key_mapping import extract_task_output
                 if 'fused_representation' in outputs:
                     latent = outputs['fused_representation'].cpu().numpy()
                 elif 'temporal_output' in outputs:
                     latent = outputs['temporal_output'].cpu().numpy()
-                elif 'casualty_pred' in outputs:
-                    # Use casualty predictions as proxy for latent representation
-                    latent = outputs['casualty_pred'].cpu().numpy()
                 else:
-                    # Fallback: use first available output tensor
-                    for key, val in outputs.items():
-                        if isinstance(val, torch.Tensor) and val.dim() >= 2:
-                            latent = val.cpu().numpy()
-                            break
+                    # Try casualty output using centralized mapping
+                    casualty_output = extract_task_output(outputs, 'casualty')
+                    if casualty_output is not None:
+                        # Use casualty predictions as proxy for latent representation
+                        latent = casualty_output.cpu().numpy()
                     else:
-                        raise ValueError(f"No suitable latent representation found in outputs: {list(outputs.keys())}")
+                        # Fallback: use first available output tensor
+                        for key, val in outputs.items():
+                            if isinstance(val, torch.Tensor) and val.dim() >= 2:
+                                latent = val.cpu().numpy()
+                                break
+                        else:
+                            raise ValueError(f"No suitable latent representation found in outputs: {list(outputs.keys())}")
 
                 # Convert 3D tensors [batch, seq, features] to 2D [batch, features]
                 # by taking the last timestep. This is required because:
@@ -1244,38 +1712,116 @@ class MasterProbeRunner:
             in the sequence, representing the prediction target date).
             We iterate through the dataloader to match the same batches
             as _extract_latents().
-        """
-        dates = []
-        # Iterate through the same dataloader as _extract_latents to ensure alignment
-        for batch in self.dataloader:
-            batch_size = 1
-            # Try to determine batch size from the batch
-            for key in batch:
-                if isinstance(batch[key], dict):
-                    for sub_key in batch[key]:
-                        if hasattr(batch[key][sub_key], 'shape'):
-                            batch_size = batch[key][sub_key].shape[0]
-                            break
-                    break
-                elif hasattr(batch[key], 'shape'):
-                    batch_size = batch[key].shape[0]
-                    break
 
-            # Get dates for this batch
-            if 'monthly_dates' in batch:
-                # Use the batch's monthly_dates if available
-                batch_dates = batch['monthly_dates']
-                for i in range(batch_size):
-                    if i < len(batch_dates) and len(batch_dates[i]) > 0:
-                        dates.append(batch_dates[i][-1])  # Last date in sequence
+            The batch may contain dates in one of these formats:
+            - 'monthly_dates': List of numpy arrays (one per sample)
+            - 'daily_dates': List of numpy arrays (one per sample)
+
+            Each array contains np.datetime64 values. We extract the last
+            date from each sample's array.
+
+        Raises:
+            RuntimeError: If dataloader is None.
+        """
+        # Validate dataloader exists
+        if self.dataloader is None:
+            raise RuntimeError(
+                "Dataloader is None - cannot extract dates. "
+                "Ensure _load_model() was called and completed successfully."
+            )
+
+        dates = []
+        fallback_used = False
+
+        # Iterate through the same dataloader as _extract_latents to ensure alignment
+        for batch_idx, batch in enumerate(self.dataloader):
+            # Determine batch size from the batch
+            batch_size = batch.get('batch_size', 1)
+
+            # If batch_size key not available, try to infer from data
+            if batch_size == 1:
+                for key in batch:
+                    if isinstance(batch[key], dict):
+                        for sub_key in batch[key]:
+                            if hasattr(batch[key][sub_key], 'shape'):
+                                batch_size = batch[key][sub_key].shape[0]
+                                break
+                        break
+                    elif hasattr(batch[key], 'shape') and batch[key].ndim > 0:
+                        batch_size = batch[key].shape[0]
+                        break
+                    elif isinstance(batch[key], list) and key in ('monthly_dates', 'daily_dates', 'sample_indices'):
+                        batch_size = len(batch[key])
+                        break
+
+            # Primary path: extract dates from batch's monthly_dates
+            if 'monthly_dates' in batch and isinstance(batch['monthly_dates'], list):
+                monthly_dates_list = batch['monthly_dates']
+                for i in range(min(batch_size, len(monthly_dates_list))):
+                    date_array = monthly_dates_list[i]
+                    if date_array is not None and len(date_array) > 0:
+                        # Extract the last date (most recent) from the sequence
+                        dates.append(date_array[-1])
+                    elif 'daily_dates' in batch and isinstance(batch['daily_dates'], list):
+                        # Fallback to daily dates if monthly is empty
+                        daily_dates_list = batch['daily_dates']
+                        if i < len(daily_dates_list) and len(daily_dates_list[i]) > 0:
+                            dates.append(daily_dates_list[i][-1])
+                        else:
+                            dates.append(None)
                     else:
-                        dates.append(len(dates))  # Fallback index
+                        dates.append(None)
+
+            # Secondary path: use sample_indices to look up dates from dataset
+            elif 'sample_indices' in batch and self.dataset is not None:
+                if not fallback_used:
+                    self.logger.info(
+                        "Using sample_indices fallback to reconstruct dates from dataset"
+                    )
+                    fallback_used = True
+
+                sample_indices = batch['sample_indices']
+                for idx in sample_indices:
+                    try:
+                        sample = self.dataset[idx]
+                        # Try monthly_dates first, then daily_dates
+                        if hasattr(sample, 'monthly_dates') and len(sample.monthly_dates) > 0:
+                            dates.append(sample.monthly_dates[-1])
+                        elif hasattr(sample, 'daily_dates') and len(sample.daily_dates) > 0:
+                            dates.append(sample.daily_dates[-1])
+                        else:
+                            dates.append(None)
+                    except (IndexError, AttributeError) as e:
+                        self.logger.debug(
+                            f"Could not retrieve date for sample index {idx}: {e}"
+                        )
+                        dates.append(None)
+
+            # Final fallback: use integer indices (log warning)
             else:
-                # Fallback: use indices
+                if not fallback_used:
+                    self.logger.warning(
+                        "No date information available in batch! "
+                        "Neither 'monthly_dates' nor 'sample_indices' found. "
+                        "Using integer indices as fallback, which may affect "
+                        "temporal analysis accuracy."
+                    )
+                    fallback_used = True
+
                 for _ in range(batch_size):
                     dates.append(len(dates))
 
-        return np.array(dates)
+        # Log summary of date extraction
+        none_count = sum(1 for d in dates if d is None)
+        if none_count > 0:
+            self.logger.warning(
+                f"Date extraction completed with {none_count}/{len(dates)} "
+                f"missing dates (replaced with None)"
+            )
+        else:
+            self.logger.debug(f"Successfully extracted {len(dates)} dates")
+
+        return np.array(dates, dtype=object)
 
     def _get_casualty_data(self) -> np.ndarray:
         """Get casualty data for label construction."""
@@ -1459,7 +2005,7 @@ Examples:
     # Probe selection
     parser.add_argument("--all", action="store_true", help="Run all probes")
     parser.add_argument("--tier", type=int, choices=[1, 2, 3], help="Run specific tier")
-    parser.add_argument("--section", type=int, choices=list(range(1, 8)), help="Run specific section (1-7)")
+    parser.add_argument("--section", type=int, choices=list(range(1, 10)), help="Run specific section (1-9)")
     parser.add_argument("--probe", nargs="+", help="Run specific probe(s) by ID")
     parser.add_argument("--data-only", action="store_true", help="Run only data probes (no model required)")
     parser.add_argument("--pipeline-stage", type=int, choices=[1, 2, 3],
@@ -1501,6 +2047,13 @@ Examples:
                         choices=["train", "val", "test", "all"],
                         help="Data split for probes. 'train' covers all conflict phases (default), "
                              "'test' is most recent only, 'all' combines all splits")
+
+    # ISW alignment control for modularity testing
+    isw_group = parser.add_mutually_exclusive_group()
+    isw_group.add_argument("--use-isw-alignment", action="store_true",
+                           help="Force ISW alignment module enabled (even if checkpoint lacks ISW weights)")
+    isw_group.add_argument("--no-isw-alignment", action="store_true",
+                           help="Force ISW alignment module disabled (discard ISW weights if present in checkpoint)")
 
     args = parser.parse_args()
 
@@ -1574,6 +2127,14 @@ Examples:
     # Create configuration
     device = args.device if args.device != "auto" else ("cuda" if torch.cuda.is_available() else "cpu")
 
+    # Determine ISW alignment mode from flags
+    if args.use_isw_alignment:
+        isw_mode = 'enabled'
+    elif args.no_isw_alignment:
+        isw_mode = 'disabled'
+    else:
+        isw_mode = 'auto'
+
     # Build config kwargs
     config_kwargs = {
         "device": device,
@@ -1590,11 +2151,17 @@ Examples:
         "phase_name": args.phase,
         "phase_description": args.phase_desc,
         "optimizations": args.optimizations,
+        "isw_alignment_mode": isw_mode,
     }
 
     # Only override defaults if paths were explicitly provided
     if args.checkpoint is not None:
-        config_kwargs["checkpoint_path"] = Path(args.checkpoint).resolve()
+        checkpoint_path = Path(args.checkpoint).resolve()
+        config_kwargs["checkpoint_path"] = checkpoint_path
+        # Also set checkpoint_dir to the parent of the checkpoint file.
+        # This ensures checkpoint_dir is consistent with checkpoint_path
+        # when only --checkpoint is provided.
+        config_kwargs["checkpoint_dir"] = checkpoint_path.parent
 
     # Handle training run - load checkpoints from training run directory
     training_run_config = None

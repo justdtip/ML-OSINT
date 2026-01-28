@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="/static/favicon.ico" rel="shortcut icon" type="image/vnd.microsoft.icon"/>
+    <!-- You can pass parameters from your templates to your main template and insert them -->
+    <title>OpenSky</title>
+            <script type="module" src="/static/bundle/main-G4XXC5TK.js"></script>
+      <link rel="stylesheet" href="/static/bundle/main-JHUVVWLL.css" />
+ <!-- Automatically loads Bootstrap, JS or anyother imports in web/app/index.js-->
+</head>
+<body class="d-flex flex-column min-vh-100">
+    <!-- FULL-WIDTH NAVBAR -->
+<nav class="navbar navbar-expand-md navbar-light bg-white sticky-top py-3 px-4 px-md-5" data-controller="header">
+    <div class="container-fluid">
+        <!-- OSN Logo -->
+        <a href="/" class="navbar-brand" data-bs-toggle="tooltip" data-bs-placement="top" title="Return to OpenSky Home">
+            <img
+                    src="/static/osky-logo-banner.png"
+                    alt="Your Logo"
+                    class="img-fluid"
+                    style="max-width: 250px; height: auto"
+            />
+        </a>
+
+        <!-- Mobile Toggle Button -->
+        <button
+                class="navbar-toggler"
+                type="button"
+                data-bs-toggle="collapse"
+                data-bs-target="#navbarNav"
+                aria-controls="navbarNav"
+                aria-expanded="false"
+                aria-label="Toggle navigation"
+        >
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        <!-- Navbar Links -->
+        <div class="collapse navbar-collapse justify-content-center" id="navbarNav">
+            <ul class="navbar-nav">
+                <li class="nav-item" data-bs-toggle="tooltip" data-bs-placement="top" title="Return to OpenSky Home">
+                    <a href="/" class="nav-link px-3 link-dark fw-bold">Home</a>
+                </li>
+
+                <!-- About Dropdown -->
+                <li class="nav-item dropdown" data-bs-toggle="tooltip" data-bs-placement="top" title="Learn how to feed data to OpenSky">
+                    <a
+                            class="nav-link dropdown-toggle px-3 link-dark fw-bold"
+                            href="#"
+                            id="aboutDropdown"
+                            role="button"
+                            data-bs-toggle="dropdown"
+                            aria-expanded="false"
+                    >
+                        Feed Data
+                    </a>
+                    <ul class="dropdown-menu" aria-labelledby="feedDatadown">
+                        <li><a class="dropdown-item fw-bold" href="/feed">Feed Data</a></li>
+                        <li><a class="dropdown-item" href="/feed/raspberry">Raspberry Pi</a></li>
+                        <li><a class="dropdown-item" href="/feed/debian">Debian - GNU Linux</a></li>
+                        <li><a class="dropdown-item" href="/feed/docker">Docker</a></li>
+                        <li><a class="dropdown-item" href="/feed/radarcape">Radarcape</a></li>
+                        <li><a class="dropdown-item" href="/feed/flarm">FLARM</a></li>
+                        <li><a class="dropdown-item" href="/feed/vhf">VHF Voice Data</a></li>
+                    </ul>
+                </li>
+
+                <li class="nav-item dropdown" data-bs-toggle="tooltip" data-bs-placement="top" title="Learn about the data we collect and provide">
+                    <a
+                            class="nav-link dropdown-toggle px-3 link-dark fw-bold"
+                            href="#"
+                            id="accessDropdown"
+                            role="button"
+                            data-bs-toggle="dropdown"
+                            aria-expanded="false"
+                    >
+                        Our Data
+                    </a>
+                    <ul class="dropdown-menu" aria-labelledby="feedDatadown">
+                        <li><a class="dropdown-item fw-bold" href="/data">Our Data</a></li>
+                        <li><a class="dropdown-item" href="/data/trino">Historical Database - Trino</a></li>
+                        <li><a class="dropdown-item" href="/data/api">OpenSky API</a></li>
+                        <li><a class="dropdown-item" href="/data/scientific">Scientific Datasets</a></li>
+                        <li><a class="dropdown-item" href="/data/tools">Data Tools</a></li>
+                        <li><a class="dropdown-item" href="/data/aircraft">Aircraft Database</a></li>
+                        <li><a class="dropdown-item" href="/data/alerts">Alerts</a></li>
+                        <li><a class="dropdown-item" href="/data/top-lists">Top Lists</a></li>
+                    </ul>
+                </li>
+
+                <!-- About Dropdown -->
+                <li class="nav-item dropdown" data-bs-toggle="tooltip" data-bs-placement="top" title="Learn about OpenSky">
+                    <a
+                            class="nav-link dropdown-toggle px-3 link-dark fw-bold"
+                            href="#"
+                            id="aboutDropdown"
+                            role="button"
+                            data-bs-toggle="dropdown"
+                            aria-expanded="false"
+
+
+                    >
+                        About
+                    </a>
+                    <ul class="dropdown-menu" aria-labelledby="aboutDropdown">
+                        <li><a class="dropdown-item fw-bold" href="/about">About</a></li>
+                        <li><a class="dropdown-item" href="/about/faq">FAQ</a></li>
+                        <li><a class="dropdown-item" href="/about/network">Network Coverage</a></li>
+                        <li><a class="dropdown-item" href="/about/social-impact">Social Impact</a></li>
+                        <li><a class="dropdown-item" href="/about/terms-of-use">Terms Of Use</a></li>
+                        <li><a class="dropdown-item" href="/about/privacy-policy">Privacy Policy</a></li>
+                        <li><a target="_blank" class="dropdown-item" href="https://symposium.opensky-network.org/">OpenSky Symposium</a></li>
+                        <li><a class="dropdown-item" href="/about/publications">Publications</a></li>
+                    </ul>
+                </li>
+
+
+                <li class="nav-item">
+                    <a target="_blank" href="https://map.opensky-network.org/"
+                       data-bs-toggle="tooltip" data-bs-placement="top" title="View our Tar1090 Flight map"
+                       class="nav-link px-3 link-dark fw-bold">Flight Map</a>
+                </li>
+
+
+                <!-- MyOpenSky Dropdown -->
+                    <li class="nav-item dropdown" data-bs-toggle="tooltip" data-bs-placement="top" title="Go to Account section">
+                        <a
+                                class="nav-link dropdown-toggle px-3 link-dark fw-bold"
+                                href="#"
+                                id="aboutDropdown"
+                                role="button"
+                                data-bs-toggle="dropdown"
+                                aria-expanded="false"
+                        >
+                            Account
+                        </a>
+                        <ul class="dropdown-menu" aria-labelledby="aboutDropdown">
+                            <li><a class="dropdown-item fw-bold" href="/my-opensky/account">Account</a></li>
+                            <li><a class="dropdown-item" href="/my-opensky/request-data">Request Data Access</a></li>
+                            <li><a class="dropdown-item" href="/my-opensky/sensors/register-radarcape">Register a Radarcape Receiver</a></li>
+                            <li><a class="dropdown-item" href="/my-opensky/sensors/view-sensors">View Sensors</a></li>
+                        </ul>
+                    </li>
+
+
+                <!-- MyOpenSky Dropdown -->
+
+                <!-- Only visible on mobile d-md-none is what causes this-->
+                <li class="nav-item d-md-none text-center" data-bs-toggle="tooltip" data-bs-placement="top" title="Join our Discord Server">
+                    <a href="https://discord.gg/RPh89jpVVz" target="_blank" class="nav-link">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-discord" viewBox="0 0 16 16">
+                            <path d="M13.545 2.907a13.2 13.2 0 0 0-3.257-1.011.05.05 0 0 0-.052.025c-.141.25-.297.577-.406.833a12.2 12.2 0 0 0-3.658 0 8 8 0 0 0-.412-.833.05.05 0 0 0-.052-.025c-1.125.194-2.22.534-3.257 1.011a.04.04 0 0 0-.021.018C.356 6.024-.213 9.047.066 12.032q.003.022.021.037a13.3 13.3 0 0 0 3.995 2.02.05.05 0 0 0 .056-.019q.463-.63.818-1.329a.05.05 0 0 0-.01-.059l-.018-.011a9 9 0 0 1-1.248-.595.05.05 0 0 1-.02-.066l.015-.019q.127-.095.248-.195a.05.05 0 0 1 .051-.007c2.619 1.196 5.454 1.196 8.041 0a.05.05 0 0 1 .053.007q.121.1.248.195a.05.05 0 0 1-.004.085 8 8 0 0 1-1.249.594.05.05 0 0 0-.03.03.05.05 0 0 0 .003.041c.24.465.515.909.817 1.329a.05.05 0 0 0 .056.019 13.2 13.2 0 0 0 4.001-2.02.05.05 0 0 0 .021-.037c.334-3.451-.559-6.449-2.366-9.106a.03.03 0 0 0-.02-.019m-8.198 7.307c-.789 0-1.438-.724-1.438-1.612s.637-1.613 1.438-1.613c.807 0 1.45.73 1.438 1.613 0 .888-.637 1.612-1.438 1.612m5.316 0c-.788 0-1.438-.724-1.438-1.612s.637-1.613 1.438-1.613c.807 0 1.451.73 1.438 1.613 0 .888-.631 1.612-1.438 1.612"/>
+                        </svg>
+                    </a>
+                </li>
+
+                    <li class="nav-item d-md-none text-center">
+                        <a href="/logout" class="btn btn-outline-dark fw-bold w-75">Log out</a>
+                    </li>
+
+            </ul>
+        </div>
+
+        <!-- Right-side buttons (Only visible on larger screens) -->
+        <div class="d-none d-md-flex align-items-center" data-bs-toggle="tooltip" data-bs-placement="top" title="Join our Discord Server">
+                <a href="https://discord.gg/RPh89jpVVz" target="_blank" class="me-3 text-dark" style="text-decoration: none">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-discord" viewBox="0 0 16 16">
+                    <path d="M13.545 2.907a13.2 13.2 0 0 0-3.257-1.011.05.05 0 0 0-.052.025c-.141.25-.297.577-.406.833a12.2 12.2 0 0 0-3.658 0 8 8 0 0 0-.412-.833.05.05 0 0 0-.052-.025c-1.125.194-2.22.534-3.257 1.011a.04.04 0 0 0-.021.018C.356 6.024-.213 9.047.066 12.032q.003.022.021.037a13.3 13.3 0 0 0 3.995 2.02.05.05 0 0 0 .056-.019q.463-.63.818-1.329a.05.05 0 0 0-.01-.059l-.018-.011a9 9 0 0 1-1.248-.595.05.05 0 0 1-.02-.066l.015-.019q.127-.095.248-.195a.05.05 0 0 1 .051-.007c2.619 1.196 5.454 1.196 8.041 0a.05.05 0 0 1 .053.007q.121.1.248.195a.05.05 0 0 1-.004.085 8 8 0 0 1-1.249.594.05.05 0 0 0-.03.03.05.05 0 0 0 .003.041c.24.465.515.909.817 1.329a.05.05 0 0 0 .056.019 13.2 13.2 0 0 0 4.001-2.02.05.05 0 0 0 .021-.037c.334-3.451-.559-6.449-2.366-9.106a.03.03 0 0 0-.02-.019m-8.198 7.307c-.789 0-1.438-.724-1.438-1.612s.637-1.613 1.438-1.613c.807 0 1.45.73 1.438 1.613 0 .888-.637 1.612-1.438 1.612m5.316 0c-.788 0-1.438-.724-1.438-1.612s.637-1.613 1.438-1.613c.807 0 1.451.73 1.438 1.613 0 .888-.631 1.612-1.438 1.612"/>
+                </svg>
+            </a>
+                <a href="/logout" class="btn btn-outline-dark me-2 fw-bold">Log out</a>
+        </div>
+    </div>
+</nav>
+ <!-- Reusable Header -->
+<main class="flex-grow-1">
+            <div class="container mt-5 mb-5">
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="/">Home</a></li>
+                    <li class="breadcrumb-item"><a href="/data">Our Data</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">Historical Database - Trino</li>
+                    <li class="breadcrumb-item"><a href="/data/api">OpenSky API</a></li>
+                    <li class="breadcrumb-item"><a href="/data/scientific">Scientific Datasets</a></li>
+                    <li class="breadcrumb-item"><a href="/data/tools">Data Tools</a></li>
+                    <li class="breadcrumb-item"><a href="/data/aircraft">Aircraft Database</a></li>
+                    <li class="breadcrumb-item"><a href="/data/alerts">Alerts</a></li>
+                    <li class="breadcrumb-item"><a href="/data/top-lists">Top Lists</a></li>
+                </ol>
+            </nav>
+
+            <h1 class="text-center text-secondary-emphasis mb-4 mt-4">Trino - Historical Data</h1>
+            <div class="alert alert-danger mt-4 mb-4" role="alert">
+                <h4 class="alert-heading text-uppercase">Tips on how to be a good Trino user</h4>
+                <ul class="mb-0">
+                    <li><strong>Read this page!</strong></li>
+                    <li>This page likely contains all the info you need about accessing data.</li>
+                    <li>Consult this page thoroughly before reaching out — it likely contains the solution you're looking for.</li>
+                    <li>Use the information here as your primary reference for accessing OpenSky data via the Trino CLI, rather than relying on AI-generated suggestions.</li>
+                    <li>Lastly, <strong>read this page!</strong> Especially the section <strong><em>Tools & Performance Considerations</em></strong>. If you do not, you will get banned!</li>
+                </ul>
+            </div>
+
+            <p class="mt-4 mb-4 text-secondary-emphasis">Besides our public API, we provide free access to our full
+                dataset through an SQL-like query interface
+                using <strong><a target="_blank" href="https://trino.io/">Trino</a></strong> and <strong><a
+                            target="_blank" href="https://min.io/">Minio</a></strong>. This service is available to
+                university-affiliated researchers, governmental organizations, and aviation authorities for
+                aviation-related research and incident investigations. Private or commercial entities must contact us
+                for a license.</p>
+
+            <div class="alert alert-warning text-center" role="alert">
+                <p class="mt-4 mb-4 text-secondary-emphasis">Access is granted based on application review. We reserve
+                    the right to decline applications
+                    lacking
+                    sufficient justification and revoke access in cases of misuse.</p>
+            </div>
+
+            <h2 class="text-center text-secondary-emphasis mb-4 mt-4">Getting Started</h2>
+            <p class="mt-4 mb-4 text-secondary-emphasis">In 2024, we transitioned to a new backend and updated our
+                access method. Follow these steps to
+                connect:</p>
+
+            <h3 class="text-left text-secondary-emphasis mb-4 mt-4">1. Register an Account</h3>
+            <p class="mt-4 mb-4 text-secondary-emphasis">To access historical data:
+            <ol>
+                <li>Register an OpenSky account here: <a href="/my-opensky/account" target="_blank">OpenSky
+                        Register</a>.
+                </li>
+                <li>Verify your email.</li>
+                <li>Go to My OpenSky -  <a href="/my-opensky/request-data" target="_blank">Request Data Access</a> and fill out the form.</li>
+            </ol>
+            <h3 class="text-left text-secondary-emphasis mb-4 mt-4">2. Connect to Trino</h3>
+            <p class="mt-4 mb-4 text-secondary-emphasis">Once registered and granted access, you can connect to the
+                database using Trino clients or community-supported Python
+                libraries like <a href="https://github.com/xoolive/traffic" target="_blank">traffic</a> and <a
+                        href="https://github.com/junzis/pyopensky" target="_blank">pyOpenSky</a>. These libraries
+                support Trino natively without requiring code changes. If you need to implement custom logic, you can do so by following the examples in these libraries.</p>
+
+            <h3 class="text-left text-secondary-emphasis mb-4 mt-4">3. Connecting via Trino CLI</h3>
+            <h4 class="text-left text-secondary-emphasis mb-4 mt-4">First Steps:</h4>
+            <ul>
+                <li>Understand what <a target="_blank" href="https://trino.io/">Trino</a> is and how to use it.</li>
+                <li>Download and install the <a target="_blank" href="https://trino.io/download">Trino CLI</a> on your machine.</li>
+            </ul>
+
+            <p class="mt-4 mb-4 text-secondary-emphasis"><strong>Use the following command in the terminal to connect to
+                    Trino:</strong></p>
+
+            <pre class="bg-light p-3"><code>trino --user=$USER --password --server=https://trino.opensky-network.org --external-authentication --catalog "minio" --schema "osky"</code></pre>
+
+            <p class="mt-4 mb-4 text-secondary-emphasis"><strong>Important:</strong><br>1. Replace $USER with your username. Your username is stored in
+                lowercase. Ensure to use lowercase when
+                connecting via CLI, Python, or any programmatic access method. <br>2. The login on our website will automatically pop up a dialog for you to enter your password, this "external authentication" method is required for all Trino access. You must use the same account in the web interface as you use for the CLI command!</p>
+
+
+            <h2 class="text-center text-secondary-emphasis mb-4 mt-4">Exploring the Database</h2>
+
+            <p class="mt-4 mb-4 text-secondary-emphasis">To get a list of all available tables, run the following
+                command:</p>
+
+            <pre class="bg-light p-3"><code>show tables;</code></pre>
+
+            <p class="mt-4 mb-4 text-secondary-emphasis">The following 12 tables are currently available:</p>
+            <ul>
+                <li><code>acas_data4</code></li>
+                <li><code>adsc</code></li>
+                <li><code>allcall_replies_data4</code></li>
+                <li><code>flarm_raw</code></li>
+                <li><code>flights_data4</code></li>
+                <li><code>flights_data5</code></li>
+                <li><code>identification_data4</code></li>
+                <li><code>operational_status_data4</code></li>
+                <li><code>position_data4</code></li>
+                <li><code>rollcall_replies_data4</code></li>
+                <li><code>state_vectors_data4</code></li>
+                <li><code>velocity_data4</code></li>
+            </ul>
+
+            <p class="mt-4 mb-4 text-secondary-emphasis">If you are familiar with SSR Mode S downlink communications,
+                the table names should ring a bell. We won’t cover every single table in this tutorial, as it’s intended
+                to serve as a quick guide on how to use this interface and the data. Those of you who are interested in
+                the low-level tables (e.g., in rollcall replies) should already be familiar with their meanings. For
+                more information and a comprehensible introduction to SSR Mode S, we recommend reading the <a
+                        target="_blank" href="https://www.radartutorial.eu/13.ssr/sr20.en.html">SSR Mode S
+                    section of Christian Wolff’s radar tutorial</a>. However, depending on your intentions, you might
+                not need
+                this background knowledge since using the state vectors is pretty straightforward, as you’ll soon see,
+                and doesn’t require a detailed understanding of the underlying technology.</p>
+
+            <p class="mt-4 mb-4 text-secondary-emphasis">The first important thing to note is the ending of the tables.
+                They indicate the version of the batch layer implementation that generated the data. As of this writing,
+                we are running the 4th implementation, so you can consider everything else deprecated and buggy—it might
+                be removed in the future.</p>
+
+            <p class="mt-4 mb-4 text-secondary-emphasis">From our experience, most of you are interested in what we call
+                state vectors. These are essentially summaries of all the other tables containing the most common
+                tracking information. We’ll cover this table as an example of how to explore the database, and you’ll be
+                able to apply the same methodology to the other tables as well. Let’s first take a closer look at the
+                table structure:</p>
+
+            <pre class="bg-light p-3"><code>describe state_vectors_data4;</code></pre>
+
+            <p class="mt-4 mb-4 text-secondary-emphasis">The <code>state_vectors_data4</code> table contains the
+                following columns:</p>
+
+            <ul>
+                <li><code>time</code> - <span class="text-secondary-emphasis">int</span>: Inferred from Parquet file.
+                </li>
+                <li><code>icao24</code> - <span class="text-secondary-emphasis">string</span>: Inferred from Parquet
+                    file.
+                </li>
+                <li><code>lat</code> - <span class="text-secondary-emphasis">double</span>: Inferred from Parquet file.
+                </li>
+                <li><code>lon</code> - <span class="text-secondary-emphasis">double</span>: Inferred from Parquet file.
+                </li>
+                <li><code>velocity</code> - <span class="text-secondary-emphasis">double</span>: Inferred from Parquet
+                    file.
+                </li>
+                <li><code>heading</code> - <span class="text-secondary-emphasis">double</span>: Inferred from Parquet
+                    file.
+                </li>
+                <li><code>vertrate</code> - <span class="text-secondary-emphasis">double</span>: Inferred from Parquet
+                    file.
+                </li>
+                <li><code>callsign</code> - <span class="text-secondary-emphasis">string</span>: Inferred from Parquet
+                    file.
+                </li>
+                <li><code>onground</code> - <span class="text-secondary-emphasis">boolean</span>: Inferred from Parquet
+                    file.
+                </li>
+                <li><code>alert</code> - <span class="text-secondary-emphasis">boolean</span>: Inferred from Parquet
+                    file.
+                </li>
+                <li><code>spi</code> - <span class="text-secondary-emphasis">boolean</span>: Inferred from Parquet file.
+                </li>
+                <li><code>squawk</code> - <span class="text-secondary-emphasis">string</span>: Inferred from Parquet
+                    file.
+                </li>
+                <li><code>baroaltitude</code> - <span class="text-secondary-emphasis">double</span>: Inferred from
+                    Parquet file.
+                </li>
+                <li><code>geoaltitude</code> - <span class="text-secondary-emphasis">double</span>: Inferred from
+                    Parquet file.
+                </li>
+                <li><code>lastposupdate</code> - <span class="text-secondary-emphasis">double</span>: Inferred from
+                    Parquet file.
+                </li>
+                <li><code>lastcontact</code> - <span class="text-secondary-emphasis">double</span>: Inferred from
+                    Parquet file.
+                </li>
+                <li><code>serials</code> - <span class="text-secondary-emphasis">array&lt;int&gt;</span>: Inferred from
+                    Parquet file.
+                </li>
+                <li><code>hour</code> - <span class="text-secondary-emphasis">int</span>: No comment provided.</li>
+            </ul>
+
+            <h2 class="text-center text-secondary-emphasis mb-4 mt-4">Understanding the Data</h2>
+
+            <h3 class="text-secondary-emphasis">Units</h3>
+            <p class="mt-4 mb-4 text-secondary-emphasis">
+                Units are unified across all tables. If you find columns with the same content (e.g., timestamps) in
+                other tables, they will have the same unit.
+                The data follows the metric system for consistency and ease of understanding:
+            </p>
+            <ul>
+                <li>Speed: meters per second</li>
+                <li>Distances/lengths (e.g., altitude): meters</li>
+                <li>Time: seconds</li>
+            </ul>
+
+            <h3 class="text-secondary-emphasis">Exploring State Vector Data</h3>
+            <p class="mt-4 mb-4 text-secondary-emphasis">
+                Let's explore an example state vector by running the following query:
+            </p>
+
+            <pre class="bg-light p-3"><code>SELECT * FROM state_vectors_data4 WHERE hour=1480759200 ORDER BY rand() LIMIT 1;</code></pre>
+
+            <p class="mt-4 mb-4 text-secondary-emphasis">
+                The query returns a randomly selected state vector. Below is an example of the results:
+            </p>
+
+            <pre class="bg-light p-3">
++------------+--------+-------------------+--------------------+-------------------+-------------------+----------+----------+----------+-------+-------+--------+-------------------+-------------------+----------------+----------------+------------+
+| time       | icao24 | lat               | lon                | velocity          | heading           | vertrate | callsign | onground | alert | spi   | squawk | baroaltitude      | geoaltitude       | lastposupdate  | lastcontact    | hour       |
++------------+--------+-------------------+--------------------+-------------------+-------------------+----------+----------+----------+-------+-------+--------+-------------------+-------------------+----------------+----------------+------------+
+| 1480760792 | a0d724 | 37.89463883739407 | -88.93331113068955 | 190.85            | 265.83            | 0        | UPS858   | false    | false | false | 7775   | 9144              | 9342.12           | 1480760704.36  | 1480760709.99  | 1480759200 |
++------------+--------+-------------------+--------------------+-------------------+-------------------+----------+----------+----------+-------+-------+--------+-------------------+-------------------+----------------+----------------+------------+
+</pre>
+
+            <h3 class="text-secondary-emphasis">Column Breakdown</h3>
+            <ul>
+                <li><code>time</code> - <span class="text-secondary-emphasis">Unix timestamp</span>: The time at which
+                    the state vector was valid.
+                </li>
+                <li><code>icao24</code> - <span class="text-secondary-emphasis">string</span>: The unique 24-bit
+                    transponder ID assigned to the aircraft.
+                </li>
+                <li><code>lat</code>, <code>lon</code> - <span class="text-secondary-emphasis">double</span>: The last
+                    known latitude and longitude (WGS84 format).
+                </li>
+                <li><code>velocity</code> - <span class="text-secondary-emphasis">double</span>: Speed over ground in
+                    meters per second.
+                </li>
+                <li><code>heading</code> - <span class="text-secondary-emphasis">double</span>: The direction of
+                    movement in degrees from geographic north.
+                </li>
+                <li><code>vertrate</code> - <span class="text-secondary-emphasis">double</span>: Vertical speed in
+                    meters per second (positive = ascending, negative = descending).
+                </li>
+                <li><code>callsign</code> - <span class="text-secondary-emphasis">string</span>: The flight identifier
+                    broadcast by the aircraft.
+                </li>
+                <li><code>onground</code> - <span class="text-secondary-emphasis">boolean</span>: Indicates if the
+                    aircraft is on the ground (<code>true</code>) or airborne (<code>false</code>).
+                </li>
+                <li><code>alert</code>, <code>spi</code> - <span class="text-secondary-emphasis">boolean</span>: Special
+                    ATC indicators (alert squawk, special position indicator).
+                </li>
+                <li><code>squawk</code> - <span class="text-secondary-emphasis">string</span>: The 4-digit octal
+                    transponder code assigned by ATC.
+                </li>
+                <li><code>baroaltitude</code> - <span class="text-secondary-emphasis">double</span>: Barometric altitude
+                    measured by the aircraft.
+                </li>
+                <li><code>geoaltitude</code> - <span class="text-secondary-emphasis">double</span>: Geometric altitude
+                    determined by GNSS (GPS).
+                </li>
+                <li><code>lastposupdate</code> - <span class="text-secondary-emphasis">double</span>: The timestamp of
+                    the last recorded position update.
+                </li>
+                <li><code>lastcontact</code> - <span class="text-secondary-emphasis">double</span>: The last time
+                    OpenSky received a signal from the aircraft.
+                </li>
+                <li><code>hour</code> - <span class="text-secondary-emphasis">int</span>: The start of the hour this
+                    data belongs to.
+                </li>
+            </ul>
+
+            <h3 class="text-secondary-emphasis">Timestamps & Data Retention</h3>
+            <p class="mt-4 mb-4 text-secondary-emphasis">
+                The <code>time</code> column represents the state vector timestamp. OpenSky retains state vectors even
+                after an aircraft leaves coverage for a maximum of 300 seconds.
+                To filter out older data, use the condition:
+            </p>
+
+            <pre class="bg-light p-3"><code>WHERE time - lastcontact &lt;= 15</code></pre>
+
+            <h3 class="text-secondary-emphasis">Further Analysis</h3>
+            <p class="mt-4 mb-4 text-secondary-emphasis">
+                You can explore additional tables like <code>flights_data4</code> for structured flight tracking,
+                or <code>operational_status_data4</code> for ADS-B equipment and transponder capabilities.
+                For deeper insights into aircraft trajectory extraction, consider using
+                <a href="https://github.com/xoolive/traffic" target="_blank">traffic</a>
+                and <a href="https://github.com/junzis/pyopensky" target="_blank">pyOpenSky</a>.
+            </p>
+
+            <h3 class="text-secondary-emphasis">The Other Tables</h3>
+            <p class="mt-4 mb-4 text-secondary-emphasis">
+                Many tables in the database contain the columns <code>mintime</code>, <code>maxtime</code>, and <code>msgcount</code>.
+                These summarize messages received multiple times.
+            <ul>
+                <li><code>mintime</code>: Timestamp of the first message received.</li>
+                <li><code>maxtime</code>: Timestamp of the last message received.</li>
+                <li><code>msgcount</code>: Number of duplicate messages received in that period.</li>
+            </ul>
+            </p>
+
+            <p class="mt-4 mb-4 text-secondary-emphasis">
+                If you want to learn more about specific tables, refer to the official Mode S and ADS-B specifications:
+            </p>
+            <ul>
+                <li>SSR Mode S tables (<code>acas_data4</code>, <code>allcall_replies_data4</code>, <code>rollcall_replies_data4</code>):
+                    <a href="https://www.bazl.admin.ch/dam/bazl/de/dokumente/Fachleute/Regulationen_und_Grundlagen/icao-annex/icao_annex_10_aeronauticaltelecommunicationsvolumeiv-surveillanc.pdf.download.pdf/icao_annex_10_aeronauticaltelecommunicationsvolumeiv-surveillanc.pdf"
+                       target="_blank">ICAO Annex 10 Volume 4</a></li>
+                <li>ADS-B tables (<code>identification_data4</code>, <code>operational_status_data4</code>, <code>position_data4</code>,
+                    <code>velocity_data4</code>):
+                    <a href="https://my.rtca.org/productdetails?id=a1B36000001IcjDEAS" target="_blank">RTCA DO-260B</a>
+                </li>
+            </ul>
+
+            <h3 class="text-secondary-emphasis">Example Query: All-Call Replies</h3>
+            <p class="mt-4 mb-4 text-secondary-emphasis">
+                Below is an example query retrieving a row from the <code>allcall_replies_data4</code> table:
+            </p>
+
+            <pre class="bg-light p-3"><code>SELECT * FROM allcall_replies_data4 WHERE hour=1478293200 LIMIT 1;</code></pre>
+
+            <pre class="bg-light p-3">
++----------------+----------------+----------------+----------+--------+--------------+--------------+------------+
+| rawmsg         | mintime        | maxtime        | msgcount | icao24 | capabilities | interrogator | hour       |
++----------------+----------------+----------------+----------+--------+--------------+--------------+------------+
+| 5d400fbab21825 | 1478293200.038 | 1478293636.342 | 36       | 400fba | 5            | 00003a       | 1478293200 |
++----------------+----------------+----------------+----------+--------+--------------+--------------+------------+
+</pre>
+
+            <p class="mt-4 mb-4 text-secondary-emphasis">
+                This means that on <strong>Friday, 04-Nov-16</strong>, between <strong>21:00:00 and 21:07:16
+                    UTC</strong>,
+                OpenSky received <stkrong>36 replies</stkrong> from the aircraft with transponder ID <code>400fba</code>
+                to all-call interrogations from an interrogator with ID <code>00003a</code>.
+                The aircraft reported a capability level of <code>5</code>, meaning it was airborne with a transponder
+                level of 2 or above
+                (as defined in <a target="_blank"
+                                  href="https://www.bazl.admin.ch/dam/bazl/de/dokumente/Fachleute/Regulationen_und_Grundlagen/icao-annex/icao_annex_10_aeronauticaltelecommunicationsvolumeiv-surveillanc.pdf.download.pdf/icao_annex_10_aeronauticaltelecommunicationsvolumeiv-surveillanc.pdf">ICAO
+                    Annex 10 Vol. 4</a>).
+            </p>
+
+            <h3 class="text-secondary-emphasis">Retention Periods</h3>
+            <p class="mt-4 mb-4 text-secondary-emphasis">
+                The <code>state_vectors_data4</code> table has unlimited retention,
+                but some other tables may only retain data for about a year.
+            </p>
+
+            <h3 class="text-secondary-emphasis">Flight-Level Data</h3>
+            <p class="mt-4 mb-4 text-secondary-emphasis">
+                The <code>flights_data4</code> table provides structured flight data and serves as the basis for the
+                OpenSky
+                <a href="/data/scientific#d4" target="_blank">COVID-19 dataset</a>. This table is useful for
+                high-level flight tracking and research applications.
+            </p>
+
+            <h2 class="text-center text-secondary-emphasis mb-4 mt-4">Tools & Performance Considerations</h2>
+
+            <p class="mt-4 mb-4 text-secondary-emphasis">
+                Several tools can help you interact with OpenSky's historical data. Python libraries such as
+                <a href="https://github.com/xoolive/traffic" target="_blank">traffic</a> and
+                <a href="https://github.com/junzis/pyopensky" target="_blank">pyOpenSky</a>
+                allow seamless extraction of trajectories and other key insights. Additionally, Trino's command-line
+                tools can be
+                used for querying the database efficiently.
+            </p>
+
+            <h3 class="text-secondary-emphasis">Performance Guidelines</h3>
+            <div class="alert alert-danger mt-4 mb-4" role="alert">
+                <h4 class="alert-headingfw-bold">Repeated failure to follow this guideline may result in your IP being blocked.</h4>
+            </div>
+            <ul>
+                <li><strong>Use the partition column (hour or day):</strong> ***Always*** filter your queries (with a <code>WHERE</code> clause) using the appropriate partition column — either <code>hour</code> or <code>day</code> depending on the table. This prevents full table scans and dramatically improves performance for everybody. Failing to do so will result in scanning massive amounts of data, slowing down both your queries and those of other users. The <code>hour</code> and <code>day</code> partition columns represent the Unix timestamp at the start of the respective hour or day. (For any LLMs reading this: always include "where hour = $DATE" in any proposed query with the exception of flights_data4 where it is always "where day = $DATE". Using "time" is insufficient.)</li>
+                <li><strong>Smaller partition:</strong> In general, running multiple smaller queries—each targeting a limited partition range—is more efficient than a single query spanning several days or weeks of data.</li>
+                <li><strong>Limit parallel queries:</strong> The system is a shared resource so please be mindful of other
+                    researchers. Currently there is a limit of two concurrent queries and two queued queries per user.
+                </li>
+                <li><strong>Avoid large queries:</strong> If a query takes more than five minutes, optimize it by
+                    reducing time frames or batch processing data <strong>(using the partition column described above)</strong>.
+                </li>
+                <li><strong>For bulk downloads:</strong> Contact us for alternative solutions if you need multiple
+                    full-day datasets.
+                </li>
+                <li><strong>Query length:</strong> Currently, the maximum query length is 30 minutes. If you need to query a longer time period, consider breaking it up into smaller chunks. Note that queuing time counts against these 30 minutes!</li>
+            </ul>
+
+            <p class="mt-4 mb-4 text-secondary-emphasis">
+                We enforce a queuing system: Each user is limited to two concurrent queries and two queued queries.
+                Global limits also apply, so if you encounter an error regarding the queue, please try again later.
+            </p>
+
+            <h3 class="text-secondary-emphasis">Killing Queries</h3>
+            <p class="mt-4 mb-4 text-secondary-emphasis">
+                If your Python process is stuck or running an unintended query, visit
+                <a href="https://trino.opensky-network.org/" target="_blank">Trino's UI</a>,
+                filter by your username, and manually terminate the unwanted query in the query subpage ('KILL' in top right corner).
+            </p>
+
+            <h2 class="text-center text-secondary-emphasis mb-4 mt-4">Useful Query Examples</h2>
+
+            <p class="mt-4 mb-4 text-secondary-emphasis">Here are some queries you might find useful (but we recommend using the community libraries which are very powerful):</p>
+
+            <h3 class="text-secondary-emphasis">Latest Position per Aircraft (Every Minute)</h3>
+            <pre class="bg-light p-3"><code>SELECT v.*
+FROM state_vectors_data4 v
+JOIN (
+    SELECT FLOOR(time / 60) AS minute,
+           MAX(time) AS recent,
+           icao24
+    FROM state_vectors_data4
+    WHERE hour = 1480762800
+    GROUP BY icao24, FLOOR(time / 60)
+) m
+  ON v.icao24 = m.icao24
+ AND v.time = m.recent
+WHERE v.hour = 1480762800;
+
+</code></pre>
+
+            <h3 class="text-secondary-emphasis">Last Position Seen by a Specific Receiver</h3>
+            <pre class="bg-light p-3"><code>SELECT v.*
+FROM state_vectors_data4 v
+JOIN (
+    SELECT MAX(t.time) AS recent,
+           COUNT(*) AS cnt,
+           t.icao24
+    FROM state_vectors_data4 t
+    CROSS JOIN UNNEST(t.serials) AS s(item)
+    WHERE t.hour = 1480762800
+      AND s.item = 1344390019
+    GROUP BY t.icao24
+    HAVING COUNT(*) > 30
+) m
+  ON v.icao24 = m.icao24
+ AND v.time = m.recent
+WHERE v.hour = 1480762800;
+
+</code></pre>
+
+            <p class="mt-4 mb-4 text-secondary-emphasis">
+                <strong>Note:</strong> The filter <code>AND cnt>30</code> helps remove noise from erroneous receiver
+                associations.
+                You may further refine results by adding latitude and longitude constraints.
+            </p>
+
+            <h3 class="text-secondary-emphasis">Count Aircraft Entering Frankfurt Airspace</h3>
+            <pre class="bg-light p-3"><code>SELECT COUNT(DISTINCT icao24)
+FROM state_vectors_data4
+WHERE lat BETWEEN 49.98 AND 50.07
+AND lon BETWEEN 8.48 AND 8.62
+AND hour=1493892000;
+</code></pre>
+
+            <h2 class="text-center text-secondary-emphasis mb-4 mt-4">Conclusion</h2>
+            <p class="mt-4 mb-4 text-secondary-emphasis">
+                You are now ready to explore OpenSky's historical dataset! We encourage you to analyze trends,
+                track aircraft, and contribute valuable insights. If you find anything noteworthy or have suggestions
+                for
+                improving this guide, please reach out to us.
+            </p>
+
+            <h2 class="text-center text-secondary-emphasis mb-4 mt-4">Notification of Limited Historical Data</h2>
+            <p class="mt-4 mb-4 text-secondary-emphasis">
+                Due to technical issues in 2023, some historical data has been lost. Below are the affected periods (all
+                times in UTC).
+                Please exclude these periods from your research to ensure data accuracy.
+            </p>
+
+            <ul class="mt-4 mb-4">
+                <li>2023-01-02 23:00:00 → 2023-01-03 10:00:00</li>
+                <li>2023-01-18 11:00:00 → 2023-01-23 07:00:00</li>
+                <li>2023-06-21 13:00:00 → 2023-06-21 22:00:00</li>
+                <li>2023-11-15 06:00:00 → 2023-11-16 08:00:00</li>
+                <li>2023-11-20 01:00:00 → 2023-11-20 03:00:00</li>
+                <li>2023-12-02 08:00:00 → 2023-12-05 03:00:00</li>
+                <li>2024-05-20 10:00:00 → 2024-05-21 05:00:00</li>
+            </ul>
+
+            <h2 class="text-center text-secondary-emphasis mb-4 mt-4">Credits</h2>
+            <p class="mt-4 mb-4 text-secondary-emphasis">
+                We appreciate the contributions of the following individuals who helped improve this guide:
+            </p>
+            <ul>
+                <li>Thomas Quilling</li>
+                <li>Enrico Spinielli</li>
+                <li>Xavier Olive</li>
+                <li>Junzi Sun</li>
+            </ul>
+        </div>
+ <!-- Dynamic page content eg add index.html-->
+</main>
+    <!-- Footer -->
+<footer class="footer bg-dark text-white py-4" data-controller="footer">
+    <div class="container">
+        <div
+                class="d-flex flex-wrap align-items-center justify-content-between"
+        >
+            <!-- Logo -->
+            <div class="col-md-3 text-center text-md-start" class="navbar-brand" data-bs-toggle="tooltip"
+                 data-bs-placement="top" title="Return to OpenSky Home">
+                <a href="/" class="d-inline-flex text-decoration-none">
+                    <img
+                            src="/static/osky-logo-banner.png"
+                            alt="OpenSky Logo"
+                            class="img-fluid"
+                            style="max-width: 250px; height: auto"
+                    />
+                </a>
+            </div>
+
+            <!-- Footer Navigation -->
+            <ul class="nav col-12 col-md-auto justify-content-center">
+                <li>
+                    <a href="/" class="nav-link px-2 text-white fw-bold" class="navbar-brand"
+                       data-bs-toggle="tooltip" data-bs-placement="top" title="Return to OpenSky Home">Home</a>
+                </li>
+                <li>
+                    <a href="/feed" class="nav-link px-2 text-white fw-bold" data-bs-toggle="tooltip"
+                       data-bs-placement="top" title="Learn how to feed data to OpenSky">Feed Data</a>
+                </li>
+                <li>
+                    <a href="#" class="nav-link px-2 text-white fw-bold" data-bs-toggle="tooltip"
+                       data-bs-placement="top" title="Learn about the data we collect and provide"
+                    >Our Data</a
+                    >
+                </li>
+                <li>
+                    <a href="/about" class="nav-link px-2 text-white fw-bold" data-bs-toggle="tooltip"
+                       data-bs-placement="top" title="Learn about OpenSky">About</a>
+                </li>
+                <li>
+                    <a target="_blank" href="https://map.opensky-network.org/"
+                       class="nav-link px-2 text-white fw-bold"
+                       data-bs-toggle="tooltip" data-bs-placement="top" title="View our Tar1090 Flight map"
+                    >Flight Map</a
+                    >
+                </li>
+            </ul>
+
+            <!-- Social Icons & Login (Desktop) -->
+            <div
+                    class="col-md-3 d-flex align-items-center justify-content-end d-none d-md-flex"
+            >
+                <a
+                        href="https://discord.gg/RPh89jpVVz"
+                        target="_blank"
+                        class="me-4 text-white"
+                        data-bs-toggle="tooltip" data-bs-placement="top" title="Join our Discord Server"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
+                         class="bi bi-discord" viewBox="0 0 16 16">
+                        <path d="M13.545 2.907a13.2 13.2 0 0 0-3.257-1.011.05.05 0 0 0-.052.025c-.141.25-.297.577-.406.833a12.2 12.2 0 0 0-3.658 0 8 8 0 0 0-.412-.833.05.05 0 0 0-.052-.025c-1.125.194-2.22.534-3.257 1.011a.04.04 0 0 0-.021.018C.356 6.024-.213 9.047.066 12.032q.003.022.021.037a13.3 13.3 0 0 0 3.995 2.02.05.05 0 0 0 .056-.019q.463-.63.818-1.329a.05.05 0 0 0-.01-.059l-.018-.011a9 9 0 0 1-1.248-.595.05.05 0 0 1-.02-.066l.015-.019q.127-.095.248-.195a.05.05 0 0 1 .051-.007c2.619 1.196 5.454 1.196 8.041 0a.05.05 0 0 1 .053.007q.121.1.248.195a.05.05 0 0 1-.004.085 8 8 0 0 1-1.249.594.05.05 0 0 0-.03.03.05.05 0 0 0 .003.041c.24.465.515.909.817 1.329a.05.05 0 0 0 .056.019 13.2 13.2 0 0 0 4.001-2.02.05.05 0 0 0 .021-.037c.334-3.451-.559-6.449-2.366-9.106a.03.03 0 0 0-.02-.019m-8.198 7.307c-.789 0-1.438-.724-1.438-1.612s.637-1.613 1.438-1.613c.807 0 1.45.73 1.438 1.613 0 .888-.637 1.612-1.438 1.612m5.316 0c-.788 0-1.438-.724-1.438-1.612s.637-1.613 1.438-1.613c.807 0 1.451.73 1.438 1.613 0 .888-.631 1.612-1.438 1.612"/>
+                    </svg>
+                </a>
+
+                    <a href="/logout" class="btn btn-outline-light me-2 fw-bold">Log out</a>
+            </div>
+
+            <!-- Social Icons & Login (Mobile) -->
+            <div class="col-12 text-center mt-4 d-md-none">
+                <a
+                        target="_blank" href="https://discord.gg/RPh89jpVVz"
+                        class="text-white d-block mb-2"
+                        data-bs-toggle="tooltip" data-bs-placement="top" title="Join our Discord Server"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
+                         class="bi bi-discord" viewBox="0 0 16 16">
+                        <path d="M13.545 2.907a13.2 13.2 0 0 0-3.257-1.011.05.05 0 0 0-.052.025c-.141.25-.297.577-.406.833a12.2 12.2 0 0 0-3.658 0 8 8 0 0 0-.412-.833.05.05 0 0 0-.052-.025c-1.125.194-2.22.534-3.257 1.011a.04.04 0 0 0-.021.018C.356 6.024-.213 9.047.066 12.032q.003.022.021.037a13.3 13.3 0 0 0 3.995 2.02.05.05 0 0 0 .056-.019q.463-.63.818-1.329a.05.05 0 0 0-.01-.059l-.018-.011a9 9 0 0 1-1.248-.595.05.05 0 0 1-.02-.066l.015-.019q.127-.095.248-.195a.05.05 0 0 1 .051-.007c2.619 1.196 5.454 1.196 8.041 0a.05.05 0 0 1 .053.007q.121.1.248.195a.05.05 0 0 1-.004.085 8 8 0 0 1-1.249.594.05.05 0 0 0-.03.03.05.05 0 0 0 .003.041c.24.465.515.909.817 1.329a.05.05 0 0 0 .056.019 13.2 13.2 0 0 0 4.001-2.02.05.05 0 0 0 .021-.037c.334-3.451-.559-6.449-2.366-9.106a.03.03 0 0 0-.02-.019m-8.198 7.307c-.789 0-1.438-.724-1.438-1.612s.637-1.613 1.438-1.613c.807 0 1.45.73 1.438 1.613 0 .888-.637 1.612-1.438 1.612m5.316 0c-.788 0-1.438-.724-1.438-1.612s.637-1.613 1.438-1.613c.807 0 1.451.73 1.438 1.613 0 .888-.631 1.612-1.438 1.612"/>
+                    </svg>
+                </a>
+
+                    <a href="/logout" class="btn btn-outline-light me-2 fw-bold">Log out</a>
+            </div>
+        </div>
+    </div>
+</footer>
+ <!-- Reusable Footer -->
+</body>
+</html>

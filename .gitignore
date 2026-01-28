@@ -211,3 +211,6 @@ deepstate-map-data/*.geojson*
 # Training run checkpoints (large files)
 analysis/training_runs/**/*.pt
 
+
+# Large data files
+data/ukrainian-air-raid-sirens-dataset/

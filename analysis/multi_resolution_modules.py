@@ -122,12 +122,22 @@ class ScaledDotProductAttention(nn.Module):
         # Apply mask: set masked positions to large negative value
         if mask is not None:
             # mask is True for positions to keep, False for positions to ignore
+            # Handle edge case: if ALL positions are masked for a row, unmask first position
+            # This prevents softmax from receiving all -inf, which causes NaN gradients
+            all_masked = ~mask.any(dim=-1, keepdim=True)  # [batch, heads, seq_q, 1]
+            if all_masked.any():
+                # Create modified mask that keeps first position for all-masked rows
+                mask = mask.clone()
+                # Expand all_masked to match mask shape and set first position to True
+                first_pos_unmask = torch.zeros_like(mask)
+                first_pos_unmask[..., 0] = True
+                mask = mask | (all_masked & first_pos_unmask)
             scores = scores.masked_fill(~mask, float('-inf'))
 
         # Softmax and dropout
         attention_weights = F.softmax(scores, dim=-1)
 
-        # Handle case where entire row is masked (results in NaN from softmax)
+        # Safety check: replace any remaining NaN with 0 (shouldn't happen with above fix)
         attention_weights = attention_weights.masked_fill(
             torch.isnan(attention_weights), 0.0
         )

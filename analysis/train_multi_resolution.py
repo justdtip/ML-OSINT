@@ -82,10 +82,22 @@ from multi_resolution_han import (
     create_multi_resolution_han,
     SourceConfig,
 )
+
+# Geographic prior imports
+from analysis.geographic_source_encoder import SpatialSourceConfig
+from analysis.loaders.raion_adapter import get_per_raion_mask, RAION_ADAPTER_REGISTRY
 from config.paths import (
     PROJECT_ROOT, DATA_DIR, ANALYSIS_DIR, MODEL_DIR, CHECKPOINT_DIR,
     MULTI_RES_CHECKPOINT_DIR, PIPELINE_CHECKPOINT_DIR,
     HAN_BEST_MODEL, HAN_FINAL_MODEL, ensure_dir,
+)
+
+# Training run management (for probe integration)
+from training_output_manager import (
+    TrainingRunManager,
+    TrainingRunMetadata,
+    TRAINING_RUNS_DIR,
+    STAGE_NAMES,
 )
 
 
@@ -336,6 +348,72 @@ def list_available_checkpoints(checkpoint_dir: Optional[Path] = None) -> Dict[st
     }
 
 
+# =============================================================================
+# GEOGRAPHIC PRIOR UTILITIES
+# =============================================================================
+
+# All available raion sources for --all-raion-sources flag
+ALL_RAION_SOURCES = [
+    'geoconfirmed_raion',
+    'air_raid_sirens_raion',
+    'ucdp_raion',
+    'warspotting_raion',
+    'deepstate_raion',
+    'firms_expanded_raion',
+]
+
+
+def build_spatial_configs_from_dataset(
+    source_names: List[str],
+) -> Dict[str, SpatialSourceConfig]:
+    """
+    Build SpatialSourceConfig for each raion source that has per-raion mask data.
+
+    This function retrieves per-raion mask information from the raion adapter registry
+    (populated when raion data is loaded) and creates SpatialSourceConfig objects
+    for use with the GeographicSourceEncoder in MultiResolutionHAN.
+
+    Args:
+        source_names: List of raion source names to build configs for
+            (e.g., ['geoconfirmed_raion', 'ucdp_raion'])
+
+    Returns:
+        Dict mapping source_name to SpatialSourceConfig for sources that have
+        per-raion mask data available in the registry.
+
+    Example:
+        >>> spatial_configs = build_spatial_configs_from_dataset(
+        ...     ['geoconfirmed_raion', 'ucdp_raion']
+        ... )
+        >>> for name, config in spatial_configs.items():
+        ...     print(f"{name}: {config.n_raions} raions, {config.features_per_raion} features")
+    """
+    spatial_configs = {}
+
+    for source_name in source_names:
+        # Check if this source has per-raion mask info in the registry
+        mask_info = get_per_raion_mask(source_name)
+
+        if mask_info is None:
+            print(f"    Warning: No per-raion mask info for {source_name} - skipping geographic prior")
+            continue
+
+        # Build SpatialSourceConfig from mask info
+        config = SpatialSourceConfig(
+            name=source_name,
+            n_raions=mask_info.n_raions,
+            features_per_raion=mask_info.n_features_per_raion,
+            raion_keys=mask_info.raion_keys,
+            use_geographic_prior=True,
+        )
+
+        spatial_configs[source_name] = config
+        print(f"    Built spatial config for {source_name}: "
+              f"{config.n_raions} raions, {config.features_per_raion} features/raion")
+
+    return spatial_configs
+
+
 @dataclass
 class TrainerConfig:
     """Configuration for the MultiResolutionTrainer."""
@@ -417,6 +495,8 @@ class MultiTaskLoss(nn.Module):
         'transition': 1.4,   # exp(-1.4) ≈ 0.25 weight (regime transition auxiliary)
         'anomaly': 1.4,      # exp(-1.4) ≈ 0.25 weight
         'forecast': 1.9,     # exp(-1.9) ≈ 0.15 weight (lowest - suspicious loss)
+        'daily_forecast': 1.4,  # exp(-1.4) ≈ 0.25 weight (daily-resolution predictions)
+        'isw_alignment': 2.3,  # exp(-2.3) ≈ 0.10 weight (auxiliary alignment task)
     }
 
     def __init__(
@@ -987,6 +1067,64 @@ def enhanced_multi_resolution_collate_fn(
                 year_months.append((0, 0))
         batch_monthly_year_months.append(year_months)
 
+    # =========================================================================
+    # BATCH FORECAST TARGETS (for autoregressive training)
+    # =========================================================================
+    batched_forecast_targets = {}
+    batched_forecast_masks = {}
+
+    # Check if forecast targets are available
+    if batch[0].forecast_targets is not None and batch[0].forecast_targets:
+        forecast_sources = list(batch[0].forecast_targets.keys())
+
+        for source_name in forecast_sources:
+            n_features = batch[0].forecast_targets[source_name].shape[1]
+
+            targets_batch = torch.full(
+                (batch_size, max_monthly_len, n_features),
+                fill_value=MISSING_VALUE,
+                dtype=torch.float32
+            )
+            masks_batch = torch.zeros(
+                (batch_size, max_monthly_len, n_features),
+                dtype=torch.bool
+            )
+
+            for i, sample in enumerate(batch):
+                if sample.forecast_targets is not None and source_name in sample.forecast_targets:
+                    seq_len = sample.forecast_targets[source_name].shape[0]
+                    targets_batch[i, :seq_len] = sample.forecast_targets[source_name]
+                    if sample.forecast_masks is not None and source_name in sample.forecast_masks:
+                        masks_batch[i, :seq_len] = sample.forecast_masks[source_name]
+
+            batched_forecast_targets[source_name] = targets_batch
+            batched_forecast_masks[source_name] = masks_batch
+
+    # =========================================================================
+    # BATCH ISW EMBEDDINGS (for narrative alignment)
+    # =========================================================================
+    batched_isw_embedding = None
+    batched_isw_mask = None
+
+    if batch[0].isw_embedding is not None:
+        isw_embedding_dim = batch[0].isw_embedding.shape[1]
+
+        batched_isw_embedding = torch.zeros(
+            (batch_size, max_daily_len, isw_embedding_dim),
+            dtype=torch.float32
+        )
+        batched_isw_mask = torch.zeros(
+            (batch_size, max_daily_len),
+            dtype=torch.bool
+        )
+
+        for i, sample in enumerate(batch):
+            if sample.isw_embedding is not None:
+                seq_len = sample.isw_embedding.shape[0]
+                batched_isw_embedding[i, :seq_len] = sample.isw_embedding
+                if sample.isw_mask is not None:
+                    batched_isw_mask[i, :seq_len] = sample.isw_mask
+
     return {
         'daily_features': batched_daily_features,
         'daily_masks': batched_daily_masks,
@@ -1001,6 +1139,10 @@ def enhanced_multi_resolution_collate_fn(
         'monthly_obs_rates': torch.tensor(monthly_obs_rates, dtype=torch.float32),
         'daily_dates': batch_daily_dates,
         'monthly_year_months': batch_monthly_year_months,
+        'forecast_targets': batched_forecast_targets,
+        'forecast_masks': batched_forecast_masks,
+        'isw_embedding': batched_isw_embedding,
+        'isw_mask': batched_isw_mask,
     }
 
 
@@ -1047,6 +1189,7 @@ class MultiResolutionTrainer:
         warmup_epochs: int = 10,
         checkpoint_dir: str = str(CHECKPOINT_DIR),
         device: str = 'auto',
+        run_manager: Optional[TrainingRunManager] = None,
     ):
         """
         Initialize trainer.
@@ -1065,6 +1208,7 @@ class MultiResolutionTrainer:
             warmup_epochs: Number of warmup epochs
             checkpoint_dir: Directory for saving checkpoints
             device: Device ('auto', 'cpu', 'cuda', 'mps')
+            run_manager: Optional TrainingRunManager for organized output (probe integration)
         """
         # Detect device
         if device == 'auto':
@@ -1122,6 +1266,19 @@ class MultiResolutionTrainer:
         self.checkpoint_dir = Path(checkpoint_dir)
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
+        # Run manager for probe integration
+        self.run_manager = run_manager
+        if run_manager is not None:
+            # Setup run directory structure
+            run_manager.setup()
+            # Get stage 3 (HAN) directory for this run
+            self.run_checkpoint_dir = run_manager.get_stage_dir(3)
+            self.run_checkpoint_dir.mkdir(parents=True, exist_ok=True)
+            print(f"Training run ID: {run_manager.run_id}")
+            print(f"Run checkpoints: {self.run_checkpoint_dir}")
+        else:
+            self.run_checkpoint_dir = None
+
         # Optimizer
         self.optimizer = optim.AdamW(
             model.parameters(),
@@ -1140,10 +1297,21 @@ class MultiResolutionTrainer:
             min_lr=1e-6,
         )
 
+        # ISW alignment weight (applied separately, not through multi-task uncertainty)
+        # Lower weight (0.1) because ISW alignment is auxiliary to main prediction tasks
+        self.isw_alignment_weight = 0.1
+
         # Multi-task loss (updated task names to match real targets)
         # Use task priors to rebalance from dominant casualty head (62.6% -> 25%)
+        task_names = ['casualty', 'regime', 'transition', 'anomaly', 'forecast']
+        # Add daily forecast if model has the head
+        if hasattr(model, 'daily_forecast_head'):
+            task_names.append('daily_forecast')
+        # Add ISW alignment if model has it enabled
+        if hasattr(model, 'use_isw_alignment') and model.use_isw_alignment:
+            task_names.append('isw_alignment')
         self.multi_task_loss = MultiTaskLoss(
-            task_names=['casualty', 'regime', 'transition', 'anomaly', 'forecast'],
+            task_names=task_names,
             use_task_priors=True,  # Probe-based weight initialization
         ).to(self.device)
 
@@ -1215,9 +1383,9 @@ class MultiResolutionTrainer:
 
         # SECOND PASS: Apply masking using already-moved tensors
         # This fixes the device mismatch bug where masks were accessed from original batch
-        for key in ('daily_features', 'monthly_features'):
+        for key in ('daily_features', 'monthly_features', 'forecast_targets'):
             if key in moved:
-                mask_key = key.replace('features', 'masks')
+                mask_key = key.replace('features', 'masks').replace('targets', 'masks')
                 if mask_key in moved:
                     for k in moved[key]:
                         if k in moved[mask_key]:
@@ -1225,18 +1393,19 @@ class MultiResolutionTrainer:
                             moved[key][k] = moved[key][k].masked_fill(~moved[mask_key][k], 0.0)
 
         # Verify no extreme values remain in feature tensors
-        for key in ('daily_features', 'monthly_features'):
-            if key in moved:
+        for key in ('daily_features', 'monthly_features', 'forecast_targets'):
+            if key in moved and isinstance(moved[key], dict):
                 for source_name, tensor in moved[key].items():
-                    if torch.isnan(tensor).any():
-                        warnings.warn(f"NaN values found in {key}[{source_name}]")
-                    if (tensor.abs() > 100).any():
-                        # Log warning but don't fail - model should handle this
-                        extreme_count = (tensor.abs() > 100).sum().item()
-                        warnings.warn(
-                            f"Extreme values ({extreme_count}) in {key}[{source_name}], "
-                            "possibly incomplete MISSING_VALUE handling"
-                        )
+                    if isinstance(tensor, torch.Tensor):
+                        if torch.isnan(tensor).any():
+                            warnings.warn(f"NaN values found in {key}[{source_name}]")
+                        if (tensor.abs() > 100).any():
+                            # Log warning but don't fail - model should handle this
+                            extreme_count = (tensor.abs() > 100).sum().item()
+                            warnings.warn(
+                                f"Extreme values ({extreme_count}) in {key}[{source_name}], "
+                                "possibly incomplete MISSING_VALUE handling"
+                            )
 
         return moved
 
@@ -1350,24 +1519,90 @@ class MultiResolutionTrainer:
             else:
                 phase_targets_mapped = phase_targets
 
-            # Compute masked cross-entropy loss
+            # Compute masked cross-entropy loss with anti-collapse measures
             if phase_valid.any():
                 valid_idx = phase_valid.nonzero(as_tuple=True)[0]
+                valid_targets = phase_targets_mapped[valid_idx]
+
+                # === ANTI-COLLAPSE: Class-balanced weights ===
+                # Compute class frequencies and use inverse as weights
+                # This prevents the model from only predicting the majority class
+                class_counts = torch.bincount(valid_targets, minlength=model_n_classes).float()
+                class_counts = class_counts.clamp(min=1)  # Avoid division by zero
+                class_weights = 1.0 / class_counts
+                class_weights = class_weights / class_weights.sum() * model_n_classes  # Normalize
+
                 # Clamp logits to prevent extreme values
                 clamped_logits = regime_logits_last[valid_idx].clamp(-50, 50)
+
+                # === ANTI-COLLAPSE: Label smoothing ===
+                # Prevents overconfident predictions that lead to collapse
                 regime_loss = F.cross_entropy(
                     clamped_logits,
-                    phase_targets_mapped[valid_idx],
+                    valid_targets,
+                    weight=class_weights,
+                    label_smoothing=0.1,  # 10% smoothing to prevent overconfidence
                 )
+
+                # === ANTI-COLLAPSE: Entropy regularization (STRONGER) ===
+                # Encourage the model to make confident but diverse predictions
+                # Penalize when prediction entropy is too low (constant outputs)
+                regime_probs = F.softmax(clamped_logits, dim=-1)
+                # Per-sample entropy
+                sample_entropy = -(regime_probs * (regime_probs + 1e-8).log()).sum(dim=-1)
+                mean_entropy = sample_entropy.mean()
+                # Target entropy: 50% of max (was 40%)
+                target_entropy = math.log(model_n_classes) * 0.5
+                entropy_penalty = F.relu(target_entropy - mean_entropy)
+
+                # === ANTI-COLLAPSE: Prediction diversity across batch (STRONGER) ===
+                # Penalize when all samples predict the same class
+                mean_probs = regime_probs.mean(dim=0)  # Average prediction distribution
+                batch_diversity = -(mean_probs * (mean_probs + 1e-8).log()).sum()
+                # Should be high if predictions are diverse across batch
+                diversity_target = math.log(model_n_classes) * 0.7  # was 0.6
+                diversity_penalty = F.relu(diversity_target - batch_diversity)
+
+                # === ANTI-COLLAPSE: Loss floor ===
+                # Don't let regime loss go below 0.05 to prevent collapse
+                regime_loss = torch.maximum(regime_loss, torch.tensor(0.05, device=regime_loss.device))
+
+                # Combine losses (STRONGER weights: 0.3 instead of 0.1)
                 losses['regime'] = torch.nan_to_num(regime_loss, nan=0.0)
+                losses['regime'] += entropy_penalty * 0.3 + diversity_penalty * 0.3
             else:
                 # No valid targets - use small regularization connected to model output
                 losses['regime'] = regime_logits_last.pow(2).mean() * 1e-6
         else:
-            # Fallback to synthetic targets if real targets unavailable
+            # No real targets available - use autoregressive regime prediction
+            # Instead of synthetic random targets, use temporal consistency loss:
+            # consecutive timesteps should have similar regime predictions
             regime_logits_last = regime_logits[:, -1, :]
-            regime_targets = torch.randint(0, model_n_classes, (batch_size,), device=self.device)
-            losses['regime'] = F.cross_entropy(regime_logits_last, regime_targets)
+
+            # Temporal consistency loss: encourage smooth regime transitions
+            # Compare predictions at t vs t-1 (should be similar most of the time)
+            if seq_len >= 2:
+                regime_t = regime_logits[:, 1:, :]  # [batch, seq-1, n_classes]
+                regime_t_minus_1 = regime_logits[:, :-1, :]  # [batch, seq-1, n_classes]
+                # KL divergence between consecutive predictions (should be small)
+                regime_probs_t = F.softmax(regime_t, dim=-1)
+                regime_log_probs_t_minus_1 = F.log_softmax(regime_t_minus_1, dim=-1)
+                # Symmetric KL for stability
+                kl_forward = F.kl_div(regime_log_probs_t_minus_1, regime_probs_t, reduction='batchmean')
+                kl_backward = F.kl_div(
+                    F.log_softmax(regime_t, dim=-1),
+                    F.softmax(regime_t_minus_1, dim=-1),
+                    reduction='batchmean'
+                )
+                temporal_consistency = (kl_forward + kl_backward) / 2
+                # Also add entropy regularization to prevent collapse to single class
+                entropy = -(regime_probs_t * regime_probs_t.clamp(min=1e-8).log()).sum(dim=-1).mean()
+                target_entropy = math.log(model_n_classes) * 0.5  # Encourage moderate entropy
+                entropy_penalty = (target_entropy - entropy).abs()
+                losses['regime'] = temporal_consistency * 0.1 + entropy_penalty * 0.1
+            else:
+                # Single timestep - just regularize logits
+                losses['regime'] = regime_logits_last.pow(2).mean() * 1e-6
 
         # =====================================================================
         # Phase Transition Detection Loss (binary)
@@ -1481,12 +1716,28 @@ class MultiResolutionTrainer:
                 valid_idx = viirs_valid.nonzero(as_tuple=True)[0]
                 # Clamp predictions to prevent extreme values
                 clamped_anomaly = anomaly_score_last[valid_idx].clamp(-10, 10)
+                valid_targets = viirs_anomaly_targets[valid_idx]
+
                 # MSE loss for anomaly score prediction
                 anomaly_loss = F.mse_loss(
                     clamped_anomaly,
-                    viirs_anomaly_targets[valid_idx],
+                    valid_targets,
                 )
+
+                # === ANTI-COLLAPSE: Variance penalty ===
+                # Penalize when predictions have much lower variance than targets
+                # This prevents the model from just predicting the mean
+                pred_var = clamped_anomaly.var()
+                target_var = valid_targets.var()
+                if target_var > 1e-6:  # Only if targets have meaningful variance
+                    variance_ratio = pred_var / (target_var + 1e-6)
+                    # Penalize if prediction variance is less than 50% of target variance
+                    variance_penalty = F.relu(0.5 - variance_ratio)
+                else:
+                    variance_penalty = torch.tensor(0.0, device=self.device)
+
                 losses['anomaly'] = torch.nan_to_num(anomaly_loss, nan=0.0)
+                losses['anomaly'] += variance_penalty * 0.1
             else:
                 # No valid VIIRS - small regularization
                 losses['anomaly'] = anomaly_score_last.pow(2).mean() * 1e-6
@@ -1496,16 +1747,247 @@ class MultiResolutionTrainer:
             losses['anomaly'] = anomaly_score_last.pow(2).mean() * 0.01
 
         # =====================================================================
-        # Forecast Loss (self-supervised regularization)
-        # TODO: Replace with actual future casualty prediction once we have
-        # forward-looking targets. For now, use variance regularization.
+        # Autoregressive Forecast Loss
+        # Predict next month's features from current representation.
+        # This forces the model to learn temporal dynamics for prediction.
         # =====================================================================
         forecast_pred = outputs['forecast_pred']  # [batch, seq, n_features]
-        # Encourage smooth, non-degenerate predictions
-        forecast_var = forecast_pred.var(dim=1).mean()
-        losses['forecast'] = forecast_var * 0.01  # Small regularization
+
+        # Check if we have real forecast targets from the batch
+        forecast_targets = batch.get('forecast_targets', {})
+        forecast_masks = batch.get('forecast_masks', {})
+
+        if forecast_targets:
+            # Compute autoregressive loss using real next-timestep features
+            forecast_loss = self._compute_autoregressive_forecast_loss(
+                forecast_pred=forecast_pred,
+                forecast_targets=forecast_targets,
+                forecast_masks=forecast_masks,
+            )
+            losses['forecast'] = forecast_loss
+        else:
+            # Fallback: use temporal smoothness regularization
+            # Encourage predictions to vary over time (prevent collapse)
+            # but also be temporally smooth (not erratic)
+            if forecast_pred.size(1) >= 2:
+                # Temporal difference penalty (smoothness)
+                diff = forecast_pred[:, 1:, :] - forecast_pred[:, :-1, :]
+                smoothness = diff.pow(2).mean()
+                # Variance encouragement (prevent collapse)
+                variance = forecast_pred.var(dim=1).mean()
+                target_variance = 0.5  # Encourage non-zero variance
+                variance_penalty = F.relu(target_variance - variance)
+                losses['forecast'] = smoothness * 0.01 + variance_penalty * 0.1
+            else:
+                losses['forecast'] = forecast_pred.pow(2).mean() * 1e-6
+
+        # =====================================================================
+        # Daily Forecast Loss (DailyForecastingHead)
+        # =====================================================================
+        daily_forecast_pred = outputs.get('daily_forecast_pred')
+        daily_forecast_targets = batch.get('daily_forecast_targets')
+        daily_forecast_masks = batch.get('daily_forecast_masks')
+
+        if daily_forecast_pred is not None and daily_forecast_targets is not None:
+            # daily_forecast_pred: [batch, horizon, n_daily_features]
+            # daily_forecast_targets: [batch, horizon, n_daily_features]
+            daily_forecast_targets = daily_forecast_targets.to(daily_forecast_pred.device)
+
+            if daily_forecast_masks is not None:
+                daily_forecast_masks = daily_forecast_masks.to(daily_forecast_pred.device)
+                # Mask out missing values
+                valid_mask = daily_forecast_masks & (daily_forecast_targets > -900)
+            else:
+                valid_mask = daily_forecast_targets > -900
+
+            if valid_mask.any():
+                pred_valid = daily_forecast_pred[valid_mask]
+                target_valid = daily_forecast_targets[valid_mask]
+                daily_forecast_loss = F.mse_loss(pred_valid, target_valid)
+                losses['daily_forecast'] = daily_forecast_loss
+            else:
+                losses['daily_forecast'] = daily_forecast_pred.pow(2).mean() * 1e-6
+
+        # =====================================================================
+        # ISW Narrative Alignment Loss (optional)
+        # =====================================================================
+        # Compute contrastive alignment loss between model temporal representations
+        # and ISW narrative embeddings if:
+        # 1. Model has ISW alignment module enabled
+        # 2. Batch contains ISW embeddings
+        if (hasattr(self.model, 'isw_alignment') and
+            self.model.isw_alignment is not None and
+            'isw_embedding' in batch):
+
+            isw_embeddings = batch['isw_embedding']  # [batch, seq, 1024]
+            isw_mask = batch.get('isw_mask', None)    # [batch, seq] True = valid
+
+            # Get temporal output from model outputs
+            temporal_output = outputs.get('temporal_output')  # [batch, seq, d_model]
+
+            if temporal_output is not None and isw_embeddings is not None:
+                # Align sequence lengths
+                min_seq = min(temporal_output.shape[1], isw_embeddings.shape[1])
+                temporal_aligned = temporal_output[:, :min_seq, :]
+                isw_aligned = isw_embeddings[:, :min_seq, :]
+
+                if isw_mask is not None:
+                    isw_mask_aligned = isw_mask[:, :min_seq]
+                else:
+                    isw_mask_aligned = None
+
+                # Project to shared space
+                model_proj, isw_proj = self.model.isw_alignment(
+                    temporal_aligned,
+                    isw_aligned,
+                    isw_mask_aligned,
+                )
+
+                # Compute contrastive alignment loss
+                isw_alignment_loss = self.model.isw_alignment.compute_alignment_loss(
+                    model_proj,
+                    isw_proj,
+                    isw_mask_aligned,
+                )
+
+                # Add to losses with weight 0.1 (lower than primary tasks)
+                losses['isw_alignment'] = isw_alignment_loss * self.isw_alignment_weight
 
         return losses
+
+    def _compute_autoregressive_forecast_loss(
+        self,
+        forecast_pred: torch.Tensor,
+        forecast_targets: Dict[str, torch.Tensor],
+        forecast_masks: Dict[str, torch.Tensor],
+    ) -> torch.Tensor:
+        """
+        Compute autoregressive loss for next-timestep feature prediction.
+
+        This forces the model to PREDICT future states rather than just classify
+        current state, addressing the C5 finding of output collapse.
+
+        The forecast_pred output at time t should predict features at time t+1.
+        We compare predictions with actual future features from forecast_targets.
+
+        Args:
+            forecast_pred: Model forecast predictions [batch, seq, n_features]
+            forecast_targets: Dict of actual future features per source
+                              Each tensor: [batch, seq, source_features]
+            forecast_masks: Dict of validity masks per source
+                           Each tensor: [batch, seq, source_features]
+
+        Returns:
+            Scalar loss tensor
+        """
+        batch_size, seq_len, n_pred_features = forecast_pred.shape
+        device = forecast_pred.device
+
+        total_loss = torch.tensor(0.0, device=device)
+        n_valid_sources = 0
+
+        # Concatenate all source targets for comparison with forecast_pred
+        all_targets = []
+        all_masks = []
+        source_dims = {}
+        current_dim = 0
+
+        for source_name, target in forecast_targets.items():
+            if source_name not in forecast_masks:
+                continue
+
+            # target shape: [batch, seq, source_features]
+            mask = forecast_masks[source_name]
+            n_source_features = target.shape[-1]
+
+            # Track which dimensions correspond to which source
+            source_dims[source_name] = (current_dim, current_dim + n_source_features)
+            current_dim += n_source_features
+
+            all_targets.append(target)
+            all_masks.append(mask)
+
+        if not all_targets:
+            # No valid targets, return small regularization
+            return forecast_pred.pow(2).mean() * 1e-6
+
+        # Concatenate all sources
+        # Shape: [batch, seq, total_features]
+        concat_targets = torch.cat(all_targets, dim=-1)
+        concat_masks = torch.cat(all_masks, dim=-1)
+
+        total_target_features = concat_targets.shape[-1]
+
+        # Handle dimension mismatch between forecast_pred and targets
+        if n_pred_features != total_target_features:
+            # Use a linear projection or just use the overlapping dimensions
+            # For simplicity, compute loss on min(pred, target) features
+            min_features = min(n_pred_features, total_target_features)
+            pred_for_loss = forecast_pred[..., :min_features]
+            targets_for_loss = concat_targets[..., :min_features]
+            masks_for_loss = concat_masks[..., :min_features]
+        else:
+            pred_for_loss = forecast_pred
+            targets_for_loss = concat_targets
+            masks_for_loss = concat_masks
+
+        # Autoregressive loss: prediction at t should match target at t
+        # (targets are already shifted by prediction_horizon in the dataset)
+        # Use MSE loss on valid positions
+        valid_mask = masks_for_loss  # [batch, seq, features]
+
+        if valid_mask.any():
+            # Flatten for masked selection (use reshape for non-contiguous tensors)
+            pred_flat = pred_for_loss.reshape(-1)
+            target_flat = targets_for_loss.reshape(-1)
+            mask_flat = valid_mask.reshape(-1)
+
+            # Select only valid positions
+            pred_valid = pred_flat[mask_flat]
+            target_valid = target_flat[mask_flat]
+
+            # Compute MSE loss with anti-collapse measures
+            if pred_valid.numel() > 0:
+                mse_loss = F.mse_loss(pred_valid, target_valid)
+
+                # === ANTI-COLLAPSE: Variance preservation ===
+                # Penalize when predictions have collapsed to near-constant values
+                pred_var = pred_valid.var()
+                target_var = target_valid.var()
+                if target_var > 1e-6:
+                    variance_ratio = pred_var / (target_var + 1e-6)
+                    # Penalize if prediction variance is less than 30% of target variance
+                    variance_penalty = F.relu(0.3 - variance_ratio) * 0.5
+                else:
+                    variance_penalty = torch.tensor(0.0, device=device)
+
+                # Also add a temporal consistency term
+                # Predictions should be smooth over time (but not constant!)
+                if seq_len >= 2:
+                    diff = pred_for_loss[:, 1:, :] - pred_for_loss[:, :-1, :]
+                    smoothness_loss = diff.pow(2).mean() * 0.01
+
+                    # === ANTI-COLLAPSE: Temporal variation requirement ===
+                    # Penalize if predictions don't vary enough over time
+                    temporal_var = pred_for_loss.var(dim=1).mean()
+                    temporal_penalty = F.relu(0.1 - temporal_var) * 0.1
+                else:
+                    smoothness_loss = torch.tensor(0.0, device=device)
+                    temporal_penalty = torch.tensor(0.0, device=device)
+
+                total_loss = mse_loss + smoothness_loss + variance_penalty + temporal_penalty
+
+                # === ANTI-COLLAPSE: Loss floor ===
+                # Don't let forecast loss collapse below 0.01
+                # This forces the model to keep learning instead of finding trivial solutions
+                total_loss = torch.maximum(total_loss, torch.tensor(0.01, device=device))
+            else:
+                total_loss = forecast_pred.pow(2).mean() * 1e-6
+        else:
+            # No valid targets - small regularization
+            total_loss = forecast_pred.pow(2).mean() * 1e-6
+
+        return total_loss
 
     def train_epoch(self) -> Dict[str, float]:
         """
@@ -1524,13 +2006,14 @@ class MultiResolutionTrainer:
         for batch in self.train_loader:
             batch = self._move_batch_to_device(batch)
 
-            # Forward pass
+            # Forward pass (include raion_masks if available for geographic sources)
             outputs = self.model(
                 daily_features=batch['daily_features'],
                 daily_masks=batch['daily_masks'],
                 monthly_features=batch['monthly_features'],
                 monthly_masks=batch['monthly_masks'],
                 month_boundaries=batch['month_boundary_indices'],
+                raion_masks=batch.get('raion_masks'),
             )
 
             # Compute individual task losses
@@ -1574,6 +2057,20 @@ class MultiResolutionTrainer:
         results['task_weights'] = self.multi_task_loss.get_task_weights()
         results['learning_rate'] = self.scheduler.get_last_lr()[0]
 
+        # === COLLAPSE DETECTION ===
+        # Warn if any loss component has collapsed to near-zero
+        collapse_threshold = 0.001
+        collapsed_tasks = []
+        for task in ['regime', 'anomaly', 'forecast']:
+            if task in results and results[task] < collapse_threshold:
+                collapsed_tasks.append(f"{task}={results[task]:.6f}")
+        if collapsed_tasks:
+            warnings.warn(
+                f"COLLAPSE DETECTED: Tasks with near-zero loss: {', '.join(collapsed_tasks)}. "
+                f"Model may be outputting constant predictions. "
+                f"Consider increasing anti-collapse regularization weights."
+            )
+
         # Step scheduler
         self.scheduler.step()
 
@@ -1600,13 +2097,14 @@ class MultiResolutionTrainer:
             for batch in self.val_loader:
                 batch = self._move_batch_to_device(batch)
 
-                # Forward pass
+                # Forward pass (include raion_masks if available)
                 outputs = self.model(
                     daily_features=batch['daily_features'],
                     daily_masks=batch['daily_masks'],
                     monthly_features=batch['monthly_features'],
                     monthly_masks=batch['monthly_masks'],
                     month_boundaries=batch['month_boundary_indices'],
+                    raion_masks=batch.get('raion_masks'),
                 )
 
                 # Compute losses
@@ -1721,6 +2219,26 @@ class MultiResolutionTrainer:
             torch.save(checkpoint, fusion_path)
             print(f"  Saved early fusion checkpoint at epoch {epoch} "
                   f"(optimal cross-modal fusion)")
+
+        # === PROBE INTEGRATION: Save to run directory ===
+        # This enables linking probe runs to specific training runs
+        if self.run_checkpoint_dir is not None:
+            # Add run metadata to checkpoint
+            checkpoint['training_run_id'] = self.run_manager.run_id
+
+            # Save latest to run directory
+            run_latest = self.run_checkpoint_dir / 'latest_checkpoint.pt'
+            torch.save(checkpoint, run_latest)
+
+            # Save best to run directory
+            if is_best:
+                run_best = self.run_checkpoint_dir / 'best_checkpoint.pt'
+                torch.save(checkpoint, run_best)
+
+            # Save periodic checkpoints to run directory
+            if epoch % 10 == 0:
+                run_epoch = self.run_checkpoint_dir / f'checkpoint_epoch_{epoch}.pt'
+                torch.save(checkpoint, run_epoch)
 
     def save_fusion_checkpoint_with_rsa(
         self,
@@ -1935,6 +2453,7 @@ class MultiResolutionTrainer:
                     monthly_features=batch['monthly_features'],
                     monthly_masks=batch['monthly_masks'],
                     month_boundaries=batch['month_boundary_indices'],
+                    raion_masks=batch.get('raion_masks'),
                 )
 
                 task_losses = self._compute_losses(outputs, batch)
@@ -2327,11 +2846,51 @@ def main():
                         default=str(CHECKPOINT_DIR),
                         help='Checkpoint directory')
 
+    # Data configuration arguments (optimization-implementation-plan.md)
+    parser.add_argument('--use-disaggregated-equipment', action='store_true', default=True,
+                        help='Use disaggregated equipment sources (drones/armor/artillery) instead of aggregated (default: True)')
+    parser.add_argument('--no-disaggregated-equipment', action='store_true',
+                        help='Use aggregated equipment source instead of disaggregated')
+    parser.add_argument('--detrend-viirs', action='store_true', default=True,
+                        help='Apply first-order differencing to VIIRS to remove trend (default: True)')
+    parser.add_argument('--no-detrend-viirs', action='store_true',
+                        help='Disable VIIRS detrending')
+
+    # ISW alignment
+    parser.add_argument('--use-isw-alignment', action='store_true', default=False,
+                        help='Enable ISW narrative alignment via contrastive learning (default: False)')
+    parser.add_argument('--isw-weight', type=float, default=0.1,
+                        help='Weight for ISW alignment loss (default: 0.1)')
+
+    # Spatial features (unit positions, frontlines, fire hotspots per region)
+    parser.add_argument('--include-spatial', action='store_true', default=False,
+                        help='Include spatial features from DeepState (units, frontlines) and FIRMS (fire hotspots)')
+    parser.add_argument('--start-date', type=str, default='2022-02-24',
+                        help='Start date for training data (default: 2022-02-24, use 2022-05-15 for spatial to avoid missing data)')
+
+    # Geographic prior arguments for raion sources
+    parser.add_argument('--use-geographic-prior', action='store_true', default=False,
+                        help='Enable geographic attention priors for spatial/raion sources')
+    parser.add_argument('--raion-sources', type=str, nargs='*', default=None,
+                        help='List of raion sources to use (e.g., geoconfirmed_raion ucdp_raion). '
+                             'Available: geoconfirmed_raion, air_raid_sirens_raion, ucdp_raion, '
+                             'warspotting_raion, deepstate_raion, firms_expanded_raion, combined_raion')
+    parser.add_argument('--all-raion-sources', action='store_true', default=False,
+                        help='Use all available raion sources (convenience flag)')
+    parser.add_argument('--raion-only', action='store_true', default=False,
+                        help='Use ONLY raion sources (exclude default non-raion sources like equipment, viina, etc.)')
+
     # Other arguments
     parser.add_argument('--test', action='store_true',
                         help='Run tests instead of training')
     parser.add_argument('--resume', type=str, default=None,
                         help='Resume from checkpoint')
+
+    # Run management (probe integration)
+    parser.add_argument('--run-id', type=str, default=None,
+                        help='Custom run ID for tracking (auto-generated if not set)')
+    parser.add_argument('--no-run-manager', action='store_true',
+                        help='Disable run manager (skip organized output directory)')
 
     args = parser.parse_args()
 
@@ -2339,6 +2898,10 @@ def main():
     if args.test:
         run_all_tests()
         return
+
+    # Resolve data configuration flags (handle --no-* overrides)
+    use_disaggregated_equipment = args.use_disaggregated_equipment and not args.no_disaggregated_equipment
+    detrend_viirs = args.detrend_viirs and not args.no_detrend_viirs
 
     print("=" * 80)
     print("MULTI-RESOLUTION HAN TRAINING PIPELINE")
@@ -2355,15 +2918,82 @@ def main():
     print(f"  Learning rate: {args.learning_rate}")
     print(f"  Epochs: {args.epochs}")
     print(f"  Device: {args.device}")
+    # Resolve raion source configuration
+    use_geographic_prior = args.use_geographic_prior
+    raion_sources: List[str] = []
+    if args.all_raion_sources:
+        raion_sources = ALL_RAION_SOURCES.copy()
+        use_geographic_prior = True  # Implicitly enable geographic prior
+    elif args.raion_sources:
+        raion_sources = args.raion_sources
+        use_geographic_prior = True  # Implicitly enable geographic prior
+
+    print(f"\nData Configuration (Optimization Plan):")
+    print(f"  use_disaggregated_equipment: {use_disaggregated_equipment}")
+    print(f"  detrend_viirs: {detrend_viirs}")
+    print(f"  include_spatial_features: {args.include_spatial}")
+    print(f"  start_date: {args.start_date}")
+    print(f"\nGeographic Prior Configuration:")
+    print(f"  use_geographic_prior: {use_geographic_prior}")
+    if raion_sources:
+        print(f"  raion_sources: {raion_sources}")
+    else:
+        print(f"  raion_sources: (none - geographic prior disabled)")
 
     # Create datasets
     print("\n" + "-" * 80)
     print("Creating datasets...")
 
+    # Build daily_sources list
+    # CLEANED CONFIGURATION (2026-01):
+    # - All features are delta-only (no cumulative to avoid spurious correlations)
+    # - Removed redundant sources: viina (→geoconfirmed_raion), firms (→firms_expanded_raion)
+    # - equipment split into drones/armor/artillery (aircraft excluded)
+    # - viirs excluded (lagging indicator, not predictive)
+
+    # Non-spatial sources (45 features total, delta-only)
+    non_spatial_sources = ["personnel", "drones", "armor", "artillery"]
+
+    # Raion sources (29,841 features total, with geographic prior)
+    default_raion_sources = [
+        "geoconfirmed_raion", "air_raid_sirens_raion", "ucdp_raion",
+        "warspotting_raion", "deepstate_raion", "firms_expanded_raion",
+    ]
+
+    # Combine sources based on mode
+    if raion_sources:
+        # User specified explicit raion sources
+        if args.raion_only:
+            # Use ONLY raion sources (pure geographic model)
+            # Still include personnel as it's essential for target prediction
+            daily_sources_combined = ["personnel"] + raion_sources
+            print(f"\nDaily sources (raion-only mode): {daily_sources_combined}")
+        else:
+            # Add specified raion sources to non-spatial sources
+            daily_sources_combined = non_spatial_sources + raion_sources
+            print(f"\nDaily sources (combined): {daily_sources_combined}")
+    elif args.all_raion_sources:
+        # Use all default raion sources
+        if args.raion_only:
+            daily_sources_combined = ["personnel"] + default_raion_sources
+            print(f"\nDaily sources (raion-only mode): {daily_sources_combined}")
+        else:
+            daily_sources_combined = non_spatial_sources + default_raion_sources
+            print(f"\nDaily sources (full configuration): {daily_sources_combined}")
+    else:
+        # No raion sources - use only non-spatial sources (baseline)
+        daily_sources_combined = non_spatial_sources
+        print(f"\nDaily sources (non-spatial baseline): {daily_sources_combined}")
+
     config = MultiResolutionConfig(
+        daily_sources=daily_sources_combined,
         daily_seq_len=args.daily_seq_len,
         monthly_seq_len=args.monthly_seq_len,
         prediction_horizon=args.prediction_horizon,
+        use_disaggregated_equipment=use_disaggregated_equipment,
+        detrend_viirs=detrend_viirs,
+        include_spatial_features=args.include_spatial,
+        start_date=args.start_date,
     )
 
     train_dataset = MultiResolutionDataset(config=config, split='train')
@@ -2405,6 +3035,49 @@ def main():
     print("\n" + "-" * 80)
     print("Creating model...")
 
+    # Check for ISW alignment flag
+    use_isw_alignment = getattr(args, 'use_isw_alignment', False)
+
+    # Auto-detect ISW from checkpoint if resuming
+    if args.resume:
+        checkpoint_path = Path(args.resume)
+        if checkpoint_path.exists():
+            print(f"\nDetecting model configuration from checkpoint: {args.resume}")
+            checkpoint_peek = torch.load(args.resume, map_location='cpu', weights_only=False)
+            checkpoint_keys = checkpoint_peek.get('model_state_dict', {}).keys()
+            has_isw_keys = any('isw_alignment' in k for k in checkpoint_keys)
+
+            if has_isw_keys and not use_isw_alignment:
+                print(f"  Checkpoint has ISW alignment weights - enabling ISW alignment automatically")
+                use_isw_alignment = True
+            elif not has_isw_keys and use_isw_alignment:
+                print(f"  WARNING: --use-isw-alignment specified but checkpoint has no ISW weights")
+                print(f"           ISW module will be randomly initialized")
+
+            # Also detect other checkpoint metadata if available
+            if 'epoch' in checkpoint_peek:
+                print(f"  Checkpoint epoch: {checkpoint_peek['epoch']}")
+            if 'best_val_loss' in checkpoint_peek:
+                print(f"  Checkpoint best_val_loss: {checkpoint_peek['best_val_loss']:.4f}")
+
+            del checkpoint_peek  # Free memory
+
+    # Build spatial configs for raion sources with geographic priors
+    custom_spatial_configs: Optional[Dict[str, SpatialSourceConfig]] = None
+    if use_geographic_prior and raion_sources:
+        print("\nBuilding spatial configs for raion sources...")
+        custom_spatial_configs = build_spatial_configs_from_dataset(raion_sources)
+        if custom_spatial_configs:
+            print(f"  Spatial configs created for {len(custom_spatial_configs)} sources:")
+            for name, config in custom_spatial_configs.items():
+                print(f"    - {name}: {config.n_raions} raions, "
+                      f"{config.features_per_raion} features/raion, "
+                      f"geographic_prior={config.use_geographic_prior}")
+        else:
+            print("  WARNING: No spatial configs could be created (data may not be loaded yet)")
+            print("           Geographic prior will be disabled for this run")
+            use_geographic_prior = False
+
     model = MultiResolutionHAN(
         daily_source_configs=daily_source_configs,
         monthly_source_configs=monthly_source_configs,
@@ -2414,10 +3087,89 @@ def main():
         num_monthly_layers=args.num_monthly_layers,
         num_fusion_layers=args.num_fusion_layers,
         dropout=args.dropout,
+        use_isw_alignment=use_isw_alignment,
+        isw_dim=1024,  # Voyage embedding dimension
+        use_geographic_prior=use_geographic_prior,
+        custom_spatial_configs=custom_spatial_configs,
     )
+
+    if use_isw_alignment:
+        print(f"ISW alignment enabled (1024-dim embeddings)")
+    if use_geographic_prior:
+        print(f"Geographic prior enabled for {len(custom_spatial_configs or {})} raion sources")
 
     n_params = sum(p.numel() for p in model.parameters())
     print(f"Total parameters: {n_params:,}")
+
+    # Create run manager for organized output (probe integration)
+    run_manager = None
+    if not args.no_run_manager:
+        run_manager = TrainingRunManager(run_id=args.run_id)
+        run_manager.setup()
+
+        # Save initial metadata
+        run_manager.update_metadata(
+            d_model=args.d_model,
+            use_multi_resolution=True,
+            detrend_viirs=detrend_viirs,
+            use_disaggregated_equipment=use_disaggregated_equipment,
+            effective_daily_sources=list(daily_source_configs.keys()),
+            effective_monthly_sources=list(monthly_source_configs.keys()),
+            n_daily_sources=len(daily_source_configs),
+            n_monthly_sources=len(monthly_source_configs),
+            daily_seq_len=args.daily_seq_len,
+            monthly_seq_len=args.monthly_seq_len,
+            n_train_samples=len(train_dataset),
+            n_val_samples=len(val_dataset),
+            n_test_samples=len(test_dataset),
+            han_n_params=n_params,
+            batch_size=args.batch_size,
+            learning_rate=args.learning_rate,
+            weight_decay=args.weight_decay,
+            device=args.device,
+            use_geographic_prior=use_geographic_prior,
+            raion_sources=raion_sources if raion_sources else None,
+            n_raion_sources=len(custom_spatial_configs) if custom_spatial_configs else 0,
+        )
+
+        # Save full training config
+        training_config = {
+            'daily_seq_len': args.daily_seq_len,
+            'monthly_seq_len': args.monthly_seq_len,
+            'prediction_horizon': args.prediction_horizon,
+            'd_model': args.d_model,
+            'nhead': args.nhead,
+            'num_daily_layers': args.num_daily_layers,
+            'num_monthly_layers': args.num_monthly_layers,
+            'num_fusion_layers': args.num_fusion_layers,
+            'dropout': args.dropout,
+            'batch_size': args.batch_size,
+            'accumulation_steps': args.accumulation_steps,
+            'learning_rate': args.learning_rate,
+            'weight_decay': args.weight_decay,
+            'epochs': args.epochs,
+            'patience': args.patience,
+            'warmup_epochs': args.warmup_epochs,
+            'use_disaggregated_equipment': use_disaggregated_equipment,
+            'detrend_viirs': detrend_viirs,
+            'use_isw_alignment': use_isw_alignment,
+            'isw_weight': args.isw_weight if use_isw_alignment else None,
+            'use_geographic_prior': use_geographic_prior,
+            'raion_sources': raion_sources if raion_sources else None,
+            'raion_spatial_configs': {
+                name: {
+                    'n_raions': cfg.n_raions,
+                    'features_per_raion': cfg.features_per_raion,
+                    'use_geographic_prior': cfg.use_geographic_prior,
+                }
+                for name, cfg in (custom_spatial_configs or {}).items()
+            } if custom_spatial_configs else None,
+        }
+        run_manager.save_config(training_config)
+
+        print(f"\nRun management enabled:")
+        print(f"  Run ID: {run_manager.run_id}")
+        print(f"  Run directory: {run_manager.run_dir}")
 
     # Create trainer
     trainer = MultiResolutionTrainer(
@@ -2434,6 +3186,7 @@ def main():
         warmup_epochs=args.warmup_epochs,
         checkpoint_dir=args.checkpoint_dir,
         device=args.device,
+        run_manager=run_manager,
     )
 
     # Resume if requested
@@ -2473,6 +3226,39 @@ def main():
         json.dump(summary, f, indent=2, default=str)
 
     print(f"\nTraining summary saved to {summary_path}")
+
+    # Finalize run manager with training results
+    if run_manager is not None:
+        # Update metadata with final results
+        run_manager.update_metadata(
+            han_best_epoch=trainer.best_epoch if hasattr(trainer, 'best_epoch') else 0,
+            han_best_val_loss=trainer.best_val_loss,
+            stage3_complete=True,
+        )
+
+        # Mark stage 3 complete with metrics
+        run_manager.mark_stage_complete(
+            stage=3,
+            duration=history.get('total_time', 0) if isinstance(history, dict) else 0,
+            metrics={
+                'best_val_loss': trainer.best_val_loss,
+                'test_metrics': test_metrics,
+                'n_epochs_trained': len(history.get('train_loss', [])) if isinstance(history, dict) else 0,
+            }
+        )
+
+        # Save summary to run directory
+        run_summary_path = run_manager.get_stage_dir(3) / 'training_summary.json'
+        with open(run_summary_path, 'w') as f:
+            json.dump(summary, f, indent=2, default=str)
+
+        run_manager.finalize()
+
+        print(f"\nRun finalized:")
+        print(f"  Run ID: {run_manager.run_id}")
+        print(f"  Run directory: {run_manager.run_dir}")
+        print(f"  Use this run ID with probes: --training-run-id {run_manager.run_id}")
+
     print("\n" + "=" * 80)
     print("TRAINING COMPLETE")
     print("=" * 80)

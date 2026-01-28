@@ -47,6 +47,7 @@ Date: 2026-01-21
 from __future__ import annotations
 
 import math
+import warnings
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple, Union, Any
 
@@ -91,8 +92,28 @@ except ImportError:
         MultiResolutionConfig,
     )
 
+# Import geographic fusion (optional, for enhanced spatial attention)
+try:
+    from geographic_source_encoder import (
+        GeographicDailyCrossSourceFusion,
+        SpatialSourceConfig,
+        create_geographic_fusion,
+    )
+    GEOGRAPHIC_FUSION_AVAILABLE = True
+except ImportError:
+    try:
+        from analysis.geographic_source_encoder import (
+            GeographicDailyCrossSourceFusion,
+            SpatialSourceConfig,
+            create_geographic_fusion,
+        )
+        GEOGRAPHIC_FUSION_AVAILABLE = True
+    except ImportError:
+        GEOGRAPHIC_FUSION_AVAILABLE = False
+
 # Re-export constants for convenience
-DAILY_SOURCES = ['equipment', 'personnel', 'deepstate', 'firms', 'viina']
+# Note: viirs is included per multi_resolution_data.py configuration
+DAILY_SOURCES = ['equipment', 'personnel', 'deepstate', 'firms', 'viina', 'viirs']
 MONTHLY_SOURCES = ['sentinel', 'hdx_conflict', 'hdx_food', 'hdx_rainfall', 'iom']
 
 
@@ -133,6 +154,7 @@ class MultiResolutionHANConfig:
         max_daily_len: Maximum daily sequence length (default ~1500 for ~4 years)
         max_monthly_len: Maximum monthly sequence length (default 60 for 5 years)
         prediction_tasks: List of prediction tasks to enable
+        causal: Whether to use causal masking in temporal encoders (default True)
     """
     daily_source_configs: Dict[str, SourceConfig] = field(default_factory=dict)
     monthly_source_configs: Dict[str, SourceConfig] = field(default_factory=dict)
@@ -148,6 +170,14 @@ class MultiResolutionHANConfig:
     prediction_tasks: List[str] = field(
         default_factory=lambda: ['casualty', 'regime', 'anomaly', 'forecast']
     )
+    causal: bool = True
+    # Geographic prior options
+    use_geographic_prior: bool = False
+    spatial_source_names: List[str] = field(
+        default_factory=lambda: ['viina', 'firms']
+    )
+    viina_n_raions: int = 100
+    firms_n_raions: int = 20
 
 
 # =============================================================================
@@ -162,12 +192,17 @@ class DailySourceEncoder(nn.Module):
     maintaining data integrity by using learned no_observation_tokens for missing
     values rather than fabricating data.
 
+    CRITICAL: Uses causal masking by default to prevent future information
+    leakage during autoregressive prediction. Each timestep can only attend
+    to current and past timesteps, not future ones.
+
     Key Features:
     - Projects raw features to d_model dimension
     - Adds learnable feature embeddings per feature
     - Adds sinusoidal positional encoding for temporal position
     - Uses observation mask in attention (missing values cannot be keys/values)
     - Maintains its own no_observation_token for missing daily values
+    - Causal masking to prevent future information leakage
 
     Args:
         source_config: Configuration for this daily source
@@ -176,6 +211,9 @@ class DailySourceEncoder(nn.Module):
         num_layers: Number of transformer encoder layers
         dropout: Dropout probability
         max_len: Maximum sequence length
+        causal: Whether to use causal (autoregressive) attention masking.
+            If True, position i can only attend to positions <= i.
+            Default is True to prevent future information leakage.
 
     Example:
         >>> config = SourceConfig('equipment', n_features=38, resolution='daily')
@@ -194,6 +232,7 @@ class DailySourceEncoder(nn.Module):
         num_layers: int = 4,
         dropout: float = 0.1,
         max_len: int = 1500,
+        causal: bool = True,
     ) -> None:
         super().__init__()
 
@@ -201,6 +240,8 @@ class DailySourceEncoder(nn.Module):
         self.d_model = d_model
         self.n_features = source_config.n_features
         self.nhead = nhead
+        self.causal = causal
+        self.max_len = max_len
 
         # =====================================================================
         # CRITICAL: Learned no_observation_token for missing values
@@ -251,6 +292,15 @@ class DailySourceEncoder(nn.Module):
 
         # Output normalization
         self.output_norm = nn.LayerNorm(d_model)
+
+        # Register causal mask buffer for autoregressive attention
+        # Upper triangular matrix where True = IGNORE (don't attend)
+        # This prevents position i from attending to any position j > i
+        if causal:
+            self.register_buffer(
+                'causal_mask',
+                torch.triu(torch.ones(max_len, max_len), diagonal=1).bool()
+            )
 
         self._init_weights()
 
@@ -357,8 +407,15 @@ class DailySourceEncoder(nn.Module):
             src_key_padding_mask = src_key_padding_mask.clone()
             src_key_padding_mask[all_masked, 0] = False
 
+        # Prepare causal attention mask
+        # In PyTorch TransformerEncoder, mask=True means IGNORE that position
+        attn_mask = None
+        if self.causal:
+            attn_mask = self.causal_mask[:seq_len, :seq_len]
+
         hidden = self.transformer_encoder(
             hidden,
+            mask=attn_mask,
             src_key_padding_mask=src_key_padding_mask,
         )
 
@@ -371,6 +428,111 @@ class DailySourceEncoder(nn.Module):
         attention_weights = None
 
         return hidden, attention_weights
+
+
+# =============================================================================
+# TEMPORAL SOURCE GATE
+# =============================================================================
+
+
+class TemporalSourceGate(nn.Module):
+    """
+    Source gating with temporal context awareness.
+
+    Uses local convolution and optional self-attention to compute source importance
+    that considers temporal patterns, not just the current timestep. This addresses
+    the limitation of pointwise gating which cannot learn patterns like "FIRMS
+    becomes more important after equipment losses".
+
+    Architecture:
+    - 1D convolution for local temporal context (7-day window by default)
+    - Optional self-attention for longer-range temporal patterns
+    - Final projection to per-source importance weights
+
+    Args:
+        d_model: Model hidden dimension
+        n_sources: Number of sources to gate
+        kernel_size: Convolution kernel size for local context (default: 7 days)
+        nhead: Number of attention heads (if use_attention=True)
+        use_attention: Whether to include self-attention for longer patterns
+        dropout: Dropout probability
+    """
+
+    def __init__(
+        self,
+        d_model: int,
+        n_sources: int,
+        kernel_size: int = 7,
+        nhead: int = 4,
+        use_attention: bool = True,
+        dropout: float = 0.1,
+    ):
+        super().__init__()
+        self.d_model = d_model
+        self.n_sources = n_sources
+        self.use_attention = use_attention
+
+        # Local temporal context via 1D convolution (7-day window)
+        self.temporal_conv = nn.Sequential(
+            nn.Conv1d(
+                d_model * n_sources,
+                d_model,
+                kernel_size=kernel_size,
+                padding=kernel_size // 2,
+            ),
+            nn.GELU(),
+        )
+
+        # Optional self-attention for longer-range patterns
+        if use_attention:
+            self.temporal_attention = nn.MultiheadAttention(
+                embed_dim=d_model,
+                num_heads=nhead,
+                dropout=dropout,
+                batch_first=True,
+            )
+            self.attn_norm = nn.LayerNorm(d_model)
+
+        # Final gate projection
+        self.gate_projection = nn.Sequential(
+            nn.Linear(d_model, d_model // 2),
+            nn.GELU(),
+            nn.Linear(d_model // 2, n_sources),
+            nn.Softmax(dim=-1),
+        )
+
+    def forward(
+        self,
+        stacked_sources: Tensor,  # [batch, seq, n_sources * d_model]
+        mask: Optional[Tensor] = None,
+    ) -> Tensor:
+        """
+        Compute temporally-aware source importance weights.
+
+        Args:
+            stacked_sources: Concatenated source representations [batch, seq, n_sources * d_model]
+            mask: Optional validity mask [batch, seq] where True = valid position
+
+        Returns:
+            Source importance weights [batch, seq, n_sources] summing to 1 per timestep
+        """
+        batch_size, seq_len, _ = stacked_sources.shape
+
+        # Temporal convolution: capture local patterns
+        # Conv1d expects [batch, channels, seq]
+        x = stacked_sources.transpose(1, 2)  # [batch, channels, seq]
+        x = self.temporal_conv(x)  # [batch, d_model, seq]
+        x = x.transpose(1, 2)  # [batch, seq, d_model]
+
+        # Optional attention for longer-range patterns
+        if self.use_attention:
+            # For key_padding_mask: True = IGNORE this position
+            key_padding_mask = ~mask if mask is not None else None
+            attended, _ = self.temporal_attention(x, x, x, key_padding_mask=key_padding_mask)
+            x = self.attn_norm(x + attended)
+
+        # Compute gate weights
+        return self.gate_projection(x)
 
 
 # =============================================================================
@@ -447,13 +609,15 @@ class DailyCrossSourceFusion(nn.Module):
             for _ in range(num_layers)
         ])
 
-        # Gating mechanism for combining sources
-        self.source_gate = nn.Sequential(
-            nn.Linear(d_model * self.n_sources, d_model),
-            nn.LayerNorm(d_model),
-            nn.GELU(),
-            nn.Linear(d_model, self.n_sources),
-            nn.Softmax(dim=-1),
+        # Gating mechanism for combining sources with temporal context
+        # Replaces the pointwise gate that could not learn temporal patterns
+        self.source_gate = TemporalSourceGate(
+            d_model=d_model,
+            n_sources=self.n_sources,
+            kernel_size=7,  # ~1 week context window
+            nhead=4,
+            use_attention=True,
+            dropout=dropout,
         )
 
         # Final projection
@@ -552,9 +716,9 @@ class DailyCrossSourceFusion(nn.Module):
         # Reshape back: [batch, seq, n_sources, d_model]
         fused_sources = flat_stacked.view(batch_size, seq_len, self.n_sources, self.d_model)
 
-        # Compute source importance via gating
+        # Compute source importance via gating with temporal context
         concat_sources = fused_sources.view(batch_size, seq_len, -1)
-        source_importance = self.source_gate(concat_sources)  # [batch, seq, n_sources]
+        source_importance = self.source_gate(concat_sources, combined_mask)  # [batch, seq, n_sources]
 
         # Weighted combination
         weighted_sources = fused_sources * source_importance.unsqueeze(-1)
@@ -568,6 +732,184 @@ class DailyCrossSourceFusion(nn.Module):
             attention_weights['source_importance'] = source_importance
 
         return fused, combined_mask, attention_weights
+
+
+# =============================================================================
+# DAILY TEMPORAL ENCODER
+# =============================================================================
+
+class DailyTemporalEncoder(nn.Module):
+    """
+    Process daily sequences with temporal awareness BEFORE monthly aggregation.
+
+    This module captures daily-level temporal patterns (weekly cycles, operational
+    tempo) that would otherwise be lost during monthly aggregation. Uses multi-scale
+    convolutions and local windowed attention to efficiently process long daily
+    sequences.
+
+    The validation finding C1 showed that the model learns temporal patterns
+    primarily at MONTHLY resolution (2.9x more sensitive than daily) because
+    daily information is compressed before the main temporal processing. This
+    module addresses that by enriching daily representations with temporal
+    context before aggregation.
+
+    Architecture:
+    - Multi-scale 1D convolutions (3, 7, 14, 28 day kernels) to capture patterns
+      at different temporal scales (operational, weekly, bi-weekly, monthly)
+    - Local windowed causal attention (~31 day window) to allow days to attend
+      to recent context without O(n^2) cost on long sequences
+    - Residual connections to preserve original signal
+
+    Args:
+        d_model: Model hidden dimension
+        nhead: Number of attention heads
+        dropout: Dropout probability
+        window_size: Size of local attention window (default 31 for ~1 month)
+        causal: If True, days can only attend to past (not future)
+    """
+
+    def __init__(
+        self,
+        d_model: int = 128,
+        nhead: int = 4,
+        dropout: float = 0.1,
+        window_size: int = 31,
+        causal: bool = True,
+    ) -> None:
+        super().__init__()
+
+        self.d_model = d_model
+        self.window_size = window_size
+        self.causal = causal
+
+        # Multi-scale temporal convolutions
+        # Capture patterns at different temporal scales:
+        # - 3 days: short-term operational patterns
+        # - 7 days: weekly cycles
+        # - 14 days: bi-weekly patterns
+        # - 28 days: monthly patterns
+        self.multi_scale_conv = nn.ModuleList([
+            nn.Conv1d(d_model, d_model // 4, kernel_size=k, padding=k // 2)
+            for k in [3, 7, 14, 28]
+        ])
+
+        self.conv_fusion = nn.Sequential(
+            nn.Linear(d_model, d_model),
+            nn.LayerNorm(d_model),
+            nn.GELU(),
+        )
+
+        # Local windowed attention for longer-range patterns within window
+        self.local_attention = nn.MultiheadAttention(
+            embed_dim=d_model,
+            num_heads=nhead,
+            dropout=dropout,
+            batch_first=True,
+        )
+
+        self.norm = nn.LayerNorm(d_model)
+
+    def _create_local_causal_mask(self, seq_len: int, device: torch.device) -> Tensor:
+        """
+        Create attention mask for local windowed attention with optional causality.
+
+        Args:
+            seq_len: Length of the sequence
+            device: Device for tensor creation
+
+        Returns:
+            Attention mask [seq_len, seq_len] where True = MASK (don't attend)
+        """
+        # Start with all masked (True = ignore)
+        mask = torch.ones(seq_len, seq_len, device=device, dtype=torch.bool)
+
+        for i in range(seq_len):
+            if self.causal:
+                # Causal: only attend to past within window
+                start = max(0, i - self.window_size + 1)
+                end = i + 1  # Include current position
+            else:
+                # Non-causal: attend within window centered on current position
+                start = max(0, i - self.window_size // 2)
+                end = min(seq_len, i + self.window_size // 2 + 1)
+            mask[i, start:end] = False
+
+        return mask
+
+    def forward(
+        self,
+        x: Tensor,
+        mask: Optional[Tensor] = None,
+    ) -> Tensor:
+        """
+        Process daily sequence with local temporal patterns.
+
+        Args:
+            x: Daily representations [batch, n_days, d_model]
+            mask: Observation mask [batch, n_days] where True = observed
+
+        Returns:
+            Temporally-enriched daily representations [batch, n_days, d_model]
+        """
+        batch_size, seq_len, _ = x.shape
+        device = x.device
+
+        # =====================================================================
+        # 1. Multi-scale convolutions for local pattern extraction
+        # =====================================================================
+        x_conv = x.transpose(1, 2)  # [batch, d_model, seq]
+        conv_outputs = [conv(x_conv) for conv in self.multi_scale_conv]
+
+        # Concatenate and ensure sequence length is preserved
+        # Each conv may have slightly different output length due to padding
+        min_len = min(out.shape[2] for out in conv_outputs)
+        conv_outputs = [out[:, :, :min_len] for out in conv_outputs]
+
+        multi_scale = torch.cat(conv_outputs, dim=1)  # [batch, d_model, min_len]
+        multi_scale = multi_scale.transpose(1, 2)  # [batch, min_len, d_model]
+
+        # Pad back to original length if needed
+        if multi_scale.shape[1] < seq_len:
+            padding = torch.zeros(
+                batch_size, seq_len - multi_scale.shape[1], self.d_model,
+                device=device
+            )
+            multi_scale = torch.cat([multi_scale, padding], dim=1)
+        elif multi_scale.shape[1] > seq_len:
+            multi_scale = multi_scale[:, :seq_len, :]
+
+        multi_scale = self.conv_fusion(multi_scale)
+
+        # =====================================================================
+        # 2. Local windowed attention for contextual patterns
+        # =====================================================================
+        attn_mask = self._create_local_causal_mask(seq_len, device)
+
+        key_padding_mask = None
+        if mask is not None:
+            key_padding_mask = ~mask  # True = ignore
+
+            # Handle fully masked sequences
+            all_masked = key_padding_mask.all(dim=1)
+            if all_masked.any():
+                key_padding_mask = key_padding_mask.clone()
+                key_padding_mask[all_masked, 0] = False
+
+        attended, _ = self.local_attention(
+            x, x, x,
+            attn_mask=attn_mask,
+            key_padding_mask=key_padding_mask,
+        )
+
+        # Handle NaN from attention (occurs when all keys are masked)
+        attended = torch.nan_to_num(attended, nan=0.0)
+
+        # =====================================================================
+        # 3. Combine: residual + convolutions + attention
+        # =====================================================================
+        output = self.norm(x + attended + multi_scale)
+
+        return output
 
 
 # =============================================================================
@@ -720,12 +1062,37 @@ class EnhancedLearnableMonthlyAggregation(nn.Module):
         key_padding_mask = None
         if daily_mask is not None:
             key_padding_mask = ~daily_mask  # True = ignore
+            # Handle edge case: if ALL positions are masked, unmask first position
+            # This prevents softmax from receiving all -inf, which causes NaN gradients
+            all_masked = key_padding_mask.all(dim=-1)  # [batch]
+            if all_masked.any():
+                key_padding_mask = key_padding_mask.clone()
+                key_padding_mask[all_masked, 0] = False  # Unmask first position
 
         attn_mask = None
         if self.use_month_constraints:
             attn_mask = self._create_month_attention_mask(
                 n_months, n_days, month_boundaries, device
             )
+            # Handle edge case: combined mask might leave no valid positions for some months
+            # Compute effective mask: True if position is masked by EITHER mask
+            if key_padding_mask is not None:
+                combined_mask = attn_mask | key_padding_mask.unsqueeze(1)  # [batch, n_months, n_days]
+            else:
+                combined_mask = attn_mask
+            # For each month, ensure at least one position is unmasked
+            all_masked_per_month = combined_mask.all(dim=-1)  # [batch, n_months]
+            if all_masked_per_month.any():
+                # Find first position in each month and unmask it
+                for b in range(batch_size):
+                    for m in range(n_months):
+                        if all_masked_per_month[b, m]:
+                            # Unmask the first day of this month
+                            start_day = month_boundaries[b, m, 0].item()
+                            if start_day < n_days:
+                                attn_mask[b, m, start_day] = False
+                                if key_padding_mask is not None:
+                                    key_padding_mask[b, start_day] = False
             # PyTorch MHA expects attn_mask of shape (batch * num_heads, L, S)
             # where L=n_months (target), S=n_days (source)
             # Expand: [batch, n_months, n_days] -> [batch * nhead, n_months, n_days]
@@ -783,10 +1150,14 @@ class EnhancedLearnableMonthlyAggregation(nn.Module):
 
 class TemporalEncoder(nn.Module):
     """
-    Standard transformer encoder for processing the fused monthly sequence.
+    Causal transformer encoder for processing the fused monthly sequence.
 
     This encoder processes the cross-resolution fused representations to
     capture long-range temporal dependencies in the monthly sequence.
+
+    CRITICAL: Uses causal masking by default to prevent future information
+    leakage during autoregressive prediction. Each timestep can only attend
+    to current and past timesteps, not future ones.
 
     Args:
         d_model: Model hidden dimension
@@ -794,6 +1165,9 @@ class TemporalEncoder(nn.Module):
         num_layers: Number of encoder layers
         dropout: Dropout probability
         max_len: Maximum sequence length
+        causal: Whether to use causal (autoregressive) attention masking.
+            If True, position i can only attend to positions <= i.
+            Default is True to prevent future information leakage.
     """
 
     def __init__(
@@ -803,10 +1177,13 @@ class TemporalEncoder(nn.Module):
         num_layers: int = 2,
         dropout: float = 0.1,
         max_len: int = 60,
+        causal: bool = True,
     ) -> None:
         super().__init__()
 
         self.d_model = d_model
+        self.causal = causal
+        self.max_len = max_len
 
         # Positional encoding
         self.positional_encoding = SinusoidalPositionalEncoding(
@@ -834,13 +1211,22 @@ class TemporalEncoder(nn.Module):
 
         self.output_norm = nn.LayerNorm(d_model)
 
+        # Register causal mask buffer for autoregressive attention
+        # Upper triangular matrix where True = IGNORE (don't attend)
+        # This prevents position i from attending to any position j > i
+        if causal:
+            self.register_buffer(
+                'causal_mask',
+                torch.triu(torch.ones(max_len, max_len), diagonal=1).bool()
+            )
+
     def forward(
         self,
         x: Tensor,
         mask: Optional[Tensor] = None,
     ) -> Tensor:
         """
-        Encode the fused monthly sequence.
+        Encode the fused monthly sequence with optional causal masking.
 
         Args:
             x: Input sequence [batch, seq_len, d_model]
@@ -848,11 +1234,17 @@ class TemporalEncoder(nn.Module):
 
         Returns:
             Encoded sequence [batch, seq_len, d_model]
+
+        Note:
+            When causal=True, each position can only attend to itself and
+            previous positions, preventing future information leakage.
         """
+        batch_size, seq_len, _ = x.shape
+
         # Add positional encoding
         hidden = self.positional_encoding(x)
 
-        # Prepare attention mask
+        # Prepare padding mask (src_key_padding_mask)
         src_key_padding_mask = None
         if mask is not None:
             src_key_padding_mask = ~mask  # True = ignore
@@ -863,9 +1255,16 @@ class TemporalEncoder(nn.Module):
                 src_key_padding_mask = src_key_padding_mask.clone()
                 src_key_padding_mask[all_masked, 0] = False
 
-        # Transformer encoding
+        # Prepare causal attention mask
+        # In PyTorch TransformerEncoder, mask=True means IGNORE that position
+        attn_mask = None
+        if self.causal:
+            attn_mask = self.causal_mask[:seq_len, :seq_len]
+
+        # Transformer encoding with both masks
         hidden = self.transformer_encoder(
             hidden,
+            mask=attn_mask,
             src_key_padding_mask=src_key_padding_mask,
         )
 
@@ -1084,6 +1483,80 @@ class ForecastingHead(nn.Module):
         return self.mlp(x)
 
 
+class DailyForecastingHead(nn.Module):
+    """
+    Forecasting head for predicting next horizon days of daily-resolution features.
+
+    Produces daily-level forecasts for each daily source, enabling fine-grained
+    temporal prediction evaluation in backtesting.
+
+    Args:
+        d_model: Input dimension
+        output_dim: Total number of daily features to predict (sum of all daily sources)
+        horizon: Number of days ahead to forecast
+        hidden_dim: Hidden layer dimension
+        dropout: Dropout probability
+    """
+
+    def __init__(
+        self,
+        d_model: int = 128,
+        output_dim: int = 165,  # Sum of all daily source features
+        horizon: int = 7,
+        hidden_dim: int = 256,
+        dropout: float = 0.1,
+    ) -> None:
+        super().__init__()
+
+        self.horizon = horizon
+        self.output_dim = output_dim
+
+        # Temporal context aggregation
+        self.context_attn = nn.MultiheadAttention(
+            embed_dim=d_model,
+            num_heads=4,
+            dropout=dropout,
+            batch_first=True,
+        )
+
+        # Forecast generation network
+        self.forecast_net = nn.Sequential(
+            nn.Linear(d_model, hidden_dim),
+            nn.LayerNorm(hidden_dim),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, horizon * output_dim),
+        )
+
+    def forward(self, x: Tensor, mask: Optional[Tensor] = None) -> Tensor:
+        """
+        Predict next horizon days of daily features.
+
+        Args:
+            x: Input representations [batch, seq_len, d_model]
+            mask: Optional observation mask
+
+        Returns:
+            Daily forecast predictions [batch, horizon, output_dim]
+        """
+        batch_size = x.shape[0]
+
+        # Self-attention for temporal context
+        attended, _ = self.context_attn(x, x, x)
+
+        # Use last timestep representation for forecast
+        last_repr = attended[:, -1, :]  # [batch, d_model]
+
+        # Generate horizon-step forecast
+        flat_pred = self.forecast_net(last_repr)  # [batch, horizon * output_dim]
+
+        # Reshape to [batch, horizon, output_dim]
+        return flat_pred.view(batch_size, self.horizon, self.output_dim)
+
+
 # =============================================================================
 # UNCERTAINTY ESTIMATION
 # =============================================================================
@@ -1138,6 +1611,203 @@ class UncertaintyEstimator(nn.Module):
             base_uncertainty = base_uncertainty * density_scale
 
         return base_uncertainty
+
+
+# =============================================================================
+# ISW NARRATIVE ALIGNMENT MODULE
+# =============================================================================
+
+class ISWAlignmentModule(nn.Module):
+    """
+    Aligns model representations with ISW narrative embeddings via contrastive learning.
+
+    This module projects both model temporal representations and ISW Voyage embeddings
+    into a shared latent space and computes InfoNCE-style contrastive loss to encourage
+    alignment between corresponding timesteps.
+
+    The contrastive objective treats same-timestep pairs as positives and different-
+    timestep pairs as negatives, learning representations where the model's understanding
+    of the conflict state aligns with ISW's narrative assessment.
+
+    Architecture:
+        - Model projection: MLP projecting d_model -> projection_dim
+        - ISW projection: MLP projecting isw_dim -> projection_dim
+        - Temperature-scaled cosine similarity for contrastive loss
+
+    Args:
+        d_model: Model hidden dimension (default: 128)
+        isw_dim: ISW embedding dimension (default: 1024 for Voyage embeddings)
+        projection_dim: Shared projection space dimension (default: 256)
+        temperature: Temperature parameter for InfoNCE loss (default: 0.07)
+        dropout: Dropout probability (default: 0.1)
+
+    Example:
+        >>> isw_module = ISWAlignmentModule(d_model=128, isw_dim=1024)
+        >>> model_repr = torch.randn(4, 35, 128)  # [batch, seq, d_model]
+        >>> isw_emb = torch.randn(4, 35, 1024)    # [batch, seq, isw_dim]
+        >>> mask = torch.ones(4, 35, dtype=torch.bool)
+        >>> model_proj, isw_proj = isw_module(model_repr, isw_emb, mask)
+        >>> loss = isw_module.compute_alignment_loss(model_proj, isw_proj, mask)
+    """
+
+    def __init__(
+        self,
+        d_model: int = 128,
+        isw_dim: int = 1024,
+        projection_dim: int = 256,
+        temperature: float = 0.07,
+        dropout: float = 0.1,
+    ) -> None:
+        super().__init__()
+
+        self.d_model = d_model
+        self.isw_dim = isw_dim
+        self.projection_dim = projection_dim
+        self.temperature = temperature
+
+        # Project model representations to shared space
+        self.model_projection = nn.Sequential(
+            nn.Linear(d_model, projection_dim),
+            nn.LayerNorm(projection_dim),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(projection_dim, projection_dim),
+            nn.LayerNorm(projection_dim),
+        )
+
+        # Project ISW embeddings to shared space
+        self.isw_projection = nn.Sequential(
+            nn.Linear(isw_dim, projection_dim * 2),
+            nn.LayerNorm(projection_dim * 2),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(projection_dim * 2, projection_dim),
+            nn.LayerNorm(projection_dim),
+        )
+
+        self._init_weights()
+
+    def _init_weights(self) -> None:
+        """Initialize weights using Xavier initialization."""
+        for module in self.modules():
+            if isinstance(module, nn.Linear):
+                nn.init.xavier_uniform_(module.weight)
+                if module.bias is not None:
+                    nn.init.zeros_(module.bias)
+
+    def forward(
+        self,
+        model_repr: Tensor,
+        isw_embeddings: Tensor,
+        mask: Optional[Tensor] = None,
+    ) -> Tuple[Tensor, Tensor]:
+        """
+        Project model representations and ISW embeddings to shared space.
+
+        Args:
+            model_repr: Model temporal representations [batch, seq_len, d_model]
+            isw_embeddings: ISW narrative embeddings [batch, seq_len, isw_dim]
+            mask: Optional validity mask [batch, seq_len] where True = valid
+
+        Returns:
+            Tuple of:
+                - model_proj: Projected model representations [batch, seq_len, projection_dim]
+                - isw_proj: Projected ISW embeddings [batch, seq_len, projection_dim]
+        """
+        # Project to shared space
+        model_proj = self.model_projection(model_repr)
+        isw_proj = self.isw_projection(isw_embeddings)
+
+        # L2 normalize for cosine similarity computation
+        model_proj = F.normalize(model_proj, p=2, dim=-1)
+        isw_proj = F.normalize(isw_proj, p=2, dim=-1)
+
+        return model_proj, isw_proj
+
+    def compute_alignment_loss(
+        self,
+        model_proj: Tensor,
+        isw_proj: Tensor,
+        mask: Optional[Tensor] = None,
+    ) -> Tensor:
+        """
+        Compute InfoNCE-style contrastive alignment loss.
+
+        Same timestep = positive pair, different timesteps = negative pairs.
+        This encourages model representations to align with ISW narrative content
+        at corresponding time points.
+
+        Args:
+            model_proj: L2-normalized model projections [batch, seq_len, projection_dim]
+            isw_proj: L2-normalized ISW projections [batch, seq_len, projection_dim]
+            mask: Optional validity mask [batch, seq_len] where True = valid ISW day
+
+        Returns:
+            Scalar contrastive loss
+        """
+        batch_size, seq_len, proj_dim = model_proj.shape
+        device = model_proj.device
+
+        # Handle mask: if None, assume all positions are valid
+        if mask is None:
+            mask = torch.ones(batch_size, seq_len, dtype=torch.bool, device=device)
+
+        # Flatten batch and sequence for contrastive computation
+        # Only include valid (non-masked) positions
+        valid_positions = mask.reshape(-1)
+        n_valid = valid_positions.sum().item()
+
+        if n_valid < 2:
+            # Not enough valid positions for contrastive loss
+            return torch.tensor(0.0, device=device, requires_grad=True)
+
+        # Gather valid projections
+        model_flat = model_proj.reshape(-1, proj_dim)[valid_positions]  # [n_valid, proj_dim]
+        isw_flat = isw_proj.reshape(-1, proj_dim)[valid_positions]      # [n_valid, proj_dim]
+
+        # Compute similarity matrix: model_proj @ isw_proj.T
+        # [n_valid, n_valid] - each row i has similarities of model[i] to all ISW
+        similarity = torch.matmul(model_flat, isw_flat.t()) / self.temperature
+
+        # Labels: diagonal elements are positives (same timestep pairs)
+        labels = torch.arange(n_valid, device=device)
+
+        # InfoNCE loss: cross-entropy where each model representation should match
+        # its corresponding ISW embedding (diagonal of similarity matrix)
+        # Bidirectional: model->ISW and ISW->model
+        loss_m2i = F.cross_entropy(similarity, labels)
+        loss_i2m = F.cross_entropy(similarity.t(), labels)
+
+        # Average bidirectional loss
+        loss = (loss_m2i + loss_i2m) / 2
+
+        return loss
+
+    def get_similarity_scores(
+        self,
+        model_proj: Tensor,
+        isw_proj: Tensor,
+        mask: Optional[Tensor] = None,
+    ) -> Tensor:
+        """
+        Compute per-timestep alignment scores (for monitoring/probing).
+
+        Args:
+            model_proj: L2-normalized model projections [batch, seq_len, projection_dim]
+            isw_proj: L2-normalized ISW projections [batch, seq_len, projection_dim]
+            mask: Optional validity mask [batch, seq_len]
+
+        Returns:
+            Alignment scores [batch, seq_len] - cosine similarity at each timestep
+        """
+        # Compute element-wise cosine similarity (dot product of normalized vectors)
+        scores = (model_proj * isw_proj).sum(dim=-1)  # [batch, seq_len]
+
+        if mask is not None:
+            # Zero out invalid positions
+            scores = scores.masked_fill(~mask, 0.0)
+
+        return scores
 
 
 # =============================================================================
@@ -1206,6 +1876,9 @@ class MultiResolutionHAN(nn.Module):
         num_temporal_layers: Final temporal encoder layers (default 2)
         dropout: Dropout probability (default 0.1)
         prediction_tasks: List of tasks to enable
+        causal: Whether to use causal (autoregressive) attention masking in all
+            temporal encoders. If True, position i can only attend to positions <= i.
+            Default is True to prevent future information leakage.
 
     Example:
         >>> # Create with default configs
@@ -1242,6 +1915,20 @@ class MultiResolutionHAN(nn.Module):
         num_temporal_layers: int = 2,
         dropout: float = 0.1,
         prediction_tasks: Optional[List[str]] = None,
+        causal: bool = True,
+        # ISW alignment configuration (optional)
+        use_isw_alignment: bool = False,
+        isw_dim: int = 1024,
+        isw_projection_dim: int = 256,
+        isw_temperature: float = 0.07,
+        # Geographic prior configuration (optional)
+        use_geographic_prior: bool = False,
+        spatial_source_names: Optional[List[str]] = None,
+        viina_n_raions: int = 100,
+        firms_n_raions: int = 20,
+        # Custom spatial configs for sources like geoconfirmed_raion
+        # Dict[source_name, SpatialSourceConfig]
+        custom_spatial_configs: Optional[Dict[str, 'SpatialSourceConfig']] = None,
     ) -> None:
         super().__init__()
 
@@ -1252,10 +1939,14 @@ class MultiResolutionHAN(nn.Module):
         self.monthly_source_names = list(monthly_source_configs.keys())
         self.d_model = d_model
         self.nhead = nhead
+        self.causal = causal
         self.prediction_tasks = prediction_tasks or ['casualty', 'regime', 'anomaly', 'forecast']
+        self.use_isw_alignment = use_isw_alignment
+        self.use_geographic_prior = use_geographic_prior
+        self.spatial_source_names = spatial_source_names or ['viina', 'firms']
 
         # =====================================================================
-        # 1. DAILY SOURCE ENCODERS
+        # 1. DAILY SOURCE ENCODERS (with causal masking)
         # =====================================================================
         self.daily_encoders = nn.ModuleDict({
             name: DailySourceEncoder(
@@ -1264,19 +1955,94 @@ class MultiResolutionHAN(nn.Module):
                 nhead=nhead,
                 num_layers=num_daily_layers,
                 dropout=dropout,
+                causal=causal,
             )
             for name, config in daily_source_configs.items()
         })
 
         # =====================================================================
-        # 2. DAILY CROSS-SOURCE FUSION
+        # 2. DAILY CROSS-SOURCE FUSION (with optional geographic prior)
         # =====================================================================
-        self.daily_fusion = DailyCrossSourceFusion(
+        if use_geographic_prior and GEOGRAPHIC_FUSION_AVAILABLE:
+            # Use geographic-enhanced fusion for spatial sources
+            spatial_configs = {}
+
+            # If custom spatial configs are provided, use ONLY those
+            # (indicates we're using new raion sources, not legacy viina/firms spatial configs)
+            if custom_spatial_configs:
+                for source_name, config in custom_spatial_configs.items():
+                    if source_name in self.daily_source_names:
+                        spatial_configs[source_name] = config
+            else:
+                # Legacy mode: apply default viina/firms spatial configs
+                # ONLY when no custom configs are provided
+                if 'viina' in self.daily_source_names:
+                    spatial_configs['viina'] = SpatialSourceConfig(
+                        name='viina',
+                        n_raions=viina_n_raions,
+                        features_per_raion=1,  # Total events per raion
+                        use_geographic_prior=True,
+                    )
+                if 'firms' in self.daily_source_names:
+                    spatial_configs['firms'] = SpatialSourceConfig(
+                        name='firms',
+                        n_raions=firms_n_raions,
+                        features_per_raion=4,  # count, brightness, frp, dayratio
+                        use_geographic_prior=True,
+                    )
+
+            # Validate spatial configs match source feature dimensions
+            for source_name, spatial_config in spatial_configs.items():
+                if source_name in daily_source_configs:
+                    expected_features = spatial_config.n_raions * spatial_config.features_per_raion
+                    actual_features = daily_source_configs[source_name].n_features
+                    if expected_features != actual_features:
+                        raise ValueError(
+                            f"Spatial config mismatch for '{source_name}': "
+                            f"spatial config expects {expected_features} features "
+                            f"({spatial_config.n_raions} raions x {spatial_config.features_per_raion} features/raion) "
+                            f"but source config has {actual_features} features"
+                        )
+                    # Warn if raion_keys is empty but use_geographic_prior is True
+                    if spatial_config.use_geographic_prior and not spatial_config.raion_keys:
+                        warnings.warn(
+                            f"Spatial config for '{source_name}' has use_geographic_prior=True "
+                            f"but raion_keys is empty. Geographic attention prior will be disabled "
+                            f"for this source. Provide raion_keys to enable spatial attention priors.",
+                            UserWarning,
+                            stacklevel=2,
+                        )
+
+            self.daily_fusion = GeographicDailyCrossSourceFusion(
+                d_model=d_model,
+                nhead=nhead,
+                num_layers=num_fusion_layers,
+                dropout=dropout,
+                source_names=self.daily_source_names,
+                spatial_configs=spatial_configs,
+            )
+        else:
+            # Use standard fusion
+            self.daily_fusion = DailyCrossSourceFusion(
+                d_model=d_model,
+                nhead=nhead,
+                num_layers=num_fusion_layers,
+                dropout=dropout,
+                source_names=self.daily_source_names,
+            )
+
+        # =====================================================================
+        # 2.5 DAILY TEMPORAL ENCODER (before monthly aggregation)
+        # =====================================================================
+        # Process daily sequences with temporal awareness BEFORE monthly aggregation.
+        # This addresses C1 finding: daily patterns are lost during aggregation,
+        # causing model to learn primarily at monthly resolution (2.9x sensitivity ratio).
+        self.daily_temporal_encoder = DailyTemporalEncoder(
             d_model=d_model,
-            nhead=nhead,
-            num_layers=num_fusion_layers,
+            nhead=nhead // 2,  # Lighter weight than main encoder
             dropout=dropout,
-            source_names=self.daily_source_names,
+            window_size=31,  # ~1 month local attention window
+            causal=True,  # Use causal attention for prediction integrity
         )
 
         # =====================================================================
@@ -1329,13 +2095,14 @@ class MultiResolutionHAN(nn.Module):
         )
 
         # =====================================================================
-        # 6. TEMPORAL ENCODER
+        # 6. TEMPORAL ENCODER (with causal masking)
         # =====================================================================
         self.temporal_encoder = TemporalEncoder(
             d_model=d_model,
             nhead=nhead,
             num_layers=num_temporal_layers,
             dropout=dropout,
+            causal=causal,
         )
 
         # =====================================================================
@@ -1364,13 +2131,25 @@ class MultiResolutionHAN(nn.Module):
             )
 
         if 'forecast' in self.prediction_tasks:
-            # Output dimension: sum of all monthly source features
+            # Monthly forecast: sum of all monthly source features
             forecast_output_dim = sum(
                 cfg.n_features for cfg in monthly_source_configs.values()
             )
             self.forecast_head = ForecastingHead(
                 d_model=d_model,
                 output_dim=forecast_output_dim,
+                hidden_dim=d_model * 2,
+                dropout=dropout,
+            )
+
+            # Daily forecast: sum of all daily source features for horizon days
+            daily_forecast_output_dim = sum(
+                cfg.n_features for cfg in daily_source_configs.values()
+            )
+            self.daily_forecast_head = DailyForecastingHead(
+                d_model=d_model,
+                output_dim=daily_forecast_output_dim,
+                horizon=7,  # Predict 7 days ahead
                 hidden_dim=d_model * 2,
                 dropout=dropout,
             )
@@ -1382,6 +2161,21 @@ class MultiResolutionHAN(nn.Module):
             d_model=d_model,
             hidden_dim=d_model // 2,
         )
+
+        # =====================================================================
+        # 9. ISW NARRATIVE ALIGNMENT (optional)
+        # =====================================================================
+        # Aligns model temporal representations with ISW narrative embeddings
+        # via contrastive learning. Only initialized if use_isw_alignment=True.
+        self.isw_alignment: Optional[ISWAlignmentModule] = None
+        if use_isw_alignment:
+            self.isw_alignment = ISWAlignmentModule(
+                d_model=d_model,
+                isw_dim=isw_dim,
+                projection_dim=isw_projection_dim,
+                temperature=isw_temperature,
+                dropout=dropout,
+            )
 
     def _compute_observation_density(
         self,
@@ -1460,6 +2254,7 @@ class MultiResolutionHAN(nn.Module):
         monthly_masks: Dict[str, Tensor],
         month_boundaries: Tensor,
         targets: Optional[Dict[str, Tensor]] = None,
+        raion_masks: Optional[Dict[str, Tensor]] = None,
     ) -> Dict[str, Tensor]:
         """
         Forward pass through the multi-resolution hierarchical attention network.
@@ -1476,9 +2271,14 @@ class MultiResolutionHAN(nn.Module):
             month_boundaries: Tensor[batch, n_months, 2]
                 (start_idx, end_idx) in daily sequence for each month
             targets: Optional Dict of target tensors for loss computation
+            raion_masks: Optional Dict[source_name, Tensor[batch, daily_seq, n_raions]]
+                Per-raion observation masks for geographic sources. These provide
+                finer-grained masking than daily_masks, allowing the model to know
+                which specific raions were observed vs missing at each timestep.
 
         Returns:
             Dict containing:
+                'temporal_output': Tensor[batch, seq_len, d_model] latent representation
                 'casualty_pred': Tensor[batch, seq_len, 3] if 'casualty' in tasks
                 'regime_logits': Tensor[batch, seq_len, 4] if 'regime' in tasks
                 'anomaly_score': Tensor[batch, seq_len, 1] if 'anomaly' in tasks
@@ -1509,11 +2309,30 @@ class MultiResolutionHAN(nn.Module):
         # =====================================================================
         # STEP 2: FUSE DAILY SOURCES
         # =====================================================================
-        fused_daily, combined_daily_mask, daily_fusion_attn = self.daily_fusion(
-            daily_encoded,
-            daily_masks,
-            return_attention=True,
-        )
+        # Pass raion_masks if using GeographicDailyCrossSourceFusion for
+        # finer-grained per-raion attention masking
+        if hasattr(self.daily_fusion, 'geographic_encoders') and raion_masks is not None:
+            fused_daily, combined_daily_mask, daily_fusion_attn = self.daily_fusion(
+                daily_encoded,
+                daily_masks,
+                return_attention=True,
+                raion_masks=raion_masks,
+            )
+        else:
+            fused_daily, combined_daily_mask, daily_fusion_attn = self.daily_fusion(
+                daily_encoded,
+                daily_masks,
+                return_attention=True,
+            )
+
+        # =====================================================================
+        # STEP 2.5: APPLY DAILY TEMPORAL PROCESSING
+        # =====================================================================
+        # Enrich daily representations with temporal context BEFORE monthly
+        # aggregation. This addresses C1 finding: captures daily patterns
+        # (weekly cycles, operational tempo) that would otherwise be lost
+        # during aggregation.
+        fused_daily = self.daily_temporal_encoder(fused_daily, combined_daily_mask)
 
         # =====================================================================
         # STEP 3: AGGREGATE DAILY TO MONTHLY
@@ -1622,6 +2441,9 @@ class MultiResolutionHAN(nn.Module):
         # =====================================================================
         outputs = {}
 
+        # Include temporal encoding for latent representation extraction (used by probes)
+        outputs['temporal_output'] = temporal_encoded  # [batch, seq, d_model]
+
         if 'casualty' in self.prediction_tasks:
             casualty_pred, casualty_var = self.casualty_head(
                 temporal_encoded, return_variance=True
@@ -1637,6 +2459,10 @@ class MultiResolutionHAN(nn.Module):
 
         if 'forecast' in self.prediction_tasks:
             outputs['forecast_pred'] = self.forecast_head(temporal_encoded)
+            # Daily-resolution forecast: [batch, horizon, daily_features]
+            # Only output if daily_forecast_head exists (trained models)
+            if hasattr(self, 'daily_forecast_head'):
+                outputs['daily_forecast_pred'] = self.daily_forecast_head(temporal_encoded)
 
         # =====================================================================
         # STEP 8: ATTENTION WEIGHTS AND METADATA
@@ -1663,7 +2489,7 @@ class MultiResolutionHAN(nn.Module):
 
     def get_config(self) -> Dict[str, Any]:
         """Return model configuration as a dictionary."""
-        return {
+        config = {
             'daily_source_configs': {
                 name: {'name': cfg.name, 'n_features': cfg.n_features, 'resolution': cfg.resolution}
                 for name, cfg in self.daily_source_configs.items()
@@ -1675,7 +2501,15 @@ class MultiResolutionHAN(nn.Module):
             'd_model': self.d_model,
             'nhead': self.nhead,
             'prediction_tasks': self.prediction_tasks,
+            'causal': self.causal,
+            'use_isw_alignment': self.use_isw_alignment,
         }
+        # Add ISW alignment config if enabled
+        if self.use_isw_alignment and self.isw_alignment is not None:
+            config['isw_dim'] = self.isw_alignment.isw_dim
+            config['isw_projection_dim'] = self.isw_alignment.projection_dim
+            config['isw_temperature'] = self.isw_alignment.temperature
+        return config
 
 
 # =============================================================================
@@ -1691,6 +2525,12 @@ def create_multi_resolution_han(
     num_temporal_layers: int = 2,
     dropout: float = 0.1,
     prediction_tasks: Optional[List[str]] = None,
+    causal: bool = True,
+    # ISW alignment configuration (optional)
+    use_isw_alignment: bool = False,
+    isw_dim: int = 1024,
+    isw_projection_dim: int = 256,
+    isw_temperature: float = 0.07,
 ) -> MultiResolutionHAN:
     """
     Factory function to create a MultiResolutionHAN with default source configs.
@@ -1708,6 +2548,11 @@ def create_multi_resolution_han(
         num_temporal_layers: Final temporal encoder layers
         dropout: Dropout probability
         prediction_tasks: List of tasks to enable
+        causal: Whether to use causal attention masking (default True)
+        use_isw_alignment: Whether to enable ISW narrative alignment (default False)
+        isw_dim: ISW embedding dimension (default 1024 for Voyage)
+        isw_projection_dim: Projection space dimension (default 256)
+        isw_temperature: Contrastive loss temperature (default 0.07)
 
     Returns:
         Configured MultiResolutionHAN instance
@@ -1715,6 +2560,8 @@ def create_multi_resolution_han(
     Example:
         >>> model = create_multi_resolution_han(d_model=128, nhead=8)
         >>> print(model)
+        >>> # With ISW alignment enabled
+        >>> model_aligned = create_multi_resolution_han(use_isw_alignment=True)
     """
     # Default daily source configurations (from actual MultiResolutionDataset)
     daily_configs = {
@@ -1746,6 +2593,11 @@ def create_multi_resolution_han(
         num_temporal_layers=num_temporal_layers,
         dropout=dropout,
         prediction_tasks=prediction_tasks,
+        causal=causal,
+        use_isw_alignment=use_isw_alignment,
+        isw_dim=isw_dim,
+        isw_projection_dim=isw_projection_dim,
+        isw_temperature=isw_temperature,
     )
 
 

@@ -43,6 +43,26 @@ from config.paths import (
     UCDP_EVENTS_FILE, FIRMS_ARCHIVE_FILE, FIRMS_NRT_FILE,
     EQUIPMENT_LOSSES_FILE, PERSONNEL_LOSSES_FILE,
     SENTINEL_RAW_FILE, SENTINEL_WEEKLY_FILE,
+    ISW_EMBEDDINGS_DIR,
+)
+
+# Import spatial loaders for rich spatial features
+from analysis.loaders import (
+    load_deepstate_spatial,
+    load_firms_tiled,
+)
+
+# Import raion-level adapters for expanded features with per-raion masks
+from analysis.loaders import (
+    load_geoconfirmed_raion_adapted,
+    load_air_raid_sirens_raion_adapted,
+    load_ucdp_raion_adapted,
+    load_warspotting_raion_adapted,
+    load_deepstate_raion_adapted,
+    load_firms_expanded_raion_adapted,
+    load_combined_raion_adapted,
+    get_per_raion_mask,
+    RAION_ADAPTER_REGISTRY,
 )
 
 # Paths - use centralized config with backward compatible aliases
@@ -76,10 +96,38 @@ class SourceConfig:
 
 @dataclass
 class MultiResolutionConfig:
-    """Configuration for multi-resolution dataset."""
-    # Daily sources
+    """Configuration for multi-resolution dataset.
+
+    Default configuration uses:
+    - Delta-only features (no cumulative values to avoid spurious correlations)
+    - Raionified spatial sources with geographic attention priors
+    - Disaggregated equipment (drones/armor/artillery, excluding aircraft)
+
+    This removes redundant sources:
+    - viina: superseded by geoconfirmed_raion
+    - firms: superseded by firms_expanded_raion
+    - equipment: replaced by drones/armor/artillery
+    - viirs: excluded (lagging indicator, not predictive)
+    """
+    # Daily sources - CLEANED CONFIGURATION
+    # Non-spatial sources (45 features total, delta-only):
+    #   - personnel (12): national-level casualties
+    #   - drones (9): highest predictive signal equipment
+    #   - armor (9): armored vehicle losses
+    #   - artillery (15): artillery system losses
+    # Spatial/raion sources (29,841 features total):
+    #   - geoconfirmed_raion (8550): event types at raion level
+    #   - air_raid_sirens_raion (1320): air defense activity
+    #   - ucdp_raion (4340): conflict events (gold standard)
+    #   - warspotting_raion (858): equipment losses with location
+    #   - deepstate_raion (5568): frontline/territorial control
+    #   - firms_expanded_raion (9205): fire hotspots (strike indicators)
     daily_sources: List[str] = field(default_factory=lambda: [
-        "equipment", "personnel", "deepstate", "firms", "viina", "viirs"
+        # Non-spatial (delta-only)
+        "personnel", "drones", "armor", "artillery",
+        # Spatial/raion (with geographic prior)
+        "geoconfirmed_raion", "air_raid_sirens_raion", "ucdp_raion",
+        "warspotting_raion", "deepstate_raion", "firms_expanded_raion",
     ])
 
     # Monthly sources
@@ -104,18 +152,26 @@ class MultiResolutionConfig:
     # Missing value handling
     missing_value: float = MISSING_VALUE
 
-    # VIIRS configuration
+    # VIIRS configuration (DEPRECATED - viirs excluded from default sources)
     # VIIRS radiance LAGS casualties by ~10 days (not leading), so correlation
     # with casualty data is an artifact of shared temporal trend, not genuine
-    # predictive signal. These options help address this issue.
-    detrend_viirs: bool = True  # Apply first-order differencing to remove trend (Probe 1.2.3)
-    exclude_viirs: bool = False  # Completely exclude VIIRS from the dataset
+    # predictive signal.
+    detrend_viirs: bool = True  # Apply first-order differencing if viirs included
+    exclude_viirs: bool = True  # VIIRS excluded by default
 
     # Equipment disaggregation (Probe 1.1.2, optimization-implementation-plan.md §0.3)
     # Drones have highest mutual information (MI=0.449, r=0.289) and lead casualties by 7-27 days.
     # When True, replaces aggregated "equipment" with separate drones/armor/artillery.
     # Note: "aircraft" is excluded due to negative correlation with casualties.
-    use_disaggregated_equipment: bool = True  # Set True for new runs with optimized source separation
+    use_disaggregated_equipment: bool = True  # Default True - equipment is now disaggregated
+
+    # Spatial feature configuration (DEPRECATED - use raion sources instead)
+    # Legacy spatial features from DeepState/FIRMS tiling.
+    # Superseded by raion sources which provide finer granularity.
+    include_spatial_features: bool = False  # Deprecated, use raion sources
+    spatial_sources: List[str] = field(default_factory=lambda: [
+        "deepstate_spatial", "firms_spatial"
+    ])
 
     def get_effective_daily_sources(self) -> List[str]:
         """
@@ -144,6 +200,13 @@ class MultiResolutionConfig:
         # Handle VIIRS exclusion
         if self.exclude_viirs and "viirs" in sources:
             sources.remove("viirs")
+
+        # Add spatial sources if enabled
+        # These provide rich regional features: unit positions, frontlines, fire hotspots
+        if self.include_spatial_features:
+            for spatial_source in self.spatial_sources:
+                if spatial_source not in sources:
+                    sources.append(spatial_source)
 
         return sources
 
@@ -220,7 +283,25 @@ def load_personnel_daily(
     end_date: Optional[datetime] = None
 ) -> Tuple[pd.DataFrame, np.ndarray]:
     """
-    Load personnel loss data at daily resolution.
+    Load personnel loss data at daily resolution with DELTA-ONLY features.
+
+    Returns delta (daily change) features rather than cumulative values to avoid
+    spurious correlations from trending time series. Includes derived metrics
+    like rolling averages and volatility for richer signal.
+
+    Features returned (12 total):
+        - personnel_daily: Daily change in personnel losses
+        - pow_daily: Daily change in POW count
+        - personnel_7day_avg: 7-day rolling mean of daily losses
+        - personnel_14day_avg: 14-day rolling mean of daily losses
+        - personnel_30day_avg: 30-day rolling mean of daily losses
+        - personnel_volatility_7d: 7-day rolling std (intensity variation)
+        - personnel_volatility_14d: 14-day rolling std
+        - personnel_acceleration: Rate of change of daily losses (2nd derivative)
+        - personnel_momentum_7d: Difference between current and 7-day avg
+        - personnel_pct_change_7d: Percentage change from 7 days ago
+        - pow_7day_avg: 7-day rolling mean of POW changes
+        - intensity_ratio: Current daily vs 30-day average ratio
 
     Args:
         start_date: Optional start date filter
@@ -243,9 +324,6 @@ def load_personnel_daily(
     df = df.dropna(subset=['date'])
     df = df.sort_values('date').reset_index(drop=True)
 
-    # Define feature columns
-    feature_cols = ['personnel', 'POW']
-
     # Create complete daily date range
     if start_date is None:
         start_date = df['date'].min()
@@ -254,24 +332,113 @@ def load_personnel_daily(
 
     date_range = pd.date_range(start=start_date, end=end_date, freq='D')
 
-    # Reindex without filling
+    # Reindex without filling - preserves missing observation structure
     df = df.set_index('date')
     df = df.reindex(date_range)
     df.index.name = 'date'
     df = df.reset_index()
 
-    # Create observation mask
-    available_cols = [c for c in feature_cols if c in df.columns]
-    observation_mask = df[available_cols].notna().any(axis=1).values
+    # Track where we have real observations (before computing derived features)
+    has_personnel = df['personnel'].notna()
+    has_pow = df['POW'].notna() if 'POW' in df.columns else pd.Series(False, index=df.index)
+    observation_mask = (has_personnel | has_pow).values
 
-    # Calculate daily change where we have consecutive observations
-    if 'personnel' in df.columns:
-        df['personnel_daily'] = df['personnel'].diff()
-        available_cols.append('personnel_daily')
+    # ==========================================================================
+    # DELTA FEATURES (no cumulative values - avoids spurious correlations)
+    # NaN values are filled with 0 (no change) to prevent gradient issues.
+    # The observation_mask tracks where real observations are.
+    # ==========================================================================
 
-    features_df = df[['date'] + available_cols].copy()
+    # Primary delta: daily change in personnel losses
+    df['personnel_daily'] = df['personnel'].diff().fillna(0)
+
+    # POW delta - fill with 0 since POW data is sparse
+    if 'POW' in df.columns:
+        df['pow_daily'] = df['POW'].diff().fillna(0)
+    else:
+        df['pow_daily'] = 0.0
+
+    # ==========================================================================
+    # ROLLING AVERAGES (computed on delta, not cumulative)
+    # Use min_periods=1 to get values even at start
+    # ==========================================================================
+
+    df['personnel_7day_avg'] = df['personnel_daily'].rolling(7, min_periods=1).mean().fillna(0)
+    df['personnel_14day_avg'] = df['personnel_daily'].rolling(14, min_periods=1).mean().fillna(0)
+    df['personnel_30day_avg'] = df['personnel_daily'].rolling(30, min_periods=1).mean().fillna(0)
+
+    # ==========================================================================
+    # VOLATILITY (rolling std of daily losses - captures intensity variation)
+    # ==========================================================================
+
+    df['personnel_volatility_7d'] = df['personnel_daily'].rolling(7, min_periods=2).std().fillna(0)
+    df['personnel_volatility_14d'] = df['personnel_daily'].rolling(14, min_periods=2).std().fillna(0)
+
+    # ==========================================================================
+    # MOMENTUM / ACCELERATION FEATURES
+    # ==========================================================================
+
+    # Acceleration: change in daily rate (2nd derivative)
+    df['personnel_acceleration'] = df['personnel_daily'].diff().fillna(0)
+
+    # Momentum: deviation from 7-day average
+    df['personnel_momentum_7d'] = (df['personnel_daily'] - df['personnel_7day_avg']).fillna(0)
+
+    # Percentage change from 7 days ago - cap extreme values and fill NaN with 0
+    df['personnel_pct_change_7d'] = df['personnel_daily'].pct_change(periods=7)
+    df['personnel_pct_change_7d'] = df['personnel_pct_change_7d'].clip(-5, 5).fillna(0)
+
+    # ==========================================================================
+    # DERIVED RATIOS
+    # ==========================================================================
+
+    # POW rolling average
+    df['pow_7day_avg'] = df['pow_daily'].rolling(7, min_periods=1).mean().fillna(0)
+
+    # Intensity ratio: current daily vs 30-day average
+    # Indicates whether current losses are above/below recent trend
+    df['intensity_ratio'] = df['personnel_daily'] / df['personnel_30day_avg'].replace(0, np.nan)
+    df['intensity_ratio'] = df['intensity_ratio'].clip(-5, 5).fillna(1.0)
+
+    # ==========================================================================
+    # FINAL FEATURE SET (12 features, all delta-based)
+    # ==========================================================================
+
+    feature_cols = [
+        'personnel_daily',
+        'pow_daily',
+        'personnel_7day_avg',
+        'personnel_14day_avg',
+        'personnel_30day_avg',
+        'personnel_volatility_7d',
+        'personnel_volatility_14d',
+        'personnel_acceleration',
+        'personnel_momentum_7d',
+        'personnel_pct_change_7d',
+        'pow_7day_avg',
+        'intensity_ratio',
+    ]
+
+    features_df = df[['date'] + feature_cols].copy()
 
     return features_df, observation_mask
+
+
+# Feature names for personnel loader (used by dataset to report feature count)
+PERSONNEL_FEATURE_NAMES = [
+    'personnel_daily',
+    'pow_daily',
+    'personnel_7day_avg',
+    'personnel_14day_avg',
+    'personnel_30day_avg',
+    'personnel_volatility_7d',
+    'personnel_volatility_14d',
+    'personnel_acceleration',
+    'personnel_momentum_7d',
+    'personnel_pct_change_7d',
+    'pow_7day_avg',
+    'intensity_ratio',
+]
 
 
 def load_deepstate_daily(
@@ -629,7 +796,10 @@ def load_viina_daily(
     end_date: Optional[datetime] = None
 ) -> Tuple[pd.DataFrame, np.ndarray]:
     """
-    Load VIINA conflict event data at daily resolution.
+    Load VIINA conflict event data at daily resolution with raion (ADM2) granularity.
+
+    Loads both event_info (location data) and event_labels (BERT-classified event types)
+    to create rich per-raion features including artillery, airstrikes, UAV activity, etc.
 
     Args:
         start_date: Optional start date filter
@@ -644,14 +814,24 @@ def load_viina_daily(
         warnings.warn(f"VIINA data not found at {viina_dir}")
         return pd.DataFrame(), np.array([])
 
-    # Load event info files for all years
+    # Load event info and labels files for all years
     all_events = []
+    all_labels = []
     for year in range(2022, 2027):
         event_file = viina_dir / f"event_info_latest_{year}.csv"
+        labels_file = viina_dir / f"event_labels_latest_{year}.csv"
+
         if event_file.exists():
             try:
                 df = pd.read_csv(event_file, low_memory=False)
                 all_events.append(df)
+            except Exception:
+                continue
+
+        if labels_file.exists():
+            try:
+                lf = pd.read_csv(labels_file, low_memory=False)
+                all_labels.append(lf)
             except Exception:
                 continue
 
@@ -660,35 +840,86 @@ def load_viina_daily(
 
     events_df = pd.concat(all_events, ignore_index=True)
 
+    # Merge with labels if available
+    if all_labels:
+        labels_df = pd.concat(all_labels, ignore_index=True)
+        # Merge on event_id
+        if 'event_id' in events_df.columns and 'event_id' in labels_df.columns:
+            # Select key label columns (BERT-classified event types)
+            label_cols = ['event_id', 't_artillery', 't_airstrike', 't_airalert', 't_uav',
+                         't_armor', 't_control', 't_firefight', 't_milcas', 't_civcas',
+                         't_retreat', 't_raid', 't_ied']
+            available_label_cols = [c for c in label_cols if c in labels_df.columns]
+            if available_label_cols:
+                events_df = events_df.merge(
+                    labels_df[available_label_cols],
+                    on='event_id', how='left'
+                )
+
     # Parse date (YYYYMMDD format)
     events_df['date'] = pd.to_datetime(events_df['date'].astype(str), format='%Y%m%d', errors='coerce')
     events_df = events_df.dropna(subset=['date'])
 
-    # Aggregate by day
-    daily_agg = events_df.groupby(events_df['date'].dt.date).agg({
-        'event_id': 'count',  # Total events
-        'GEO_PRECISION': lambda x: (x == 'ADM3').sum(),  # High precision count
-    }).reset_index()
+    # Event type columns for aggregation
+    event_types = ['t_artillery', 't_airstrike', 't_airalert', 't_uav', 't_armor',
+                   't_control', 't_firefight', 't_milcas', 't_civcas', 't_retreat',
+                   't_raid', 't_ied']
+    available_event_types = [c for c in event_types if c in events_df.columns]
 
-    daily_agg.columns = ['date', 'event_count', 'high_precision_events']
-    daily_agg['date'] = pd.to_datetime(daily_agg['date'])
+    # Aggregate by day and raion (ADM2)
+    # First, get list of active raions (those with events)
+    if 'ADM2_NAME' in events_df.columns:
+        # Get raion event counts to find active raions
+        raion_counts = events_df.groupby('ADM2_NAME').size().sort_values(ascending=False)
+        # Take top raions by activity (configurable threshold)
+        active_raions = raion_counts[raion_counts >= 10].index.tolist()[:100]  # Top 100 raions
 
-    # Also aggregate by region if available
-    if 'ADM1_NAME' in events_df.columns:
-        region_counts = events_df.groupby([events_df['date'].dt.date, 'ADM1_NAME']).size().unstack(fill_value=0)
-        region_counts = region_counts.reset_index()
-        region_counts['date'] = pd.to_datetime(region_counts['date'])
-        # Add top regions as features
-        top_regions = ['Kharkiv', 'Donets\'k', 'Zaporizhzhia', 'Kherson', 'Luhans\'k']
-        for region in top_regions:
-            col_name = f'events_{region.lower().replace("\'", "")}'
-            if region in region_counts.columns:
-                daily_agg = daily_agg.merge(
-                    region_counts[['date', region]].rename(columns={region: col_name}),
-                    on='date', how='left'
-                )
+        # Aggregate by date and raion
+        agg_dict = {'event_id': 'count'}
+        for et in available_event_types:
+            agg_dict[et] = 'sum'
+
+        raion_daily = events_df[events_df['ADM2_NAME'].isin(active_raions)].groupby(
+            [events_df['date'].dt.date, 'ADM2_NAME']
+        ).agg(agg_dict).reset_index()
+
+        # Pivot to wide format: one column per raion per event type
+        feature_dfs = []
+
+        # Total events per raion
+        pivot_total = raion_daily.pivot(index='date', columns='ADM2_NAME', values='event_id').fillna(0)
+        pivot_total.columns = [f'events_total_{c}' for c in pivot_total.columns]
+        feature_dfs.append(pivot_total)
+
+        # Event types per raion (for top raions only to limit feature explosion)
+        top_raions = active_raions[:30]  # Top 30 for detailed event types
+        for et in available_event_types[:6]:  # Top 6 event types
+            pivot_et = raion_daily[raion_daily['ADM2_NAME'].isin(top_raions)].pivot(
+                index='date', columns='ADM2_NAME', values=et
+            ).fillna(0)
+            pivot_et.columns = [f'{et}_{c}' for c in pivot_et.columns]
+            feature_dfs.append(pivot_et)
+
+        # Combine all pivoted features
+        if feature_dfs:
+            daily_agg = pd.concat(feature_dfs, axis=1).reset_index()
+            daily_agg['date'] = pd.to_datetime(daily_agg['date'])
+        else:
+            daily_agg = pd.DataFrame({'date': []})
+    else:
+        # Fallback: aggregate nationally if no ADM2 data
+        agg_dict = {'event_id': 'count'}
+        for et in available_event_types:
+            agg_dict[et] = 'sum'
+
+        daily_agg = events_df.groupby(events_df['date'].dt.date).agg(agg_dict).reset_index()
+        daily_agg.columns = ['date'] + ['event_count'] + [f'{et}_total' for et in available_event_types]
+        daily_agg['date'] = pd.to_datetime(daily_agg['date'])
 
     # Create complete daily date range
+    if len(daily_agg) == 0:
+        return pd.DataFrame(), np.array([])
+
     if start_date is None:
         start_date = daily_agg['date'].min()
     if end_date is None:
@@ -1040,34 +1271,29 @@ def load_iom_monthly(
 
 
 # =============================================================================
-# DISAGGREGATED EQUIPMENT LOADERS
+# DISAGGREGATED EQUIPMENT LOADERS (DELTA-ONLY)
+# =============================================================================
+# These loaders return DELTA (daily change) features only, not cumulative values.
+# This avoids spurious correlations from trending time series.
+# Each category includes rolling averages and derived metrics.
 # =============================================================================
 
-def load_drones_daily(
+
+def _load_equipment_base(
+    feature_cols: List[str],
     start_date: Optional[datetime] = None,
-    end_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None,
 ) -> Tuple[pd.DataFrame, np.ndarray]:
     """
-    Load drone/UAV loss data at daily resolution.
-
-    This source shows the HIGHEST signal in probe analysis:
-    - r=0.289 with personnel losses
-    - MI=0.47 nats (highest mutual information)
-    - Drones lead casualties by 7 days (r=0.32 at optimal lag)
-    - Partial correlation survives time control better than other equipment
-
-    Features:
-        - drone: Total UAV/drone losses (cumulative)
-        - drone_daily: Daily change in drone losses
-        - cruise_missiles: Cruise missile losses (cumulative)
-        - cruise_missiles_daily: Daily change in cruise missile losses
+    Base loader for equipment data - returns raw DataFrame and observation mask.
 
     Args:
+        feature_cols: List of column names to extract
         start_date: Optional start date filter
         end_date: Optional end date filter
 
     Returns:
-        Tuple of (DataFrame with features, observation mask array)
+        Tuple of (DataFrame with raw data, observation mask array)
     """
     equip_path = DATA_DIR / "war-losses-data" / "2022-Ukraine-Russia-War-Dataset" / "data" / "russia_losses_equipment.json"
 
@@ -1085,9 +1311,6 @@ def load_drones_daily(
 
     # Normalize column names (handle spaces and hyphens)
     df.columns = df.columns.str.replace(' ', '_').str.replace('-', '_')
-
-    # Define drone-related feature columns
-    feature_cols = ['drone', 'cruise_missiles']
 
     # Create complete daily date range
     if start_date is None:
@@ -1107,21 +1330,115 @@ def load_drones_daily(
     available_cols = [c for c in feature_cols if c in df.columns]
     observation_mask = df[available_cols].notna().any(axis=1).values
 
-    # Calculate daily changes where we have consecutive observations
-    for col in available_cols:
-        if col in df.columns:
-            df[f'{col}_daily'] = df[col].diff()
+    return df, observation_mask
 
-    # Select final features
-    final_cols = []
-    for col in available_cols:
-        final_cols.append(col)
-        if f'{col}_daily' in df.columns:
-            final_cols.append(f'{col}_daily')
 
-    features_df = df[['date'] + final_cols].copy()
+def _compute_delta_features(
+    df: pd.DataFrame,
+    base_cols: List[str],
+    prefix: str = '',
+) -> pd.DataFrame:
+    """
+    Compute delta-only features with rolling averages and derived metrics.
+
+    For each base column, creates:
+        - {col}_daily: Daily change
+        - {col}_7day_avg: 7-day rolling mean of daily change
+        - {col}_volatility: 7-day rolling std
+
+    Also creates aggregate features:
+        - {prefix}_total_daily: Sum of all daily changes
+        - {prefix}_momentum: Deviation from 7-day average
+
+    All NaN values are filled with 0 to prevent gradient issues during training.
+    The observation mask (returned by the loader) tracks where real observations are.
+
+    Args:
+        df: DataFrame with cumulative values
+        base_cols: List of base column names (cumulative values)
+        prefix: Prefix for aggregate features (e.g., 'drone', 'armor')
+
+    Returns:
+        DataFrame with delta-only features (no NaN values)
+    """
+    result = df[['date']].copy()
+
+    available_cols = [c for c in base_cols if c in df.columns]
+
+    # Compute delta features for each base column
+    for col in available_cols:
+        # Daily change (delta) - fill NaN with 0 (no change)
+        result[f'{col}_daily'] = df[col].diff().fillna(0)
+
+        # 7-day rolling average of delta
+        result[f'{col}_7day_avg'] = result[f'{col}_daily'].rolling(7, min_periods=1).mean().fillna(0)
+
+        # Volatility (7-day rolling std)
+        result[f'{col}_volatility'] = result[f'{col}_daily'].rolling(7, min_periods=2).std().fillna(0)
+
+    # Aggregate features across all columns in this category
+    daily_cols = [f'{col}_daily' for col in available_cols if f'{col}_daily' in result.columns]
+    if daily_cols and prefix:
+        # Total daily losses in this category
+        result[f'{prefix}_total_daily'] = result[daily_cols].sum(axis=1, skipna=True).fillna(0)
+
+        # 7-day rolling average of total
+        result[f'{prefix}_total_7day_avg'] = result[f'{prefix}_total_daily'].rolling(7, min_periods=1).mean().fillna(0)
+
+        # Momentum: deviation from 7-day average
+        result[f'{prefix}_momentum'] = (result[f'{prefix}_total_daily'] - result[f'{prefix}_total_7day_avg']).fillna(0)
+
+    return result
+
+
+def load_drones_daily(
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None
+) -> Tuple[pd.DataFrame, np.ndarray]:
+    """
+    Load drone/UAV loss data at daily resolution with DELTA-ONLY features.
+
+    This source shows the HIGHEST signal in probe analysis:
+    - r=0.289 with personnel losses
+    - MI=0.47 nats (highest mutual information)
+    - Drones lead casualties by 7 days (r=0.32 at optimal lag)
+    - Partial correlation survives time control better than other equipment
+
+    Features (9 total, all delta-based):
+        - drone_daily: Daily change in drone losses
+        - drone_7day_avg: 7-day rolling mean of drone losses
+        - drone_volatility: 7-day rolling std of drone losses
+        - cruise_missiles_daily: Daily change in cruise missile losses
+        - cruise_missiles_7day_avg: 7-day rolling mean
+        - cruise_missiles_volatility: 7-day rolling std
+        - drones_total_daily: Sum of drone + cruise_missile daily losses
+        - drones_total_7day_avg: 7-day rolling mean of total
+        - drones_momentum: Deviation from 7-day average
+
+    Args:
+        start_date: Optional start date filter
+        end_date: Optional end date filter
+
+    Returns:
+        Tuple of (DataFrame with features, observation mask array)
+    """
+    base_cols = ['drone', 'cruise_missiles']
+    df, observation_mask = _load_equipment_base(base_cols, start_date, end_date)
+
+    if df.empty:
+        return df, observation_mask
+
+    features_df = _compute_delta_features(df, base_cols, prefix='drones')
 
     return features_df, observation_mask
+
+
+# Feature names for drones loader
+DRONES_FEATURE_NAMES = [
+    'drone_daily', 'drone_7day_avg', 'drone_volatility',
+    'cruise_missiles_daily', 'cruise_missiles_7day_avg', 'cruise_missiles_volatility',
+    'drones_total_daily', 'drones_total_7day_avg', 'drones_momentum',
+]
 
 
 def load_armor_daily(
@@ -1129,13 +1446,18 @@ def load_armor_daily(
     end_date: Optional[datetime] = None
 ) -> Tuple[pd.DataFrame, np.ndarray]:
     """
-    Load armored vehicle loss data at daily resolution.
+    Load armored vehicle loss data at daily resolution with DELTA-ONLY features.
 
-    Features:
-        - tank: Tank losses (cumulative)
+    Features (9 total, all delta-based):
         - tank_daily: Daily change in tank losses
-        - APC: Armored Personnel Carrier / Infantry Fighting Vehicle losses (cumulative)
-        - APC_daily: Daily change in APC losses
+        - tank_7day_avg: 7-day rolling mean
+        - tank_volatility: 7-day rolling std
+        - APC_daily: Daily change in APC/IFV losses
+        - APC_7day_avg: 7-day rolling mean
+        - APC_volatility: 7-day rolling std
+        - armor_total_daily: Sum of tank + APC daily losses
+        - armor_total_7day_avg: 7-day rolling mean of total
+        - armor_momentum: Deviation from 7-day average
 
     Args:
         start_date: Optional start date filter
@@ -1144,59 +1466,23 @@ def load_armor_daily(
     Returns:
         Tuple of (DataFrame with features, observation mask array)
     """
-    equip_path = DATA_DIR / "war-losses-data" / "2022-Ukraine-Russia-War-Dataset" / "data" / "russia_losses_equipment.json"
+    base_cols = ['tank', 'APC']
+    df, observation_mask = _load_equipment_base(base_cols, start_date, end_date)
 
-    if not equip_path.exists():
-        warnings.warn(f"Equipment data not found at {equip_path}")
-        return pd.DataFrame(), np.array([])
+    if df.empty:
+        return df, observation_mask
 
-    with open(equip_path) as f:
-        data = json.load(f)
-
-    df = pd.DataFrame(data)
-    df['date'] = pd.to_datetime(df['date'], errors='coerce')
-    df = df.dropna(subset=['date'])
-    df = df.sort_values('date').reset_index(drop=True)
-
-    # Normalize column names
-    df.columns = df.columns.str.replace(' ', '_').str.replace('-', '_')
-
-    # Define armor-related feature columns
-    feature_cols = ['tank', 'APC']
-
-    # Create complete daily date range
-    if start_date is None:
-        start_date = df['date'].min()
-    if end_date is None:
-        end_date = df['date'].max()
-
-    date_range = pd.date_range(start=start_date, end=end_date, freq='D')
-
-    # Reindex without filling
-    df = df.set_index('date')
-    df = df.reindex(date_range)
-    df.index.name = 'date'
-    df = df.reset_index()
-
-    # Create observation mask
-    available_cols = [c for c in feature_cols if c in df.columns]
-    observation_mask = df[available_cols].notna().any(axis=1).values
-
-    # Calculate daily changes
-    for col in available_cols:
-        if col in df.columns:
-            df[f'{col}_daily'] = df[col].diff()
-
-    # Select final features
-    final_cols = []
-    for col in available_cols:
-        final_cols.append(col)
-        if f'{col}_daily' in df.columns:
-            final_cols.append(f'{col}_daily')
-
-    features_df = df[['date'] + final_cols].copy()
+    features_df = _compute_delta_features(df, base_cols, prefix='armor')
 
     return features_df, observation_mask
+
+
+# Feature names for armor loader
+ARMOR_FEATURE_NAMES = [
+    'tank_daily', 'tank_7day_avg', 'tank_volatility',
+    'APC_daily', 'APC_7day_avg', 'APC_volatility',
+    'armor_total_daily', 'armor_total_7day_avg', 'armor_momentum',
+]
 
 
 def load_artillery_daily(
@@ -1204,17 +1490,16 @@ def load_artillery_daily(
     end_date: Optional[datetime] = None
 ) -> Tuple[pd.DataFrame, np.ndarray]:
     """
-    Load artillery loss data at daily resolution.
+    Load artillery loss data at daily resolution with DELTA-ONLY features.
 
-    Features:
-        - field_artillery: Field artillery losses (cumulative)
-        - field_artillery_daily: Daily change in field artillery losses
-        - MRL: Multiple Rocket Launcher losses (cumulative)
-        - MRL_daily: Daily change in MRL losses
-        - anti_aircraft_warfare: Anti-aircraft system losses (cumulative)
-        - anti_aircraft_warfare_daily: Daily change in AA losses
-        - mobile_SRBM_system: Short-range ballistic missile system losses (cumulative)
-        - mobile_SRBM_system_daily: Daily change in SRBM losses
+    Features (15 total, all delta-based):
+        - field_artillery_daily, field_artillery_7day_avg, field_artillery_volatility
+        - MRL_daily, MRL_7day_avg, MRL_volatility
+        - anti_aircraft_warfare_daily, anti_aircraft_warfare_7day_avg, anti_aircraft_warfare_volatility
+        - mobile_SRBM_system_daily, mobile_SRBM_system_7day_avg, mobile_SRBM_system_volatility
+        - artillery_total_daily: Sum of all artillery daily losses
+        - artillery_total_7day_avg: 7-day rolling mean of total
+        - artillery_momentum: Deviation from 7-day average
 
     Args:
         start_date: Optional start date filter
@@ -1223,59 +1508,25 @@ def load_artillery_daily(
     Returns:
         Tuple of (DataFrame with features, observation mask array)
     """
-    equip_path = DATA_DIR / "war-losses-data" / "2022-Ukraine-Russia-War-Dataset" / "data" / "russia_losses_equipment.json"
+    base_cols = ['field_artillery', 'MRL', 'anti_aircraft_warfare', 'mobile_SRBM_system']
+    df, observation_mask = _load_equipment_base(base_cols, start_date, end_date)
 
-    if not equip_path.exists():
-        warnings.warn(f"Equipment data not found at {equip_path}")
-        return pd.DataFrame(), np.array([])
+    if df.empty:
+        return df, observation_mask
 
-    with open(equip_path) as f:
-        data = json.load(f)
-
-    df = pd.DataFrame(data)
-    df['date'] = pd.to_datetime(df['date'], errors='coerce')
-    df = df.dropna(subset=['date'])
-    df = df.sort_values('date').reset_index(drop=True)
-
-    # Normalize column names
-    df.columns = df.columns.str.replace(' ', '_').str.replace('-', '_')
-
-    # Define artillery-related feature columns
-    feature_cols = ['field_artillery', 'MRL', 'anti_aircraft_warfare', 'mobile_SRBM_system']
-
-    # Create complete daily date range
-    if start_date is None:
-        start_date = df['date'].min()
-    if end_date is None:
-        end_date = df['date'].max()
-
-    date_range = pd.date_range(start=start_date, end=end_date, freq='D')
-
-    # Reindex without filling
-    df = df.set_index('date')
-    df = df.reindex(date_range)
-    df.index.name = 'date'
-    df = df.reset_index()
-
-    # Create observation mask
-    available_cols = [c for c in feature_cols if c in df.columns]
-    observation_mask = df[available_cols].notna().any(axis=1).values
-
-    # Calculate daily changes
-    for col in available_cols:
-        if col in df.columns:
-            df[f'{col}_daily'] = df[col].diff()
-
-    # Select final features
-    final_cols = []
-    for col in available_cols:
-        final_cols.append(col)
-        if f'{col}_daily' in df.columns:
-            final_cols.append(f'{col}_daily')
-
-    features_df = df[['date'] + final_cols].copy()
+    features_df = _compute_delta_features(df, base_cols, prefix='artillery')
 
     return features_df, observation_mask
+
+
+# Feature names for artillery loader
+ARTILLERY_FEATURE_NAMES = [
+    'field_artillery_daily', 'field_artillery_7day_avg', 'field_artillery_volatility',
+    'MRL_daily', 'MRL_7day_avg', 'MRL_volatility',
+    'anti_aircraft_warfare_daily', 'anti_aircraft_warfare_7day_avg', 'anti_aircraft_warfare_volatility',
+    'mobile_SRBM_system_daily', 'mobile_SRBM_system_7day_avg', 'mobile_SRBM_system_volatility',
+    'artillery_total_daily', 'artillery_total_7day_avg', 'artillery_momentum',
+]
 
 
 def load_aircraft_daily(
@@ -1283,13 +1534,21 @@ def load_aircraft_daily(
     end_date: Optional[datetime] = None
 ) -> Tuple[pd.DataFrame, np.ndarray]:
     """
-    Load aircraft loss data at daily resolution.
+    Load aircraft loss data at daily resolution with DELTA-ONLY features.
 
-    Features:
-        - aircraft: Fixed-wing aircraft losses (cumulative)
-        - aircraft_daily: Daily change in aircraft losses
-        - helicopter: Helicopter losses (cumulative)
+    NOTE: Aircraft losses are EXCLUDED from default training per optimization plan
+    as they showed negative correlation with casualties (-0.15).
+
+    Features (9 total, all delta-based):
+        - aircraft_daily: Daily change in fixed-wing aircraft losses
+        - aircraft_7day_avg: 7-day rolling mean
+        - aircraft_volatility: 7-day rolling std
         - helicopter_daily: Daily change in helicopter losses
+        - helicopter_7day_avg: 7-day rolling mean
+        - helicopter_volatility: 7-day rolling std
+        - aircraft_total_daily: Sum of aircraft + helicopter daily losses
+        - aircraft_total_7day_avg: 7-day rolling mean of total
+        - aircraft_momentum: Deviation from 7-day average
 
     Args:
         start_date: Optional start date filter
@@ -1298,59 +1557,82 @@ def load_aircraft_daily(
     Returns:
         Tuple of (DataFrame with features, observation mask array)
     """
-    equip_path = DATA_DIR / "war-losses-data" / "2022-Ukraine-Russia-War-Dataset" / "data" / "russia_losses_equipment.json"
+    base_cols = ['aircraft', 'helicopter']
+    df, observation_mask = _load_equipment_base(base_cols, start_date, end_date)
 
-    if not equip_path.exists():
-        warnings.warn(f"Equipment data not found at {equip_path}")
-        return pd.DataFrame(), np.array([])
+    if df.empty:
+        return df, observation_mask
 
-    with open(equip_path) as f:
-        data = json.load(f)
-
-    df = pd.DataFrame(data)
-    df['date'] = pd.to_datetime(df['date'], errors='coerce')
-    df = df.dropna(subset=['date'])
-    df = df.sort_values('date').reset_index(drop=True)
-
-    # Normalize column names
-    df.columns = df.columns.str.replace(' ', '_').str.replace('-', '_')
-
-    # Define aircraft-related feature columns
-    feature_cols = ['aircraft', 'helicopter']
-
-    # Create complete daily date range
-    if start_date is None:
-        start_date = df['date'].min()
-    if end_date is None:
-        end_date = df['date'].max()
-
-    date_range = pd.date_range(start=start_date, end=end_date, freq='D')
-
-    # Reindex without filling
-    df = df.set_index('date')
-    df = df.reindex(date_range)
-    df.index.name = 'date'
-    df = df.reset_index()
-
-    # Create observation mask
-    available_cols = [c for c in feature_cols if c in df.columns]
-    observation_mask = df[available_cols].notna().any(axis=1).values
-
-    # Calculate daily changes
-    for col in available_cols:
-        if col in df.columns:
-            df[f'{col}_daily'] = df[col].diff()
-
-    # Select final features
-    final_cols = []
-    for col in available_cols:
-        final_cols.append(col)
-        if f'{col}_daily' in df.columns:
-            final_cols.append(f'{col}_daily')
-
-    features_df = df[['date'] + final_cols].copy()
+    features_df = _compute_delta_features(df, base_cols, prefix='aircraft')
 
     return features_df, observation_mask
+
+
+# Feature names for aircraft loader
+AIRCRAFT_FEATURE_NAMES = [
+    'aircraft_daily', 'aircraft_7day_avg', 'aircraft_volatility',
+    'helicopter_daily', 'helicopter_7day_avg', 'helicopter_volatility',
+    'aircraft_total_daily', 'aircraft_total_7day_avg', 'aircraft_momentum',
+]
+
+
+# =============================================================================
+# SPATIAL DATA LOADERS (Rich spatial features from DeepState and FIRMS)
+# =============================================================================
+
+def load_deepstate_spatial_daily(
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None
+) -> Tuple[pd.DataFrame, np.ndarray]:
+    """
+    Load DeepState spatial features with regional tiling.
+
+    Provides rich spatial features including:
+    - Unit counts per region (6 regions)
+    - Unit type breakdown per region (6 types × 6 regions)
+    - Attack direction counts per region
+    - Frontline metrics (area, length, daily change)
+
+    Returns:
+        Tuple of (DataFrame with ~53 spatial features, observation mask array)
+    """
+    df, mask = load_deepstate_spatial(
+        start_date=start_date,
+        end_date=end_date,
+        spatial_mode='tiled',
+    )
+
+    if df.empty:
+        return pd.DataFrame(), np.array([])
+
+    return df, mask
+
+
+def load_firms_spatial_daily(
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None
+) -> Tuple[pd.DataFrame, np.ndarray]:
+    """
+    Load FIRMS spatial features with regional tiling.
+
+    Provides rich spatial features including:
+    - Fire counts per region (6 regions)
+    - Fire brightness statistics per region
+    - Fire radiative power per region
+    - Day/night distribution per region
+
+    Returns:
+        Tuple of (DataFrame with ~39 spatial features, observation mask array)
+    """
+    df, mask = load_firms_tiled(
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+    if df.empty:
+        return pd.DataFrame(), np.array([])
+
+    return df, mask
 
 
 # =============================================================================
@@ -1373,6 +1655,18 @@ LOADER_REGISTRY: Dict[str, callable] = {
     "firms": load_firms_daily,
     "viina": load_viina_daily,
     "viirs": load_viirs_daily,
+    # Daily sources - spatial (rich regional features)
+    "deepstate_spatial": load_deepstate_spatial_daily,
+    "firms_spatial": load_firms_spatial_daily,
+    # Daily sources - raion-level expanded features (231 features per raion)
+    # These sources provide per-raion masks for GeographicSourceEncoder
+    "geoconfirmed_raion": load_geoconfirmed_raion_adapted,     # 50 features/raion
+    "air_raid_sirens_raion": load_air_raid_sirens_raion_adapted,  # 30 features/raion
+    "ucdp_raion": load_ucdp_raion_adapted,                     # 35 features/raion
+    "warspotting_raion": load_warspotting_raion_adapted,       # 33 features/raion
+    "deepstate_raion": load_deepstate_raion_adapted,           # 48 features/raion
+    "firms_expanded_raion": load_firms_expanded_raion_adapted, # 35 features/raion
+    "combined_raion": load_combined_raion_adapted,             # 231 features/raion (all combined)
     # Monthly sources
     "sentinel": load_sentinel_monthly,
     "hdx_conflict": load_hdx_conflict_monthly,
@@ -1395,6 +1689,17 @@ SOURCE_RESOLUTIONS: Dict[str, Resolution] = {
     "firms": Resolution.DAILY,
     "viina": Resolution.DAILY,
     "viirs": Resolution.DAILY,
+    # Daily sources - raion-level expanded (per-raion masks available)
+    "geoconfirmed_raion": Resolution.DAILY,
+    "air_raid_sirens_raion": Resolution.DAILY,
+    "ucdp_raion": Resolution.DAILY,
+    "warspotting_raion": Resolution.DAILY,
+    "deepstate_raion": Resolution.DAILY,
+    "firms_expanded_raion": Resolution.DAILY,
+    "combined_raion": Resolution.DAILY,
+    # Daily sources - spatial (rich regional features)
+    "deepstate_spatial": Resolution.DAILY,
+    "firms_spatial": Resolution.DAILY,
     # Monthly sources
     "sentinel": Resolution.MONTHLY,
     "hdx_conflict": Resolution.MONTHLY,
@@ -1513,10 +1818,33 @@ class MultiResolutionSample:
     # Temporal alignment for this sample
     month_boundary_indices: torch.Tensor  # [n_months, 2] start/end indices in daily seq
 
-    # Metadata
+    # Metadata (required fields - must come before optional fields)
     daily_dates: np.ndarray
     monthly_dates: np.ndarray
     sample_idx: int
+
+    # Autoregressive targets for forecasting (optional fields with defaults)
+    # forecast_targets: Dict[source_name, Tensor] - next month's features for autoregressive loss
+    forecast_targets: Optional[Dict[str, torch.Tensor]] = None
+    # forecast_masks: Dict[source_name, Tensor] - validity masks for forecast targets
+    forecast_masks: Optional[Dict[str, torch.Tensor]] = None
+
+    # Daily forecast targets: raw daily features for next horizon days
+    # daily_forecast_targets: Tensor[horizon, total_daily_features] - concatenated daily sources
+    daily_forecast_targets: Optional[torch.Tensor] = None
+    # daily_forecast_masks: Tensor[horizon, total_daily_features] - validity masks
+    daily_forecast_masks: Optional[torch.Tensor] = None
+
+    # ISW narrative embeddings (optional - aligned with daily sequence)
+    # isw_embedding: Tensor[daily_seq_len, 1024] - ISW assessment embeddings per day
+    isw_embedding: Optional[torch.Tensor] = None
+    # isw_mask: Tensor[daily_seq_len] - True where ISW embedding exists for that day
+    isw_mask: Optional[torch.Tensor] = None
+
+    # Per-raion masks for spatial sources (optional - for GeographicSourceEncoder)
+    # raion_masks: Dict[source_name, Tensor[daily_seq_len, n_raions]] - per-raion observation mask
+    # These provide finer granularity than daily_masks for raion-structured sources
+    raion_masks: Optional[Dict[str, torch.Tensor]] = None
 
 
 class MultiResolutionDataset(Dataset):
@@ -1592,12 +1920,19 @@ class MultiResolutionDataset(Dataset):
         # Convert to tensors
         self._convert_to_tensors()
 
+        # Load ISW embeddings for narrative context
+        self._load_isw_embeddings()
+
         print(f"Dataset initialized: {len(self)} samples in {split} split")
 
     def _load_all_sources(self) -> None:
         """Load all configured data sources."""
         self.daily_data: Dict[str, Tuple[pd.DataFrame, np.ndarray]] = {}
         self.monthly_data: Dict[str, Tuple[pd.DataFrame, np.ndarray]] = {}
+
+        # Per-raion mask storage for raion sources (for GeographicSourceEncoder)
+        # Maps source_name -> (raion_mask [n_days, n_raions], raion_keys, n_features_per_raion)
+        self.raion_mask_data: Dict[str, Tuple[np.ndarray, List[str], int]] = {}
 
         # Determine date range from all sources
         all_dates = []
@@ -1627,6 +1962,17 @@ class MultiResolutionDataset(Dataset):
             self.daily_data[source_name] = (df, mask)
             all_dates.extend(df['date'].dropna().tolist())
 
+            # Check for per-raion mask in registry (for raion-level sources)
+            raion_info = get_per_raion_mask(source_name)
+            if raion_info is not None:
+                print(f"    Per-raion mask available: {raion_info.n_raions} raions, "
+                      f"{raion_info.n_features_per_raion} features/raion")
+                self.raion_mask_data[source_name] = (
+                    raion_info.mask,
+                    raion_info.raion_keys,
+                    raion_info.n_features_per_raion,
+                )
+
         # Load monthly sources
         for source_name in self.config.monthly_sources:
             if source_name not in LOADER_REGISTRY:
@@ -1647,12 +1993,28 @@ class MultiResolutionDataset(Dataset):
         if not all_dates:
             raise ValueError("No data loaded from any source")
 
+        # Normalize all dates to timezone-naive for comparison
+        # Some sources may have tz-aware timestamps, others tz-naive
+        all_dates_normalized = []
+        for d in all_dates:
+            ts = pd.Timestamp(d)
+            if ts.tz is not None:
+                ts = ts.tz_localize(None)
+            all_dates_normalized.append(ts)
+
         # Determine common date range
-        self.start_date = max(pd.Timestamp(self.config.start_date), min(all_dates))
+        config_start = pd.Timestamp(self.config.start_date)
+        if config_start.tz is not None:
+            config_start = config_start.tz_localize(None)
+
+        self.start_date = max(config_start, min(all_dates_normalized))
         if self.config.end_date:
-            self.end_date = min(pd.Timestamp(self.config.end_date), max(all_dates))
+            config_end = pd.Timestamp(self.config.end_date)
+            if config_end.tz is not None:
+                config_end = config_end.tz_localize(None)
+            self.end_date = min(config_end, max(all_dates_normalized))
         else:
-            self.end_date = max(all_dates)
+            self.end_date = max(all_dates_normalized)
 
         print(f"  Date range: {self.start_date.date()} to {self.end_date.date()}")
 
@@ -1687,6 +2049,31 @@ class MultiResolutionDataset(Dataset):
             realigned_daily[source_name] = (df_aligned, new_mask)
 
         self.daily_data = realigned_daily
+
+        # Realign per-raion masks to common date range
+        realigned_raion_masks = {}
+        for source_name, (raion_mask, raion_keys, n_features) in self.raion_mask_data.items():
+            # Get the source's original dates from registry
+            raion_info = get_per_raion_mask(source_name)
+            if raion_info is None:
+                continue
+
+            source_dates = pd.DatetimeIndex(raion_info.dates)
+            n_raions = len(raion_keys)
+
+            # Create aligned mask array
+            n_aligned_days = len(daily_date_range)
+            aligned_mask = np.zeros((n_aligned_days, n_raions), dtype=bool)
+
+            # Map source dates to aligned indices
+            for src_idx, src_date in enumerate(source_dates):
+                if src_date in daily_date_range:
+                    aligned_idx = daily_date_range.get_loc(src_date)
+                    aligned_mask[aligned_idx] = raion_mask[src_idx]
+
+            realigned_raion_masks[source_name] = (aligned_mask, raion_keys, n_features)
+
+        self.raion_mask_data = realigned_raion_masks
 
         # Realign monthly sources
         realigned_monthly = {}
@@ -1870,6 +2257,9 @@ class MultiResolutionDataset(Dataset):
             if len(train_data) > 0:
                 mean = np.nanmean(train_data, axis=0)
                 std = np.nanstd(train_data, axis=0)
+                # Handle features with all-NaN training data (no observations)
+                mean = np.where(np.isnan(mean), 0.0, mean)
+                std = np.where(np.isnan(std), 1.0, std)
                 std = np.maximum(std, 0.1)  # Prevent division by zero
                 stats[source_name] = {'mean': mean, 'std': std, 'type': 'standard'}
             else:
@@ -1895,6 +2285,9 @@ class MultiResolutionDataset(Dataset):
             if len(train_data) > 0:
                 mean = np.nanmean(train_data, axis=0)
                 std = np.nanstd(train_data, axis=0)
+                # Handle features with all-NaN training data (no observations)
+                mean = np.where(np.isnan(mean), 0.0, mean)
+                std = np.where(np.isnan(std), 1.0, std)
                 std = np.maximum(std, 0.1)
                 stats[source_name] = {'mean': mean, 'std': std, 'type': 'standard'}
             else:
@@ -1987,6 +2380,123 @@ class MultiResolutionDataset(Dataset):
             self.monthly_mask_tensors[source_name] = torch.tensor(
                 combined_mask, dtype=torch.bool
             )
+
+        # Convert per-raion masks to tensors (for GeographicSourceEncoder)
+        self.raion_mask_tensors: Dict[str, torch.Tensor] = {}
+        self.raion_metadata: Dict[str, Tuple[List[str], int]] = {}  # (raion_keys, n_features)
+
+        for source_name, (raion_mask, raion_keys, n_features) in self.raion_mask_data.items():
+            self.raion_mask_tensors[source_name] = torch.tensor(raion_mask, dtype=torch.bool)
+            self.raion_metadata[source_name] = (raion_keys, n_features)
+            print(f"    {source_name} raion mask tensor: {self.raion_mask_tensors[source_name].shape}")
+
+    def _load_isw_embeddings(self) -> None:
+        """Load ISW (Institute for the Study of War) narrative embeddings.
+
+        ISW embeddings provide daily narrative context from expert conflict assessments.
+        The embeddings are 1024-dimensional vectors generated from ISW daily assessment texts.
+
+        Loads:
+            - isw_embedding_matrix.npy: Shape (n_dates, 1024) float32 embedding matrix
+            - isw_date_index.json: Maps dates to row indices in the embedding matrix
+
+        Sets instance attributes:
+            - self.isw_embedding_matrix: torch.Tensor of shape (n_dates, 1024)
+            - self.isw_date_to_idx: Dict mapping date strings (YYYY-MM-DD) to matrix row indices
+            - self.isw_embedding_dim: int, the embedding dimension (1024)
+        """
+        embedding_matrix_path = ISW_EMBEDDINGS_DIR / "isw_embedding_matrix.npy"
+        date_index_path = ISW_EMBEDDINGS_DIR / "isw_date_index.json"
+
+        # Initialize as None/empty in case loading fails
+        self.isw_embedding_matrix: Optional[torch.Tensor] = None
+        self.isw_date_to_idx: Dict[str, int] = {}
+        self.isw_embedding_dim: int = 1024  # Default embedding dimension
+
+        if not embedding_matrix_path.exists():
+            warnings.warn(
+                f"ISW embedding matrix not found at {embedding_matrix_path}. "
+                "ISW embeddings will not be available."
+            )
+            return
+
+        if not date_index_path.exists():
+            warnings.warn(
+                f"ISW date index not found at {date_index_path}. "
+                "ISW embeddings will not be available."
+            )
+            return
+
+        try:
+            # Load the embedding matrix
+            embedding_matrix = np.load(embedding_matrix_path)
+            self.isw_embedding_matrix = torch.tensor(embedding_matrix, dtype=torch.float32)
+            self.isw_embedding_dim = embedding_matrix.shape[1]
+
+            # Load the date index
+            with open(date_index_path, 'r') as f:
+                date_index_data = json.load(f)
+
+            # Build date-to-index mapping
+            # The JSON has a "dates" list where index corresponds to row in matrix
+            if "dates" in date_index_data:
+                dates_list = date_index_data["dates"]
+                self.isw_date_to_idx = {date_str: idx for idx, date_str in enumerate(dates_list)}
+            else:
+                warnings.warn(
+                    "ISW date index JSON does not contain 'dates' key. "
+                    "ISW embeddings will not be available."
+                )
+                self.isw_embedding_matrix = None
+                return
+
+            print(f"  Loaded ISW embeddings: {self.isw_embedding_matrix.shape[0]} dates, "
+                  f"{self.isw_embedding_dim}d vectors")
+
+        except Exception as e:
+            warnings.warn(f"Failed to load ISW embeddings: {e}")
+            self.isw_embedding_matrix = None
+            self.isw_date_to_idx = {}
+
+    def _get_isw_embeddings_for_dates(
+        self, dates: np.ndarray
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Retrieve ISW embeddings for a sequence of dates.
+
+        Args:
+            dates: Array of datetime64 or Timestamp objects for the daily sequence
+
+        Returns:
+            Tuple of:
+                - embeddings: Tensor of shape [seq_len, embedding_dim] with ISW embeddings.
+                  Days without ISW data have zero vectors.
+                - mask: Tensor of shape [seq_len] with True where ISW embedding exists.
+        """
+        seq_len = len(dates)
+        embeddings = torch.zeros(seq_len, self.isw_embedding_dim, dtype=torch.float32)
+        mask = torch.zeros(seq_len, dtype=torch.bool)
+
+        # If ISW embeddings weren't loaded, return zeros
+        if self.isw_embedding_matrix is None or not self.isw_date_to_idx:
+            return embeddings, mask
+
+        # Look up embedding for each date
+        for i, date in enumerate(dates):
+            # Convert to string format YYYY-MM-DD
+            if isinstance(date, (pd.Timestamp, datetime)):
+                date_str = date.strftime("%Y-%m-%d")
+            elif isinstance(date, np.datetime64):
+                date_str = pd.Timestamp(date).strftime("%Y-%m-%d")
+            else:
+                date_str = str(date)[:10]  # Take first 10 chars (YYYY-MM-DD)
+
+            # Look up in the date index
+            if date_str in self.isw_date_to_idx:
+                idx = self.isw_date_to_idx[date_str]
+                embeddings[i] = self.isw_embedding_matrix[idx]
+                mask[i] = True
+
+        return embeddings, mask
 
     def __len__(self) -> int:
         """Return number of valid samples in this split."""
@@ -2085,6 +2595,130 @@ class MultiResolutionDataset(Dataset):
         daily_dates = self.alignment.daily_dates[daily_start:daily_end]
         monthly_dates = self.alignment.monthly_dates[monthly_start:monthly_end]
 
+        # =====================================================================
+        # AUTOREGRESSIVE FORECAST TARGETS
+        # For each month t in the sequence, the target is the features at t+1
+        # This enables the model to learn to predict future states
+        # =====================================================================
+        forecast_targets = {}
+        forecast_masks = {}
+
+        # For monthly sources: target is the next month's features
+        # Shift the sequence by prediction_horizon (typically 1)
+        horizon = self.config.prediction_horizon
+        forecast_monthly_start = monthly_start + horizon
+        forecast_monthly_end = monthly_end + horizon
+
+        for source_name in self.monthly_tensors:
+            # Get future month features as targets
+            if forecast_monthly_end <= len(self.monthly_tensors[source_name]):
+                forecast_targets[source_name] = self.monthly_tensors[source_name][
+                    forecast_monthly_start:forecast_monthly_end
+                ]
+                forecast_masks[source_name] = self.monthly_mask_tensors[source_name][
+                    forecast_monthly_start:forecast_monthly_end
+                ]
+            else:
+                # Not enough future data - pad with missing values
+                n_features = self.monthly_tensors[source_name].shape[1]
+                n_months = monthly_end - monthly_start
+                forecast_targets[source_name] = torch.full(
+                    (n_months, n_features), MISSING_VALUE, dtype=torch.float32
+                )
+                forecast_masks[source_name] = torch.zeros(
+                    (n_months, n_features), dtype=torch.bool
+                )
+
+        # For daily sources aggregated to monthly: compute monthly means as targets
+        # This provides a summary of the next month's daily activity
+        for source_name in self.daily_tensors:
+            n_features = self.daily_tensors[source_name].shape[1]
+            n_months = monthly_end - monthly_start
+
+            # Initialize target tensors
+            monthly_targets = torch.full(
+                (n_months, n_features), MISSING_VALUE, dtype=torch.float32
+            )
+            monthly_target_masks = torch.zeros(
+                (n_months, n_features), dtype=torch.bool
+            )
+
+            # Aggregate daily features to monthly targets
+            for i, month_idx in enumerate(range(monthly_start + horizon, monthly_end + horizon)):
+                if month_idx >= 0 and month_idx < len(self.alignment.month_boundaries):
+                    abs_start, abs_end = self.alignment.month_boundaries[month_idx]
+
+                    # Get daily features for this future month
+                    if abs_end <= len(self.daily_tensors[source_name]):
+                        daily_slice = self.daily_tensors[source_name][abs_start:abs_end]
+                        mask_slice = self.daily_mask_tensors[source_name][abs_start:abs_end]
+
+                        # Compute mean for observed values per feature
+                        for f in range(n_features):
+                            observed = mask_slice[:, f]
+                            if observed.any():
+                                monthly_targets[i, f] = daily_slice[observed, f].mean()
+                                monthly_target_masks[i, f] = True
+
+            forecast_targets[source_name] = monthly_targets
+            forecast_masks[source_name] = monthly_target_masks
+
+        # =====================================================================
+        # DAILY FORECAST TARGETS
+        # Raw daily features for the next horizon days (for DailyForecastingHead)
+        # =====================================================================
+        daily_forecast_horizon = 7  # Predict next 7 days
+        daily_forecast_start = daily_end  # Start right after the input sequence
+        daily_forecast_end = daily_end + daily_forecast_horizon
+
+        # Concatenate all daily sources in consistent order
+        daily_source_order = sorted(self.daily_tensors.keys())
+        daily_target_list = []
+        daily_mask_list = []
+
+        for source_name in daily_source_order:
+            n_features = self.daily_tensors[source_name].shape[1]
+
+            if daily_forecast_end <= len(self.daily_tensors[source_name]):
+                # Get raw daily features for horizon days
+                source_targets = self.daily_tensors[source_name][
+                    daily_forecast_start:daily_forecast_end
+                ]
+                source_masks = self.daily_mask_tensors[source_name][
+                    daily_forecast_start:daily_forecast_end
+                ]
+            else:
+                # Not enough future data - pad with missing values
+                source_targets = torch.full(
+                    (daily_forecast_horizon, n_features), MISSING_VALUE, dtype=torch.float32
+                )
+                source_masks = torch.zeros(
+                    (daily_forecast_horizon, n_features), dtype=torch.bool
+                )
+
+            daily_target_list.append(source_targets)
+            daily_mask_list.append(source_masks)
+
+        # Concatenate along feature dimension: [horizon, total_daily_features]
+        daily_forecast_targets = torch.cat(daily_target_list, dim=1)
+        daily_forecast_masks = torch.cat(daily_mask_list, dim=1)
+
+        # =====================================================================
+        # ISW NARRATIVE EMBEDDINGS
+        # Retrieve ISW embeddings aligned with the daily sequence
+        # =====================================================================
+        isw_embedding, isw_mask = self._get_isw_embeddings_for_dates(daily_dates)
+
+        # =====================================================================
+        # PER-RAION MASKS (for GeographicSourceEncoder)
+        # Slice per-raion masks to match the daily sequence
+        # =====================================================================
+        raion_masks = {}
+        for source_name in self.raion_mask_tensors:
+            raion_masks[source_name] = self.raion_mask_tensors[source_name][
+                daily_start:daily_end
+            ]
+
         return MultiResolutionSample(
             daily_features=daily_features,
             daily_masks=daily_masks,
@@ -2093,7 +2727,14 @@ class MultiResolutionDataset(Dataset):
             month_boundary_indices=month_boundary_tensor,
             daily_dates=daily_dates,
             monthly_dates=monthly_dates,
-            sample_idx=idx
+            sample_idx=idx,
+            forecast_targets=forecast_targets,
+            forecast_masks=forecast_masks,
+            daily_forecast_targets=daily_forecast_targets,
+            daily_forecast_masks=daily_forecast_masks,
+            isw_embedding=isw_embedding,
+            isw_mask=isw_mask,
+            raion_masks=raion_masks if raion_masks else None,
         )
 
     def get_feature_info(self) -> Dict[str, Dict[str, Any]]:
@@ -2227,16 +2868,143 @@ def multi_resolution_collate_fn(
         for sample in batch
     ], dtype=torch.long)
 
+    # =========================================================================
+    # BATCH FORECAST TARGETS (for autoregressive training)
+    # =========================================================================
+    batched_forecast_targets = {}
+    batched_forecast_masks = {}
+
+    # Check if forecast targets are available
+    if batch[0].forecast_targets is not None:
+        # Get all source names from forecast targets (both daily and monthly)
+        forecast_sources = list(batch[0].forecast_targets.keys())
+
+        for source_name in forecast_sources:
+            n_features = batch[0].forecast_targets[source_name].shape[1]
+
+            # Initialize with padding
+            targets_batch = torch.full(
+                (batch_size, max_monthly_len, n_features),
+                fill_value=MISSING_VALUE,
+                dtype=torch.float32
+            )
+            masks_batch = torch.zeros(
+                (batch_size, max_monthly_len, n_features),
+                dtype=torch.bool
+            )
+
+            for i, sample in enumerate(batch):
+                if sample.forecast_targets is not None and source_name in sample.forecast_targets:
+                    seq_len = sample.forecast_targets[source_name].shape[0]
+                    targets_batch[i, :seq_len] = sample.forecast_targets[source_name]
+                    if sample.forecast_masks is not None and source_name in sample.forecast_masks:
+                        masks_batch[i, :seq_len] = sample.forecast_masks[source_name]
+
+            batched_forecast_targets[source_name] = targets_batch
+            batched_forecast_masks[source_name] = masks_batch
+
+    # =========================================================================
+    # BATCH DAILY FORECAST TARGETS (for DailyForecastingHead)
+    # =========================================================================
+    batched_daily_forecast_targets: Optional[torch.Tensor] = None
+    batched_daily_forecast_masks: Optional[torch.Tensor] = None
+
+    if batch[0].daily_forecast_targets is not None:
+        horizon = batch[0].daily_forecast_targets.shape[0]
+        n_daily_features = batch[0].daily_forecast_targets.shape[1]
+
+        batched_daily_forecast_targets = torch.full(
+            (batch_size, horizon, n_daily_features),
+            fill_value=MISSING_VALUE,
+            dtype=torch.float32
+        )
+        batched_daily_forecast_masks = torch.zeros(
+            (batch_size, horizon, n_daily_features),
+            dtype=torch.bool
+        )
+
+        for i, sample in enumerate(batch):
+            if sample.daily_forecast_targets is not None:
+                batched_daily_forecast_targets[i] = sample.daily_forecast_targets
+                if sample.daily_forecast_masks is not None:
+                    batched_daily_forecast_masks[i] = sample.daily_forecast_masks
+
+    # =========================================================================
+    # BATCH ISW EMBEDDINGS (narrative context aligned with daily sequence)
+    # =========================================================================
+    batched_isw_embedding: Optional[torch.Tensor] = None
+    batched_isw_mask: Optional[torch.Tensor] = None
+
+    # Check if ISW embeddings are available in the first sample
+    if batch[0].isw_embedding is not None:
+        # Get embedding dimension from first sample
+        isw_embedding_dim = batch[0].isw_embedding.shape[1]
+
+        # Initialize batched tensors with padding (zeros for embeddings, False for mask)
+        batched_isw_embedding = torch.zeros(
+            (batch_size, max_daily_len, isw_embedding_dim),
+            dtype=torch.float32
+        )
+        batched_isw_mask = torch.zeros(
+            (batch_size, max_daily_len),
+            dtype=torch.bool
+        )
+
+        # Fill in the embeddings for each sample
+        for i, sample in enumerate(batch):
+            if sample.isw_embedding is not None:
+                seq_len = sample.isw_embedding.shape[0]
+                batched_isw_embedding[i, :seq_len] = sample.isw_embedding
+                if sample.isw_mask is not None:
+                    batched_isw_mask[i, :seq_len] = sample.isw_mask
+
+    # =========================================================================
+    # BATCH PER-RAION MASKS (for GeographicSourceEncoder)
+    # These provide finer-grained observation info than daily_masks
+    # =========================================================================
+    batched_raion_masks: Optional[Dict[str, torch.Tensor]] = None
+
+    # Check if raion masks are available
+    if batch[0].raion_masks is not None and len(batch[0].raion_masks) > 0:
+        batched_raion_masks = {}
+        raion_sources = list(batch[0].raion_masks.keys())
+
+        for source_name in raion_sources:
+            # Get number of raions from first sample
+            n_raions = batch[0].raion_masks[source_name].shape[1]
+
+            # Initialize with padding (False for unobserved)
+            masks_batch = torch.zeros(
+                (batch_size, max_daily_len, n_raions),
+                dtype=torch.bool
+            )
+
+            for i, sample in enumerate(batch):
+                if sample.raion_masks is not None and source_name in sample.raion_masks:
+                    seq_len = sample.raion_masks[source_name].shape[0]
+                    masks_batch[i, :seq_len] = sample.raion_masks[source_name]
+
+            batched_raion_masks[source_name] = masks_batch
+
     return {
         'daily_features': batched_daily_features,
         'daily_masks': batched_daily_masks,
         'monthly_features': batched_monthly_features,
         'monthly_masks': batched_monthly_masks,
         'month_boundary_indices': month_boundaries_batch,
+        'forecast_targets': batched_forecast_targets,
+        'forecast_masks': batched_forecast_masks,
+        'daily_forecast_targets': batched_daily_forecast_targets,
+        'daily_forecast_masks': batched_daily_forecast_masks,
+        'isw_embedding': batched_isw_embedding,
+        'isw_mask': batched_isw_mask,
+        'raion_masks': batched_raion_masks,  # Per-raion masks for GeographicSourceEncoder
         'daily_seq_lens': daily_seq_lens,
         'monthly_seq_lens': monthly_seq_lens,
         'batch_size': batch_size,
-        'sample_indices': [sample.sample_idx for sample in batch]
+        'sample_indices': [sample.sample_idx for sample in batch],
+        'daily_dates': [sample.daily_dates for sample in batch],
+        'monthly_dates': [sample.monthly_dates for sample in batch],
     }
 
 

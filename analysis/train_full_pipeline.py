@@ -189,6 +189,7 @@ try:
     from multi_resolution_han import (
         MultiResolutionHAN,
         create_multi_resolution_han,
+        SourceConfig,  # Needed for dynamic source config creation
     )
     from multi_resolution_data import (
         MultiResolutionDataset,
@@ -881,9 +882,39 @@ def train_multi_resolution_han_stage(
         logger.info(f"    Val samples: {len(val_dataset)}")
         logger.info(f"    Test samples: {len(test_dataset)}")
 
-        # Create model
+        # Create model with source configs from dataset (not hardcoded factory function)
+        # BUG FIX: Previously used create_multi_resolution_han() which has hardcoded 6 sources,
+        # ignoring use_disaggregated_equipment setting. Now we dynamically build source configs
+        # from the actual dataset to ensure the model architecture matches the data.
         logger.info("  Creating Multi-Resolution HAN model...")
-        model = create_multi_resolution_han(
+
+        # Get feature dimensions from dataset sample and create SourceConfig objects
+        sample = train_dataset[0]
+
+        daily_source_configs = {}
+        for source_name, tensor in sample.daily_features.items():
+            n_features = tensor.shape[-1]
+            daily_source_configs[source_name] = SourceConfig(
+                name=source_name,
+                n_features=n_features,
+                resolution='daily',
+            )
+
+        monthly_source_configs = {}
+        for source_name, tensor in sample.monthly_features.items():
+            n_features = tensor.shape[-1]
+            monthly_source_configs[source_name] = SourceConfig(
+                name=source_name,
+                n_features=n_features,
+                resolution='monthly',
+            )
+
+        logger.info(f"    Daily sources: {list(daily_source_configs.keys())}")
+        logger.info(f"    Monthly sources: {list(monthly_source_configs.keys())}")
+
+        model = MultiResolutionHAN(
+            daily_source_configs=daily_source_configs,
+            monthly_source_configs=monthly_source_configs,
             d_model=config.d_model,
             nhead=4,
             num_daily_layers=3,

@@ -1,0 +1,9 @@
+{
+  "variance_by_source": {},
+  "variance_with_mask": {},
+  "variance_without_mask": {},
+  "source_contributions": {},
+  "n_batches_processed": 3,
+  "total_variance": 0.0,
+  "mask_effect": {}
+}

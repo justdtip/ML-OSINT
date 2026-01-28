@@ -1,0 +1,24 @@
+{
+  "variance_by_source": {
+    "geoconfirmed_raion": 0.7036629915237427,
+    "personnel": 0.4654738704363505
+  },
+  "variance_with_mask": {
+    "geoconfirmed_raion": 0.7036629915237427,
+    "personnel": 0.4654738704363505
+  },
+  "variance_without_mask": {
+    "geoconfirmed_raion": 0.7036629915237427,
+    "personnel": 0.4654738704363505
+  },
+  "source_contributions": {
+    "geoconfirmed_raion": 0.6018653712996701,
+    "personnel": 0.39813462870032984
+  },
+  "n_batches_processed": 5,
+  "total_variance": 1.1691368619600933,
+  "mask_effect": {
+    "geoconfirmed_raion": 0.9999999998578865,
+    "personnel": 0.9999999997851652
+  }
+}

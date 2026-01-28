@@ -1,0 +1,106 @@
+{
+  "timestamp": "2026-01-27T09:01:50.776042",
+  "config": {
+    "n_samples": 10,
+    "seed": 42,
+    "checkpoint": "/Users/daniel.tipton/ML_OSINT/analysis/checkpoints/multi_resolution/best_checkpoint.pt"
+  },
+  "summaries": {
+    "with_isw": {
+      "config_name": "with_isw",
+      "forecast_mse": {
+        "mean": 239448.66875,
+        "std": 79878.79566231978,
+        "median": 199477.921875,
+        "n": 10
+      },
+      "forecast_mae": {
+        "mean": 240.5537887573242,
+        "std": 79.93530170034853,
+        "median": 200.63775634765625,
+        "n": 10
+      },
+      "forecast_corr": {
+        "mean": 0.4181105905800573,
+        "std": 0.1463085705991897,
+        "median": 0.4646532712279654,
+        "n": 10
+      },
+      "regime_accuracy": {
+        "mean": null,
+        "std": null,
+        "median": null
+      },
+      "latent_velocity": {
+        "mean": 3.323267388343811,
+        "std": 0.6546626745361649,
+        "median": 3.240432620048523,
+        "n": 10
+      },
+      "inference_time_ms": {
+        "mean": 175.1318628055742,
+        "std": 171.6749319759372,
+        "median": 118.2738125207834,
+        "n": 10
+      }
+    },
+    "without_isw": {
+      "config_name": "without_isw",
+      "forecast_mse": {
+        "mean": 239448.66875,
+        "std": 79878.79566231978,
+        "median": 199477.921875,
+        "n": 10
+      },
+      "forecast_mae": {
+        "mean": 240.5537887573242,
+        "std": 79.93530170034855,
+        "median": 200.63775634765625,
+        "n": 10
+      },
+      "forecast_corr": {
+        "mean": 0.4181105905800573,
+        "std": 0.1463085705991897,
+        "median": 0.4646532712279654,
+        "n": 10
+      },
+      "regime_accuracy": {
+        "mean": null,
+        "std": null,
+        "median": null
+      },
+      "latent_velocity": {
+        "mean": 3.323267388343811,
+        "std": 0.6546626745361648,
+        "median": 3.240432620048523,
+        "n": 10
+      },
+      "inference_time_ms": {
+        "mean": 101.45421250199433,
+        "std": 10.392664074427195,
+        "median": 101.70481199747883,
+        "n": 10
+      }
+    }
+  },
+  "comparisons": {
+    "forecast_mse": {
+      "metric": "forecast_mse",
+      "direction": "lower_better",
+      "with_isw": {
+        "mean": 239448.66875,
+        "std": 79878.79566231978,
+        "median": 199477.921875,
+        "n": 10
+      },
+      "without_isw": {
+        "mean": 239448.66875,
+        "std": 79878.79566231978,
+        "median": 199477.921875,
+        "n": 10
+      },
+      "statistical_tests": {
+        "t_test": {
+          "t_statistic": 0.0,
+          "p_value": 1.0,
+          "significant": 

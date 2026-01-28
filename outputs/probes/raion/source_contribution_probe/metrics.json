@@ -1,0 +1,25 @@
+{
+  "gradient_importance": {
+    "geoconfirmed_raion": 1.0395422659255823e-11,
+    "personnel": 1.4202705308126913e-09
+  },
+  "gradient_std": {
+    "geoconfirmed_raion": 1.860629703518649e-12,
+    "personnel": 4.448512481864725e-10
+  },
+  "importance_ranking": [
+    {
+      "source": "personnel",
+      "importance": 1.4202705308126913e-09
+    },
+    {
+      "source": "geoconfirmed_raion",
+      "importance": 1.0395422659255823e-11
+    }
+  ],
+  "n_batches_processed": 5,
+  "relative_importance": {
+    "geoconfirmed_raion": 0.006791437828532287,
+    "personnel": 0.9278775212783361
+  }
+}

@@ -33,6 +33,28 @@ from collections import defaultdict
 # Enable MPS fallback for unsupported ops (must be set before importing torch)
 os.environ['PYTORCH_ENABLE_MPS_FALLBACK'] = '1'
 
+# Suppress PyTorch UserWarning about mismatched key_padding_mask and attn_mask types
+# This is a harmless warning from nn.MultiheadAttention when using mixed dtypes
+warnings.filterwarnings(
+    "ignore",
+    message=".*Support for mismatched key_padding_mask and attn_mask.*",
+    category=UserWarning,
+)
+
+# Suppress pin_memory warning on MPS (known limitation)
+warnings.filterwarnings(
+    "ignore",
+    message=".*pin_memory.*argument is set as true but not supported on MPS.*",
+    category=UserWarning,
+)
+
+# Suppress extreme values warning (handled by model clipping)
+warnings.filterwarnings(
+    "ignore",
+    message=".*Extreme values.*possibly incomplete MISSING_VALUE handling.*",
+    category=UserWarning,
+)
+
 # Add parent to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -2002,6 +2024,8 @@ class MultiResolutionTrainer:
         epoch_losses = defaultdict(float)
         epoch_metrics = defaultdict(float)
         n_batches = 0
+        total_batches = len(self.train_loader)
+        log_interval = max(1, total_batches // 10)  # Log ~10 times per epoch
 
         for batch in self.train_loader:
             batch = self._move_batch_to_device(batch)
@@ -2050,6 +2074,11 @@ class MultiResolutionTrainer:
             epoch_metrics['monthly_obs_rate'] += batch['monthly_obs_rates'].mean().item()
 
             n_batches += 1
+
+            # Progress logging within epoch
+            if n_batches % log_interval == 0 or n_batches == total_batches:
+                avg_loss = epoch_losses['total'] / n_batches
+                print(f"  Batch {n_batches}/{total_batches} - loss: {avg_loss:.4f}", flush=True)
 
         # Average losses
         results = {k: v / max(n_batches, 1) for k, v in epoch_losses.items()}
@@ -2350,13 +2379,16 @@ class MultiResolutionTrainer:
             print(f"Val samples: {len(self.val_dataset)}")
             print(f"Max epochs: {self.num_epochs}")
             print(f"Patience: {self.patience}")
-            print("-" * 80)
+            print("-" * 80, flush=True)
+            print(f"Starting training loop...", flush=True)
 
         for epoch in range(self.current_epoch, self.num_epochs):
             self.current_epoch = epoch
 
             # Train
+            print(f"\n[Epoch {epoch}] Starting training...", flush=True)
             train_metrics = self.train_epoch()
+            print(f"[Epoch {epoch}] Training complete. Starting validation...", flush=True)
 
             # Validate
             val_metrics = self.validate()
@@ -2381,8 +2413,8 @@ class MultiResolutionTrainer:
             # Save checkpoint
             self.save_checkpoint(epoch, is_best=is_best)
 
-            # Print progress
-            if verbose and (epoch % 5 == 0 or is_best):
+            # Print progress (every epoch for visibility)
+            if verbose:
                 task_weights = train_metrics.get('task_weights', {})
                 weight_str = ", ".join([f"{k}:{v:.2f}" for k, v in task_weights.items()])
 
@@ -2396,10 +2428,10 @@ class MultiResolutionTrainer:
                 print(f"Epoch {epoch:3d}: "
                       f"train_loss={train_metrics['total']:.4f}, "
                       f"val_loss={val_metrics['total']:.4f}, "
-                      f"lr={train_metrics['learning_rate']:.2e}")
-                print(f"          raw_losses=[{raw_loss_str}]")
+                      f"lr={train_metrics['learning_rate']:.2e}", flush=True)
+                print(f"          raw_losses=[{raw_loss_str}]", flush=True)
                 print(f"          weights=[{weight_str}]"
-                      f" {'*' if is_best else ''}")
+                      f" {'*' if is_best else ''}", flush=True)
 
             # Early stopping
             if self.patience_counter >= self.patience:

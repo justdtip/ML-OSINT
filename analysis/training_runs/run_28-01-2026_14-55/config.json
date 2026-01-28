@@ -1,0 +1,63 @@
+{
+  "daily_seq_len": 180,
+  "monthly_seq_len": 12,
+  "prediction_horizon": 1,
+  "d_model": 128,
+  "nhead": 8,
+  "num_daily_layers": 3,
+  "num_monthly_layers": 2,
+  "num_fusion_layers": 2,
+  "dropout": 0.1,
+  "batch_size": 2,
+  "accumulation_steps": 4,
+  "learning_rate": 0.0001,
+  "weight_decay": 0.01,
+  "epochs": 200,
+  "patience": 30,
+  "warmup_epochs": 10,
+  "use_disaggregated_equipment": true,
+  "detrend_viirs": true,
+  "use_isw_alignment": false,
+  "isw_weight": null,
+  "use_geographic_prior": true,
+  "raion_sources": [
+    "geoconfirmed_raion",
+    "air_raid_sirens_raion",
+    "ucdp_raion",
+    "warspotting_raion",
+    "deepstate_raion",
+    "firms_expanded_raion"
+  ],
+  "raion_spatial_configs": {
+    "geoconfirmed_raion": {
+      "n_raions": 171,
+      "features_per_raion": 50,
+      "use_geographic_prior": true
+    },
+    "air_raid_sirens_raion": {
+      "n_raions": 44,
+      "features_per_raion": 30,
+      "use_geographic_prior": true
+    },
+    "ucdp_raion": {
+      "n_raions": 124,
+      "features_per_raion": 35,
+      "use_geographic_prior": true
+    },
+    "warspotting_raion": {
+      "n_raions": 26,
+      "features_per_raion": 33,
+      "use_geographic_prior": true
+    },
+    "deepstate_raion": {
+      "n_raions": 116,
+      "features_per_raion": 48,
+      "use_geographic_prior": true
+    },
+    "firms_expanded_raion": {
+      "n_raions": 263,
+      "features_per_raion": 35,
+      "use_geographic_prior": true
+    }
+  }
+}

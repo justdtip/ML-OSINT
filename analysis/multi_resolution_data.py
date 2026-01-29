@@ -2040,7 +2040,7 @@ class MultiResolutionDataset(Dataset):
             # Reindex to common daily range
             df_aligned = df.set_index('date').reindex(daily_date_range)
             df_aligned.index.name = 'date'
-            df_aligned = df_aligned.reset_index()
+            df_aligned = df_aligned.reset_index().copy()  # .copy() defragments
 
             # Create new mask based on non-null values
             feature_cols = [c for c in df_aligned.columns if c != 'date']
@@ -2081,7 +2081,7 @@ class MultiResolutionDataset(Dataset):
             # Reindex to common monthly range
             df_aligned = df.set_index('date').reindex(monthly_date_range)
             df_aligned.index.name = 'date'
-            df_aligned = df_aligned.reset_index()
+            df_aligned = df_aligned.reset_index().copy()  # .copy() defragments
 
             # Create new mask based on non-null values
             feature_cols = [c for c in df_aligned.columns if c != 'date']

@@ -991,6 +991,8 @@ def enhanced_multi_resolution_collate_fn(
     - Aligning month boundaries
     - Computing observation rates per batch item
     """
+    import sys
+    print(f"    [Collate] Called with batch size {len(batch)}", file=sys.stderr, flush=True)
     if not batch:
         raise ValueError("Empty batch")
 
@@ -1180,6 +1182,7 @@ def enhanced_multi_resolution_collate_fn(
                 if sample.isw_mask is not None:
                     batched_isw_mask[i, :seq_len] = sample.isw_mask
 
+    print(f"    [Collate] Complete", file=sys.stderr, flush=True)
     return {
         'daily_features': batched_daily_features,
         'daily_masks': batched_daily_masks,

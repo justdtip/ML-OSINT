@@ -2513,6 +2513,12 @@ class MultiResolutionDataset(Dataset):
         Args:
             idx: Sample index
 
+        DEBUG: Track sample access for debugging hangs
+        """
+        import sys
+        if idx < 20:  # Only log first 20 for debugging
+            print(f"    [Dataset] __getitem__({idx}) called", file=sys.stderr, flush=True)
+
         Returns:
             MultiResolutionSample with all data and masks
         """

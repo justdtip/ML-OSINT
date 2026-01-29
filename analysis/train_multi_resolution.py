@@ -2209,6 +2209,9 @@ class MultiResolutionTrainer:
                 avg_time = _batch_time / n_batches
                 print(f"  Batch {n_batches}/{total_batches} - loss: {avg_loss:.4f} ({avg_time:.2f}s/batch)", flush=True)
 
+            if batch_idx < 3:
+                print(f"  [B{batch_idx}] Loop iteration complete, getting next batch...", flush=True)
+
         # Average losses
         results = {k: v / max(n_batches, 1) for k, v in epoch_losses.items()}
         results.update({k: v / max(n_batches, 1) for k, v in epoch_metrics.items()})

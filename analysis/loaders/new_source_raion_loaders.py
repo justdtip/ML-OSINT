@@ -1631,7 +1631,8 @@ class WarspottingRaionLoader:
 
     def _parse_nearest_location(self, location: str) -> Optional[str]:
         """Parse nearest_location string to extract raion key."""
-        if not location:
+        # Handle None, NaN (float), empty string, or non-string values
+        if not isinstance(location, str) or not location.strip():
             return None
 
         name_map = self._build_raion_name_map()

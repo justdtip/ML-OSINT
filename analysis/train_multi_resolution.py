@@ -2132,8 +2132,11 @@ class MultiResolutionTrainer:
         total_batches = len(self.train_loader)
         log_interval = max(1, total_batches // 10)  # Log ~10 times per epoch
 
-        for batch in self.train_loader:
+        print(f"  DEBUG: Starting epoch loop, {total_batches} batches", flush=True)
+        for batch_idx, batch in enumerate(self.train_loader):
+            print(f"  DEBUG: Got batch {batch_idx}", flush=True)
             batch = self._move_batch_to_device(batch)
+            print(f"  DEBUG: Moved batch to device", flush=True)
 
             # Forward pass with mixed precision
             with autocast(enabled=self.use_amp, dtype=self.amp_dtype):
@@ -2146,9 +2149,11 @@ class MultiResolutionTrainer:
                     month_boundaries=batch['month_boundary_indices'],
                     raion_masks=batch.get('raion_masks'),
                 )
+                print(f"  DEBUG: Forward pass done", flush=True)
 
                 # Compute individual task losses
                 task_losses = self._compute_losses(outputs, batch)
+                print(f"  DEBUG: Losses computed: {list(task_losses.keys())}", flush=True)
 
                 # Combine with uncertainty weighting
                 total_loss, task_weights = self.multi_task_loss(task_losses)

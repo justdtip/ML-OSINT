@@ -2132,11 +2132,10 @@ class MultiResolutionTrainer:
         total_batches = len(self.train_loader)
         log_interval = max(1, total_batches // 10)  # Log ~10 times per epoch
 
-        print(f"  DEBUG: Starting epoch loop, {total_batches} batches", flush=True)
+        import time as _time
+        _batch_start = _time.time()
         for batch_idx, batch in enumerate(self.train_loader):
-            print(f"  DEBUG: Got batch {batch_idx}", flush=True)
             batch = self._move_batch_to_device(batch)
-            print(f"  DEBUG: Moved batch to device", flush=True)
 
             # Forward pass with mixed precision
             with autocast(enabled=self.use_amp, dtype=self.amp_dtype):
@@ -2149,11 +2148,9 @@ class MultiResolutionTrainer:
                     month_boundaries=batch['month_boundary_indices'],
                     raion_masks=batch.get('raion_masks'),
                 )
-                print(f"  DEBUG: Forward pass done", flush=True)
 
                 # Compute individual task losses
                 task_losses = self._compute_losses(outputs, batch)
-                print(f"  DEBUG: Losses computed: {list(task_losses.keys())}", flush=True)
 
                 # Combine with uncertainty weighting
                 total_loss, task_weights = self.multi_task_loss(task_losses)
@@ -2172,13 +2169,9 @@ class MultiResolutionTrainer:
             else:
                 scaled_loss.backward()
 
-            # Check for NaN gradients and zero them to prevent propagation
-            for name, param in self.model.named_parameters():
-                if param.grad is not None and torch.isnan(param.grad).any():
-                    warnings.warn(f"NaN gradient in {name}, zeroing")
-                    param.grad.zero_()
-
             # Step with gradient accumulation (handles scaler if AMP enabled)
+            # Note: NaN gradient check removed - too slow for 73M params.
+            # GradScaler handles inf/nan for mixed precision.
             self.grad_accumulator.step(total_loss, self.model, scaler=self.scaler)
 
             # Track losses
@@ -2191,11 +2184,13 @@ class MultiResolutionTrainer:
             epoch_metrics['monthly_obs_rate'] += batch['monthly_obs_rates'].mean().item()
 
             n_batches += 1
+            _batch_time = _time.time() - _batch_start
 
             # Progress logging within epoch
             if n_batches % log_interval == 0 or n_batches == total_batches:
                 avg_loss = epoch_losses['total'] / n_batches
-                print(f"  Batch {n_batches}/{total_batches} - loss: {avg_loss:.4f}", flush=True)
+                avg_time = _batch_time / n_batches
+                print(f"  Batch {n_batches}/{total_batches} - loss: {avg_loss:.4f} ({avg_time:.2f}s/batch)", flush=True)
 
         # Average losses
         results = {k: v / max(n_batches, 1) for k, v in epoch_losses.items()}

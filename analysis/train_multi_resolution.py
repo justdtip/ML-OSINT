@@ -66,6 +66,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
 from torch.optim.lr_scheduler import _LRScheduler
+from torch.cuda.amp import GradScaler, autocast
 
 # Local imports
 from multi_resolution_data import (
@@ -897,13 +898,14 @@ class GradientAccumulator:
         self.current_step = 0
         self._accumulated_loss = 0.0
 
-    def step(self, loss: torch.Tensor, model: nn.Module) -> bool:
+    def step(self, loss: torch.Tensor, model: nn.Module, scaler: Optional[GradScaler] = None) -> bool:
         """
         Accumulate gradients and perform optimizer step if ready.
 
         Args:
             loss: The loss tensor (gradients should already be computed)
             model: The model (for gradient clipping)
+            scaler: Optional GradScaler for mixed precision training
 
         Returns:
             True if optimizer step was performed
@@ -912,14 +914,24 @@ class GradientAccumulator:
         self._accumulated_loss += loss.detach().item()
 
         if self.should_step():
+            if scaler is not None:
+                # Unscale gradients before clipping
+                scaler.unscale_(self.optimizer)
+
             # Apply gradient clipping
             if self.max_grad_norm is not None and self.max_grad_norm > 0:
                 torch.nn.utils.clip_grad_norm_(
                     model.parameters(), self.max_grad_norm
                 )
 
-            # Perform optimizer step
-            self.optimizer.step()
+            if scaler is not None:
+                # Use scaler for optimizer step
+                scaler.step(self.optimizer)
+                scaler.update()
+            else:
+                # Standard optimizer step
+                self.optimizer.step()
+
             self.optimizer.zero_grad()
             self._accumulated_loss = 0.0
             return True
@@ -1212,6 +1224,8 @@ class MultiResolutionTrainer:
         checkpoint_dir: str = str(CHECKPOINT_DIR),
         device: str = 'auto',
         run_manager: Optional[TrainingRunManager] = None,
+        use_amp: bool = True,
+        gradient_checkpointing: bool = True,
     ):
         """
         Initialize trainer.
@@ -1231,6 +1245,8 @@ class MultiResolutionTrainer:
             checkpoint_dir: Directory for saving checkpoints
             device: Device ('auto', 'cpu', 'cuda', 'mps')
             run_manager: Optional TrainingRunManager for organized output (probe integration)
+            use_amp: Use automatic mixed precision (bf16/fp16) for faster training
+            gradient_checkpointing: Trade compute for memory by recomputing activations
         """
         # Detect device
         if device == 'auto':
@@ -1242,7 +1258,38 @@ class MultiResolutionTrainer:
                 device = 'cpu'
 
         self.device = torch.device(device)
+
+        # Enable TF32 for faster matmul on Ampere+ GPUs (RTX 30xx, 40xx, 50xx, A100, etc.)
+        if device == 'cuda':
+            torch.set_float32_matmul_precision('high')  # Uses TF32 for float32 matmuls
+            torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.allow_tf32 = True
+
         self.model = model.to(self.device)
+
+        # Mixed precision training setup
+        # Only use AMP on CUDA (not supported on MPS/CPU)
+        self.use_amp = use_amp and (device == 'cuda')
+        if self.use_amp:
+            # Use bfloat16 if available (better for training), else float16
+            if torch.cuda.is_bf16_supported():
+                self.amp_dtype = torch.bfloat16
+                print("  Mixed precision: bfloat16 (optimal for training)")
+            else:
+                self.amp_dtype = torch.float16
+                print("  Mixed precision: float16")
+            self.scaler = GradScaler()
+        else:
+            self.amp_dtype = torch.float32
+            self.scaler = None
+            if use_amp and device != 'cuda':
+                print("  Mixed precision: disabled (requires CUDA)")
+
+        # Gradient checkpointing (trade compute for memory)
+        self.gradient_checkpointing = gradient_checkpointing
+        if gradient_checkpointing:
+            self._enable_gradient_checkpointing()
+            print("  Gradient checkpointing: enabled")
 
         # Datasets
         self.train_dataset = train_dataset
@@ -1379,6 +1426,43 @@ class MultiResolutionTrainer:
             'warmup_epochs': warmup_epochs,
             'device': str(self.device),
         }
+
+    def _enable_gradient_checkpointing(self):
+        """Enable gradient checkpointing on transformer layers to reduce memory.
+
+        This trades ~30% more compute for ~70% less activation memory,
+        allowing larger batch sizes or model dimensions.
+        """
+        from torch.utils.checkpoint import checkpoint
+
+        # Enable checkpointing on daily encoders
+        for name, encoder in self.model.daily_encoders.items():
+            if hasattr(encoder, 'transformer'):
+                # PyTorch 2.0+ native checkpointing
+                if hasattr(encoder.transformer, 'gradient_checkpointing_enable'):
+                    encoder.transformer.gradient_checkpointing_enable()
+                else:
+                    # Fallback: wrap transformer forward
+                    encoder._orig_forward = encoder.forward
+                    def make_checkpointed_forward(enc):
+                        def checkpointed_forward(*args, **kwargs):
+                            return checkpoint(enc._orig_forward, *args, use_reentrant=False, **kwargs)
+                        return checkpointed_forward
+                    encoder.forward = make_checkpointed_forward(encoder)
+
+        # Enable on monthly encoder if available
+        if hasattr(self.model, 'monthly_encoder'):
+            for name, enc in self.model.monthly_encoder.source_encoders.items():
+                if hasattr(enc, 'encoder') and hasattr(enc.encoder, 'layers'):
+                    for layer in enc.encoder.layers:
+                        layer.use_checkpoint = True
+
+        # Enable on temporal encoder
+        if hasattr(self.model, 'temporal_encoder'):
+            if hasattr(self.model.temporal_encoder, 'layers'):
+                for layer in self.model.temporal_encoder.layers:
+                    if hasattr(layer, 'use_checkpoint'):
+                        layer.use_checkpoint = True
 
     def _move_batch_to_device(self, batch: Dict[str, Any]) -> Dict[str, Any]:
         """Move batch tensors to device and preprocess MISSING_VALUE.
@@ -2030,21 +2114,23 @@ class MultiResolutionTrainer:
         for batch in self.train_loader:
             batch = self._move_batch_to_device(batch)
 
-            # Forward pass (include raion_masks if available for geographic sources)
-            outputs = self.model(
-                daily_features=batch['daily_features'],
-                daily_masks=batch['daily_masks'],
-                monthly_features=batch['monthly_features'],
-                monthly_masks=batch['monthly_masks'],
-                month_boundaries=batch['month_boundary_indices'],
-                raion_masks=batch.get('raion_masks'),
-            )
+            # Forward pass with mixed precision
+            with autocast(device_type='cuda', dtype=self.amp_dtype, enabled=self.use_amp):
+                # Forward pass (include raion_masks if available for geographic sources)
+                outputs = self.model(
+                    daily_features=batch['daily_features'],
+                    daily_masks=batch['daily_masks'],
+                    monthly_features=batch['monthly_features'],
+                    monthly_masks=batch['monthly_masks'],
+                    month_boundaries=batch['month_boundary_indices'],
+                    raion_masks=batch.get('raion_masks'),
+                )
 
-            # Compute individual task losses
-            task_losses = self._compute_losses(outputs, batch)
+                # Compute individual task losses
+                task_losses = self._compute_losses(outputs, batch)
 
-            # Combine with uncertainty weighting
-            total_loss, task_weights = self.multi_task_loss(task_losses)
+                # Combine with uncertainty weighting
+                total_loss, task_weights = self.multi_task_loss(task_losses)
 
             # Scale very large losses to prevent gradient explosion
             if total_loss.item() > 1e6:
@@ -2053,7 +2139,12 @@ class MultiResolutionTrainer:
 
             # Scale for gradient accumulation
             scaled_loss = total_loss / self.accumulation_steps
-            scaled_loss.backward()
+
+            # Backward pass with gradient scaling for mixed precision
+            if self.use_amp and self.scaler is not None:
+                self.scaler.scale(scaled_loss).backward()
+            else:
+                scaled_loss.backward()
 
             # Check for NaN gradients and zero them to prevent propagation
             for name, param in self.model.named_parameters():
@@ -2061,8 +2152,8 @@ class MultiResolutionTrainer:
                     warnings.warn(f"NaN gradient in {name}, zeroing")
                     param.grad.zero_()
 
-            # Step with gradient accumulation
-            self.grad_accumulator.step(total_loss, self.model)
+            # Step with gradient accumulation (handles scaler if AMP enabled)
+            self.grad_accumulator.step(total_loss, self.model, scaler=self.scaler)
 
             # Track losses
             epoch_losses['total'] += total_loss.item()
@@ -2126,19 +2217,21 @@ class MultiResolutionTrainer:
             for batch in self.val_loader:
                 batch = self._move_batch_to_device(batch)
 
-                # Forward pass (include raion_masks if available)
-                outputs = self.model(
-                    daily_features=batch['daily_features'],
-                    daily_masks=batch['daily_masks'],
-                    monthly_features=batch['monthly_features'],
-                    monthly_masks=batch['monthly_masks'],
-                    month_boundaries=batch['month_boundary_indices'],
-                    raion_masks=batch.get('raion_masks'),
-                )
+                # Forward pass with mixed precision
+                with autocast(device_type='cuda', dtype=self.amp_dtype, enabled=self.use_amp):
+                    # Forward pass (include raion_masks if available)
+                    outputs = self.model(
+                        daily_features=batch['daily_features'],
+                        daily_masks=batch['daily_masks'],
+                        monthly_features=batch['monthly_features'],
+                        monthly_masks=batch['monthly_masks'],
+                        month_boundaries=batch['month_boundary_indices'],
+                        raion_masks=batch.get('raion_masks'),
+                    )
 
-                # Compute losses
-                task_losses = self._compute_losses(outputs, batch)
-                total_loss, _ = self.multi_task_loss(task_losses)
+                    # Compute losses
+                    task_losses = self._compute_losses(outputs, batch)
+                    total_loss, _ = self.multi_task_loss(task_losses)
 
                 # Track losses
                 epoch_losses['total'] += total_loss.item()
@@ -2873,6 +2966,16 @@ def main():
                         choices=['auto', 'cpu', 'cuda', 'mps'],
                         help='Device (default: auto)')
 
+    # Memory optimization arguments
+    parser.add_argument('--use-amp', action='store_true', default=True,
+                        help='Use automatic mixed precision (bf16/fp16) for faster training (default: True)')
+    parser.add_argument('--no-amp', action='store_true',
+                        help='Disable automatic mixed precision')
+    parser.add_argument('--gradient-checkpointing', action='store_true', default=True,
+                        help='Enable gradient checkpointing to reduce memory usage (default: True)')
+    parser.add_argument('--no-gradient-checkpointing', action='store_true',
+                        help='Disable gradient checkpointing')
+
     # Output arguments
     parser.add_argument('--checkpoint_dir', type=str,
                         default=str(CHECKPOINT_DIR),
@@ -2934,6 +3037,10 @@ def main():
     # Resolve data configuration flags (handle --no-* overrides)
     use_disaggregated_equipment = args.use_disaggregated_equipment and not args.no_disaggregated_equipment
     detrend_viirs = args.detrend_viirs and not args.no_detrend_viirs
+
+    # Resolve memory optimization flags
+    use_amp = args.use_amp and not args.no_amp
+    gradient_checkpointing = args.gradient_checkpointing and not args.no_gradient_checkpointing
 
     print("=" * 80)
     print("MULTI-RESOLUTION HAN TRAINING PIPELINE")
@@ -3219,6 +3326,8 @@ def main():
         checkpoint_dir=args.checkpoint_dir,
         device=args.device,
         run_manager=run_manager,
+        use_amp=use_amp,
+        gradient_checkpointing=gradient_checkpointing,
     )
 
     # Resume if requested

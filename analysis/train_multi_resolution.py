@@ -2115,7 +2115,7 @@ class MultiResolutionTrainer:
             batch = self._move_batch_to_device(batch)
 
             # Forward pass with mixed precision
-            with autocast(device_type='cuda', dtype=self.amp_dtype, enabled=self.use_amp):
+            with autocast(enabled=self.use_amp, dtype=self.amp_dtype):
                 # Forward pass (include raion_masks if available for geographic sources)
                 outputs = self.model(
                     daily_features=batch['daily_features'],
@@ -2218,7 +2218,7 @@ class MultiResolutionTrainer:
                 batch = self._move_batch_to_device(batch)
 
                 # Forward pass with mixed precision
-                with autocast(device_type='cuda', dtype=self.amp_dtype, enabled=self.use_amp):
+                with autocast(enabled=self.use_amp, dtype=self.amp_dtype):
                     # Forward pass (include raion_masks if available)
                     outputs = self.model(
                         daily_features=batch['daily_features'],

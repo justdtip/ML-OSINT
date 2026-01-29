@@ -2136,12 +2136,16 @@ class MultiResolutionTrainer:
         _batch_start = _time.time()
         print(f"  Entering training loop ({total_batches} batches)...", flush=True)
         for batch_idx, batch in enumerate(self.train_loader):
-            if batch_idx == 0:
-                print(f"  First batch loaded, starting training...", flush=True)
+            if batch_idx < 3:
+                print(f"  [B{batch_idx}] Loaded batch", flush=True)
             batch = self._move_batch_to_device(batch)
+            if batch_idx < 3:
+                print(f"  [B{batch_idx}] Moved to device", flush=True)
 
             # Forward pass with mixed precision
             with autocast(enabled=self.use_amp, dtype=self.amp_dtype):
+                if batch_idx < 3:
+                    print(f"  [B{batch_idx}] Starting forward...", flush=True)
                 # Forward pass (include raion_masks if available for geographic sources)
                 outputs = self.model(
                     daily_features=batch['daily_features'],
@@ -2151,9 +2155,13 @@ class MultiResolutionTrainer:
                     month_boundaries=batch['month_boundary_indices'],
                     raion_masks=batch.get('raion_masks'),
                 )
+                if batch_idx < 3:
+                    print(f"  [B{batch_idx}] Forward done", flush=True)
 
                 # Compute individual task losses
                 task_losses = self._compute_losses(outputs, batch)
+                if batch_idx < 3:
+                    print(f"  [B{batch_idx}] Losses computed", flush=True)
 
                 # Combine with uncertainty weighting
                 total_loss, task_weights = self.multi_task_loss(task_losses)
@@ -2167,15 +2175,21 @@ class MultiResolutionTrainer:
             scaled_loss = total_loss / self.accumulation_steps
 
             # Backward pass with gradient scaling for mixed precision
+            if batch_idx < 3:
+                print(f"  [B{batch_idx}] Starting backward...", flush=True)
             if self.use_amp and self.scaler is not None:
                 self.scaler.scale(scaled_loss).backward()
             else:
                 scaled_loss.backward()
+            if batch_idx < 3:
+                print(f"  [B{batch_idx}] Backward done", flush=True)
 
             # Step with gradient accumulation (handles scaler if AMP enabled)
             # Note: NaN gradient check removed - too slow for 73M params.
             # GradScaler handles inf/nan for mixed precision.
             self.grad_accumulator.step(total_loss, self.model, scaler=self.scaler)
+            if batch_idx < 3:
+                print(f"  [B{batch_idx}] Step done, loss={total_loss.item():.4f}", flush=True)
 
             # Track losses
             epoch_losses['total'] += total_loss.item()

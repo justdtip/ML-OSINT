@@ -55,6 +55,27 @@ warnings.filterwarnings(
     category=UserWarning,
 )
 
+# Suppress autocast deprecation warning (still works, just new API syntax)
+warnings.filterwarnings(
+    "ignore",
+    message=".*torch.cuda.amp.autocast.*is deprecated.*",
+    category=FutureWarning,
+)
+
+# Suppress GradScaler deprecation warning
+warnings.filterwarnings(
+    "ignore",
+    message=".*torch.cuda.amp.GradScaler.*is deprecated.*",
+    category=FutureWarning,
+)
+
+# Suppress var() degrees of freedom warning (happens with small batches)
+warnings.filterwarnings(
+    "ignore",
+    message=".*var\\(\\): degrees of freedom is <= 0.*",
+    category=UserWarning,
+)
+
 # Add parent to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 

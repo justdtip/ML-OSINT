@@ -853,13 +853,13 @@ class WarmupCosineScheduler(_LRScheduler):
 
     def get_lr(self) -> List[float]:
         """Compute learning rate for current epoch."""
+        # Use first base_lr as reference (all groups get same schedule)
+        base_lr = self.base_lrs[0] if self.base_lrs else 1e-4
+
         if self.last_epoch < self.warmup_epochs:
             # Linear warmup phase
             alpha = self.last_epoch / max(1, self.warmup_epochs)
-            return [
-                self.warmup_start_lr + alpha * (base_lr - self.warmup_start_lr)
-                for base_lr in self.base_lrs
-            ]
+            lr = self.warmup_start_lr + alpha * (base_lr - self.warmup_start_lr)
         else:
             # Cosine annealing phase
             progress = (self.last_epoch - self.warmup_epochs) / max(
@@ -867,10 +867,10 @@ class WarmupCosineScheduler(_LRScheduler):
             )
             progress = min(1.0, max(0.0, progress))
             cosine_decay = 0.5 * (1.0 + math.cos(math.pi * progress))
-            return [
-                self.min_lr + (base_lr - self.min_lr) * cosine_decay
-                for base_lr in self.base_lrs
-            ]
+            lr = self.min_lr + (base_lr - self.min_lr) * cosine_decay
+
+        # Return same LR for all param groups (PyTorch 2.10+ requires matching length)
+        return [lr] * len(self.optimizer.param_groups)
 
 
 # =============================================================================

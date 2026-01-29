@@ -1729,7 +1729,7 @@ class WarspottingRaionLoader:
 
     def _extract_tags(self, tags_str: str) -> List[str]:
         """Extract tag categories from tags field."""
-        if not tags_str:
+        if not isinstance(tags_str, str) or not tags_str.strip():
             return []
         tags_lower = tags_str.lower()
         found = []

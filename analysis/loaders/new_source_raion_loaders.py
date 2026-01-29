@@ -46,6 +46,17 @@ DEFAULT_START_DATE = datetime(2022, 2, 24)
 DEFAULT_END_DATE = datetime(2026, 1, 27)
 
 
+def _safe_str(val) -> str:
+    """Safely convert a value to string, handling NaN and None.
+
+    Pandas NaN values are floats (truthy), so `val or ''` doesn't work.
+    This function handles None, NaN, and non-string values.
+    """
+    if val is None or not isinstance(val, str):
+        return ''
+    return val
+
+
 # =============================================================================
 # UKRAINIAN → ENGLISH TRANSLATION MAPPINGS
 # =============================================================================
@@ -449,6 +460,7 @@ class GeoconfirmedRaionLoader:
 
     def _classify_equipment(self, gear: str) -> str:
         """Classify equipment type from gear description."""
+        gear = _safe_str(gear)
         if not gear:
             return 'other_equipment'
 
@@ -460,7 +472,9 @@ class GeoconfirmedRaionLoader:
 
     def _classify_attack_method(self, description: str, origin: str) -> str:
         """Classify attack method from description and origin fields."""
-        text = f"{description or ''} {origin or ''}".lower()
+        desc = _safe_str(description)
+        orig = _safe_str(origin)
+        text = f"{desc} {orig}".lower()
 
         for method, patterns in self.ATTACK_METHOD_PATTERNS.items():
             if any(p in text for p in patterns):
@@ -469,7 +483,9 @@ class GeoconfirmedRaionLoader:
 
     def _classify_high_value(self, description: str, gear: str) -> Optional[str]:
         """Check if target is high-value and return type."""
-        text = f"{description or ''} {gear or ''}".lower()
+        desc = _safe_str(description)
+        g = _safe_str(gear)
+        text = f"{desc} {g}".lower()
 
         for hv_type, patterns in self.HIGH_VALUE_PATTERNS.items():
             if any(p in text for p in patterns):
@@ -479,14 +495,16 @@ class GeoconfirmedRaionLoader:
     def _extract_side(self, item: Dict) -> str:
         """Extract which side lost the equipment (russia/ukraine/unknown)."""
         # Check icon path for side indicator
-        icon = item.get('icon', '')
-        if 'russia' in icon.lower() or '/r/' in icon.lower():
-            return 'russia'
-        if 'ukraine' in icon.lower() or '/u/' in icon.lower():
-            return 'ukraine'
+        icon = _safe_str(item.get('icon', ''))
+        if icon:
+            icon_lower = icon.lower()
+            if 'russia' in icon_lower or '/r/' in icon_lower:
+                return 'russia'
+            if 'ukraine' in icon_lower or '/u/' in icon_lower:
+                return 'ukraine'
 
         # Check description for indicators
-        desc = (item.get('description', '') or '').lower()
+        desc = _safe_str(item.get('description', '')).lower()
         if 'russian' in desc or 'russia' in desc or 'enemy' in desc:
             return 'russia'
         if 'ukrainian' in desc or 'ukraine' in desc or 'our' in desc:
@@ -500,7 +518,9 @@ class GeoconfirmedRaionLoader:
 
     def _extract_status(self, description: str, icon: str) -> str:
         """Extract equipment status from description/icon."""
-        text = f"{description or ''} {icon or ''}".lower()
+        desc = _safe_str(description)
+        ic = _safe_str(icon)
+        text = f"{desc} {ic}".lower()
 
         if 'destroy' in text or 'burnt' in text or 'blown' in text:
             return 'destroyed'
@@ -2122,7 +2142,9 @@ class DeepStateRaionLoader:
     def _classify_unit_type(self, name: str, description: str = '') -> str:
         """Classify a military unit by type based on name/description."""
         import re
-        text = f"{name} {description}".lower()
+        n = _safe_str(name)
+        d = _safe_str(description)
+        text = f"{n} {d}".lower()
 
         for unit_type, patterns in self.UNIT_TYPE_PATTERNS.items():
             for pattern in patterns:
@@ -2169,7 +2191,9 @@ class DeepStateRaionLoader:
     def _classify_echelon(self, name: str, description: str = '') -> str:
         """Classify unit echelon level."""
         import re
-        text = f"{name} {description}".lower()
+        n = _safe_str(name)
+        d = _safe_str(description)
+        text = f"{n} {d}".lower()
 
         for echelon, patterns in self.ECHELON_PATTERNS.items():
             for pattern in patterns:
@@ -2180,7 +2204,9 @@ class DeepStateRaionLoader:
     def _classify_infrastructure(self, name: str, description: str = '') -> Optional[str]:
         """Check if feature is infrastructure and return type."""
         import re
-        text = f"{name} {description}".lower()
+        n = _safe_str(name)
+        d = _safe_str(description)
+        text = f"{n} {d}".lower()
 
         for infra_type, patterns in self.INFRASTRUCTURE_PATTERNS.items():
             for pattern in patterns:
@@ -2190,7 +2216,9 @@ class DeepStateRaionLoader:
 
     def _extract_attack_direction(self, name: str, icon: str = '') -> Optional[str]:
         """Extract attack direction (north/south/east/west) from feature."""
-        text = f"{name} {icon}".lower()
+        n = _safe_str(name)
+        ic = _safe_str(icon)
+        text = f"{n} {ic}".lower()
 
         if any(d in text for d in ['північ', 'north', 'пн', 'n_']):
             return 'north'
@@ -2204,14 +2232,15 @@ class DeepStateRaionLoader:
 
     def _classify_control_state(self, props: Dict, fill_color: str = '') -> str:
         """Classify territorial control state from properties/colors."""
-        fill = (props.get('fill', '') or props.get('color', '') or fill_color).lower()
+        fill_val = _safe_str(props.get('fill', '')) or _safe_str(props.get('color', '')) or _safe_str(fill_color)
+        fill = fill_val.lower() if fill_val else ''
 
         for state, patterns in self.CONTROL_COLORS.items():
             if any(p in fill for p in patterns):
                 return state
 
         # Check name/description for indicators
-        name = (props.get('name', '') or '').lower()
+        name = _safe_str(props.get('name', '')).lower()
         if 'визволен' in name or 'liberat' in name:
             return 'liberated'
         if 'окупован' in name or 'occupied' in name:

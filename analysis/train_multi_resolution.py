@@ -991,8 +991,6 @@ def enhanced_multi_resolution_collate_fn(
     - Aligning month boundaries
     - Computing observation rates per batch item
     """
-    import sys
-    print(f"    [Collate] Called with batch size {len(batch)}", file=sys.stderr, flush=True)
     if not batch:
         raise ValueError("Empty batch")
 
@@ -1182,7 +1180,6 @@ def enhanced_multi_resolution_collate_fn(
                 if sample.isw_mask is not None:
                     batched_isw_mask[i, :seq_len] = sample.isw_mask
 
-    print(f"    [Collate] Complete", file=sys.stderr, flush=True)
     return {
         'daily_features': batched_daily_features,
         'daily_masks': batched_daily_masks,
@@ -2137,18 +2134,16 @@ class MultiResolutionTrainer:
 
         import time as _time
         _batch_start = _time.time()
+        _iter_start = _time.time()
         print(f"  Entering training loop ({total_batches} batches)...", flush=True)
         for batch_idx, batch in enumerate(self.train_loader):
-            if batch_idx < 3:
-                print(f"  [B{batch_idx}] Loaded batch", flush=True)
+            _load_time = _time.time() - _iter_start
+            if batch_idx < 20 or batch_idx % 16 == 0:
+                print(f"  [B{batch_idx}] Loaded ({_load_time:.2f}s)", flush=True)
             batch = self._move_batch_to_device(batch)
-            if batch_idx < 3:
-                print(f"  [B{batch_idx}] Moved to device", flush=True)
 
             # Forward pass with mixed precision
             with autocast(enabled=self.use_amp, dtype=self.amp_dtype):
-                if batch_idx < 3:
-                    print(f"  [B{batch_idx}] Starting forward...", flush=True)
                 # Forward pass (include raion_masks if available for geographic sources)
                 outputs = self.model(
                     daily_features=batch['daily_features'],
@@ -2158,13 +2153,9 @@ class MultiResolutionTrainer:
                     month_boundaries=batch['month_boundary_indices'],
                     raion_masks=batch.get('raion_masks'),
                 )
-                if batch_idx < 3:
-                    print(f"  [B{batch_idx}] Forward done", flush=True)
 
                 # Compute individual task losses
                 task_losses = self._compute_losses(outputs, batch)
-                if batch_idx < 3:
-                    print(f"  [B{batch_idx}] Losses computed", flush=True)
 
                 # Combine with uncertainty weighting
                 total_loss, task_weights = self.multi_task_loss(task_losses)
@@ -2178,21 +2169,15 @@ class MultiResolutionTrainer:
             scaled_loss = total_loss / self.accumulation_steps
 
             # Backward pass with gradient scaling for mixed precision
-            if batch_idx < 3:
-                print(f"  [B{batch_idx}] Starting backward...", flush=True)
             if self.use_amp and self.scaler is not None:
                 self.scaler.scale(scaled_loss).backward()
             else:
                 scaled_loss.backward()
-            if batch_idx < 3:
-                print(f"  [B{batch_idx}] Backward done", flush=True)
 
             # Step with gradient accumulation (handles scaler if AMP enabled)
             # Note: NaN gradient check removed - too slow for 73M params.
             # GradScaler handles inf/nan for mixed precision.
             self.grad_accumulator.step(total_loss, self.model, scaler=self.scaler)
-            if batch_idx < 3:
-                print(f"  [B{batch_idx}] Step done, loss={total_loss.item():.4f}", flush=True)
 
             # Track losses
             epoch_losses['total'] += total_loss.item()
@@ -2212,8 +2197,8 @@ class MultiResolutionTrainer:
                 avg_time = _batch_time / n_batches
                 print(f"  Batch {n_batches}/{total_batches} - loss: {avg_loss:.4f} ({avg_time:.2f}s/batch)", flush=True)
 
-            if batch_idx < 3:
-                print(f"  [B{batch_idx}] Loop iteration complete, getting next batch...", flush=True)
+            # Reset timer for next iteration's load time measurement
+            _iter_start = _time.time()
 
         # Average losses
         results = {k: v / max(n_batches, 1) for k, v in epoch_losses.items()}

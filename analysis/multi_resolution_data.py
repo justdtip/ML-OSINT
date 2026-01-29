@@ -2553,10 +2553,6 @@ class MultiResolutionDataset(Dataset):
         Returns:
             MultiResolutionSample with all data and masks
         """
-        import sys
-        if idx < 20:  # Only log first 20 for debugging
-            print(f"    [Dataset] __getitem__({idx}) called", file=sys.stderr, flush=True)
-
         if idx < 0 or idx >= len(self):
             raise IndexError(f"Index {idx} out of range for dataset of length {len(self)}")
 

@@ -2134,7 +2134,10 @@ class MultiResolutionTrainer:
 
         import time as _time
         _batch_start = _time.time()
+        print(f"  Entering training loop ({total_batches} batches)...", flush=True)
         for batch_idx, batch in enumerate(self.train_loader):
+            if batch_idx == 0:
+                print(f"  First batch loaded, starting training...", flush=True)
             batch = self._move_batch_to_device(batch)
 
             # Forward pass with mixed precision

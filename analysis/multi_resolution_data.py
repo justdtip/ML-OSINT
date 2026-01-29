@@ -1847,6 +1847,11 @@ class MultiResolutionSample:
     raion_masks: Optional[Dict[str, torch.Tensor]] = None
 
 
+# Class-level cache to share loaded data between train/val/test splits
+# This avoids reloading the same data 3 times
+_SHARED_DATA_CACHE: Dict[str, Any] = {}
+
+
 class MultiResolutionDataset(Dataset):
     """
     PyTorch Dataset for multi-resolution time series with observation masks.
@@ -1895,11 +1900,29 @@ class MultiResolutionDataset(Dataset):
 
         print(f"Initializing MultiResolutionDataset (split={split})...")
 
-        # Load all data sources
-        self._load_all_sources()
-
-        # Compute temporal alignment
-        self._compute_alignment()
+        # Check for cached data to avoid reloading for each split
+        cache_key = self._get_data_cache_key()
+        if cache_key in _SHARED_DATA_CACHE:
+            print(f"  Using cached data (key={cache_key[:8]}...)")
+            cached = _SHARED_DATA_CACHE[cache_key]
+            self.daily_data = cached['daily_data']
+            self.monthly_data = cached['monthly_data']
+            self.raion_mask_data = cached['raion_mask_data']
+            self.alignment = cached['alignment']
+        else:
+            print(f"  Loading data (will cache for subsequent splits)...")
+            # Load all data sources
+            self._load_all_sources()
+            # Compute temporal alignment
+            self._compute_alignment()
+            # Cache for subsequent splits
+            _SHARED_DATA_CACHE[cache_key] = {
+                'daily_data': self.daily_data,
+                'monthly_data': self.monthly_data,
+                'raion_mask_data': self.raion_mask_data,
+                'alignment': self.alignment,
+            }
+            print(f"  Data cached for reuse")
 
         # Compute split indices
         self._compute_splits(val_ratio, test_ratio)
@@ -1924,6 +1947,20 @@ class MultiResolutionDataset(Dataset):
         self._load_isw_embeddings()
 
         print(f"Dataset initialized: {len(self)} samples in {split} split")
+
+    def _get_data_cache_key(self) -> str:
+        """Generate a unique cache key based on config that affects data loading."""
+        import hashlib
+        # Include config options that affect which data is loaded
+        key_parts = [
+            str(sorted(self.config.get_effective_daily_sources())),
+            str(sorted(self.config.monthly_sources)),
+            str(self.config.start_date),
+            str(self.config.end_date),
+            str(self.config.detrend_viirs),
+        ]
+        key_str = '|'.join(key_parts)
+        return hashlib.md5(key_str.encode()).hexdigest()
 
     def _load_all_sources(self) -> None:
         """Load all configured data sources."""

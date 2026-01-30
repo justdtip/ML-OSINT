@@ -65,6 +65,9 @@ from analysis.loaders import (
     RAION_ADAPTER_REGISTRY,
 )
 
+# Import detrending utilities
+from analysis.preprocessing_utils import DetrendingConfig, detrend_features
+
 # Paths - use centralized config with backward compatible aliases
 BASE_DIR = PROJECT_ROOT  # Alias for backward compatibility
 DATA_DIR = CONFIG_DATA_DIR  # Use centralized config
@@ -165,6 +168,12 @@ class MultiResolutionConfig:
     # Note: "aircraft" is excluded due to negative correlation with casualties.
     use_disaggregated_equipment: bool = True  # Default True - equipment is now disaggregated
 
+    # Detrending configuration (temporal-deconfounding-plan.md)
+    # Subtracts rolling mean to remove slow trends while preserving daily fluctuations.
+    # This reduces spurious correlations caused by shared time trends (71% correlation reduction).
+    apply_detrending: bool = False  # Default False for backward compatibility
+    detrending_window: int = 14  # Default rolling window size
+
     # Spatial feature configuration (DEPRECATED - use raion sources instead)
     # Legacy spatial features from DeepState/FIRMS tiling.
     # Superseded by raion sources which provide finer granularity.
@@ -220,62 +229,71 @@ def load_equipment_daily(
     end_date: Optional[datetime] = None
 ) -> Tuple[pd.DataFrame, np.ndarray]:
     """
-    Load equipment loss data at daily resolution.
+    Load equipment loss data at daily resolution with DELTA-ONLY features.
+
+    This is a legacy aggregated loader. For better predictive signal, use the
+    disaggregated loaders (drones, armor, artillery) which are the default.
+
+    Features (51 total, all delta-based):
+        For each equipment type (aircraft, helicopter, tank, APC, field_artillery,
+        MRL, drone, naval_ship, anti_aircraft_warfare, special_equipment,
+        vehicles_and_fuel_tanks, cruise_missiles, military_auto, fuel_tank,
+        mobile_SRBM_system, submarines):
+            - {type}_daily: Daily change in losses
+            - {type}_7day_avg: 7-day rolling mean of daily losses
+            - {type}_volatility: 7-day rolling std of daily losses
+        Plus aggregate features:
+            - equipment_total_daily: Sum of all equipment daily losses
+            - equipment_total_7day_avg: 7-day rolling mean of total
+            - equipment_momentum: Deviation from 7-day average
 
     Args:
         start_date: Optional start date filter
         end_date: Optional end date filter
 
     Returns:
-        Tuple of (DataFrame with features, observation mask array)
+        Tuple of (DataFrame with delta features, observation mask array)
     """
-    equip_path = DATA_DIR / "war-losses-data" / "2022-Ukraine-Russia-War-Dataset" / "data" / "russia_losses_equipment.json"
-
-    if not equip_path.exists():
-        warnings.warn(f"Equipment data not found at {equip_path}")
-        return pd.DataFrame(), np.array([])
-
-    with open(equip_path) as f:
-        data = json.load(f)
-
-    df = pd.DataFrame(data)
-    df['date'] = pd.to_datetime(df['date'], errors='coerce')
-    df = df.dropna(subset=['date'])
-    df = df.sort_values('date').reset_index(drop=True)
-
-    # Define feature columns
-    feature_cols = [
+    # All equipment columns from the JSON source
+    base_cols = [
         'aircraft', 'helicopter', 'tank', 'APC', 'field_artillery',
         'MRL', 'drone', 'naval_ship', 'anti_aircraft_warfare',
-        'special_equipment', 'vehicles_and_fuel_tanks', 'cruise_missiles'
+        'special_equipment', 'vehicles_and_fuel_tanks', 'cruise_missiles',
+        'military_auto', 'fuel_tank', 'mobile_SRBM_system', 'submarines'
     ]
 
-    # Normalize column names (handle spaces)
-    df.columns = df.columns.str.replace(' ', '_')
+    df, observation_mask = _load_equipment_base(base_cols, start_date, end_date)
 
-    # Create complete daily date range
-    if start_date is None:
-        start_date = df['date'].min()
-    if end_date is None:
-        end_date = df['date'].max()
+    if df.empty:
+        return df, observation_mask
 
-    date_range = pd.date_range(start=start_date, end=end_date, freq='D')
-
-    # Reindex to complete date range - DO NOT FILL MISSING VALUES
-    df = df.set_index('date')
-    df = df.reindex(date_range)
-    df.index.name = 'date'
-    df = df.reset_index()
-
-    # Create observation mask: True where we have real observations
-    # A row is observed if ANY feature column has a non-null value
-    available_cols = [c for c in feature_cols if c in df.columns]
-    observation_mask = df[available_cols].notna().any(axis=1).values
-
-    # Select and prepare features - keep NaN as NaN (will be converted to missing_value later)
-    features_df = df[['date'] + available_cols].copy()
+    features_df = _compute_delta_features(df, base_cols, prefix='equipment')
 
     return features_df, observation_mask
+
+
+# Feature names for equipment source (delta-only features)
+EQUIPMENT_FEATURE_NAMES = [
+    # Per-equipment-type features (3 per type)
+    'aircraft_daily', 'aircraft_7day_avg', 'aircraft_volatility',
+    'helicopter_daily', 'helicopter_7day_avg', 'helicopter_volatility',
+    'tank_daily', 'tank_7day_avg', 'tank_volatility',
+    'APC_daily', 'APC_7day_avg', 'APC_volatility',
+    'field_artillery_daily', 'field_artillery_7day_avg', 'field_artillery_volatility',
+    'MRL_daily', 'MRL_7day_avg', 'MRL_volatility',
+    'drone_daily', 'drone_7day_avg', 'drone_volatility',
+    'naval_ship_daily', 'naval_ship_7day_avg', 'naval_ship_volatility',
+    'anti_aircraft_warfare_daily', 'anti_aircraft_warfare_7day_avg', 'anti_aircraft_warfare_volatility',
+    'special_equipment_daily', 'special_equipment_7day_avg', 'special_equipment_volatility',
+    'vehicles_and_fuel_tanks_daily', 'vehicles_and_fuel_tanks_7day_avg', 'vehicles_and_fuel_tanks_volatility',
+    'cruise_missiles_daily', 'cruise_missiles_7day_avg', 'cruise_missiles_volatility',
+    'military_auto_daily', 'military_auto_7day_avg', 'military_auto_volatility',
+    'fuel_tank_daily', 'fuel_tank_7day_avg', 'fuel_tank_volatility',
+    'mobile_SRBM_system_daily', 'mobile_SRBM_system_7day_avg', 'mobile_SRBM_system_volatility',
+    'submarines_daily', 'submarines_7day_avg', 'submarines_volatility',
+    # Aggregate features
+    'equipment_total_daily', 'equipment_total_7day_avg', 'equipment_momentum',
+]
 
 
 def load_personnel_daily(
@@ -1943,6 +1961,9 @@ class MultiResolutionDataset(Dataset):
         # Convert to tensors
         self._convert_to_tensors()
 
+        # Precompute daily-to-monthly aggregations for forecast targets
+        self._precompute_monthly_aggregations()
+
         # Load ISW embeddings for narrative context
         self._load_isw_embeddings()
 
@@ -1958,6 +1979,8 @@ class MultiResolutionDataset(Dataset):
             str(self.config.start_date),
             str(self.config.end_date),
             str(self.config.detrend_viirs),
+            str(self.config.apply_detrending),
+            str(self.config.detrending_window),
         ]
         key_str = '|'.join(key_parts)
         return hashlib.md5(key_str.encode()).hexdigest()
@@ -2054,6 +2077,16 @@ class MultiResolutionDataset(Dataset):
             self.end_date = max(all_dates_normalized)
 
         print(f"  Date range: {self.start_date.date()} to {self.end_date.date()}")
+
+        # Apply detrending if configured (removes slow trends, preserves daily fluctuations)
+        if self.config.apply_detrending:
+            print(f"  Applying detrending (window={self.config.detrending_window})...")
+            detrend_config = DetrendingConfig(
+                enabled=True,
+                default_window=self.config.detrending_window,
+            )
+            self.daily_data = detrend_features(self.daily_data, detrend_config)
+            print(f"    Detrended {len(self.daily_data)} daily sources")
 
     def _compute_alignment(self) -> None:
         """Compute temporal alignment between daily and monthly data."""
@@ -2427,6 +2460,64 @@ class MultiResolutionDataset(Dataset):
             self.raion_metadata[source_name] = (raion_keys, n_features)
             print(f"    {source_name} raion mask tensor: {self.raion_mask_tensors[source_name].shape}")
 
+    def _precompute_monthly_aggregations(self) -> None:
+        """Precompute daily-to-monthly aggregations for all sources.
+
+        This avoids the expensive per-sample computation in __getitem__ by
+        precomputing monthly means for all daily sources upfront using
+        vectorized operations.
+
+        Creates:
+            self.daily_to_monthly_agg: Dict[str, torch.Tensor]
+                Shape (n_months, n_features) - monthly mean values
+            self.daily_to_monthly_mask: Dict[str, torch.Tensor]
+                Shape (n_months, n_features) - True where we have observations
+        """
+        import time as _time
+        _start = _time.time()
+        print("  Precomputing daily-to-monthly aggregations...")
+
+        self.daily_to_monthly_agg: Dict[str, torch.Tensor] = {}
+        self.daily_to_monthly_mask: Dict[str, torch.Tensor] = {}
+
+        n_months = len(self.alignment.month_boundaries)
+
+        for source_name in self.daily_tensors:
+            n_features = self.daily_tensors[source_name].shape[1]
+
+            # Initialize tensors for all months
+            monthly_agg = torch.full(
+                (n_months, n_features), MISSING_VALUE, dtype=torch.float32
+            )
+            monthly_agg_mask = torch.zeros((n_months, n_features), dtype=torch.bool)
+
+            # Vectorized aggregation for each month
+            for month_idx, (abs_start, abs_end) in enumerate(self.alignment.month_boundaries):
+                if abs_end <= len(self.daily_tensors[source_name]) and abs_end > abs_start:
+                    # Get daily slice for this month
+                    daily_slice = self.daily_tensors[source_name][abs_start:abs_end]
+                    mask_slice = self.daily_mask_tensors[source_name][abs_start:abs_end]
+
+                    # Vectorized mean computation:
+                    # 1. Count observed values per feature
+                    observed_counts = mask_slice.sum(dim=0).float()  # (n_features,)
+
+                    # 2. Sum observed values (zero out masked values first)
+                    masked_data = torch.where(mask_slice, daily_slice, torch.zeros_like(daily_slice))
+                    observed_sums = masked_data.sum(dim=0)  # (n_features,)
+
+                    # 3. Compute mean where we have observations
+                    has_obs = observed_counts > 0
+                    if has_obs.any():
+                        monthly_agg[month_idx, has_obs] = observed_sums[has_obs] / observed_counts[has_obs]
+                        monthly_agg_mask[month_idx] = has_obs
+
+            self.daily_to_monthly_agg[source_name] = monthly_agg
+            self.daily_to_monthly_mask[source_name] = monthly_agg_mask
+
+        _elapsed = _time.time() - _start
+        print(f"  Precomputed monthly aggregations for {len(self.daily_tensors)} sources in {_elapsed:.2f}s")
+
     def _load_isw_embeddings(self) -> None:
         """Load ISW (Institute for the Study of War) narrative embeddings.
 
@@ -2666,39 +2757,33 @@ class MultiResolutionDataset(Dataset):
                     (n_months, n_features), dtype=torch.bool
                 )
 
-        # For daily sources aggregated to monthly: compute monthly means as targets
-        # This provides a summary of the next month's daily activity
+        # For daily sources: use precomputed monthly aggregations (FAST)
+        # This replaces the expensive per-sample aggregation loop
         for source_name in self.daily_tensors:
-            n_features = self.daily_tensors[source_name].shape[1]
             n_months = monthly_end - monthly_start
+            n_features = self.daily_tensors[source_name].shape[1]
 
-            # Initialize target tensors
-            monthly_targets = torch.full(
-                (n_months, n_features), MISSING_VALUE, dtype=torch.float32
-            )
-            monthly_target_masks = torch.zeros(
-                (n_months, n_features), dtype=torch.bool
-            )
+            # Target months are offset by horizon
+            target_month_start = monthly_start + horizon
+            target_month_end = monthly_end + horizon
 
-            # Aggregate daily features to monthly targets
-            for i, month_idx in enumerate(range(monthly_start + horizon, monthly_end + horizon)):
-                if month_idx >= 0 and month_idx < len(self.alignment.month_boundaries):
-                    abs_start, abs_end = self.alignment.month_boundaries[month_idx]
-
-                    # Get daily features for this future month
-                    if abs_end <= len(self.daily_tensors[source_name]):
-                        daily_slice = self.daily_tensors[source_name][abs_start:abs_end]
-                        mask_slice = self.daily_mask_tensors[source_name][abs_start:abs_end]
-
-                        # Compute mean for observed values per feature
-                        for f in range(n_features):
-                            observed = mask_slice[:, f]
-                            if observed.any():
-                                monthly_targets[i, f] = daily_slice[observed, f].mean()
-                                monthly_target_masks[i, f] = True
-
-            forecast_targets[source_name] = monthly_targets
-            forecast_masks[source_name] = monthly_target_masks
+            # Slice from precomputed aggregations
+            if (target_month_start >= 0 and
+                target_month_end <= len(self.daily_to_monthly_agg[source_name])):
+                forecast_targets[source_name] = self.daily_to_monthly_agg[source_name][
+                    target_month_start:target_month_end
+                ].clone()
+                forecast_masks[source_name] = self.daily_to_monthly_mask[source_name][
+                    target_month_start:target_month_end
+                ].clone()
+            else:
+                # Not enough future data - pad with missing values
+                forecast_targets[source_name] = torch.full(
+                    (n_months, n_features), MISSING_VALUE, dtype=torch.float32
+                )
+                forecast_masks[source_name] = torch.zeros(
+                    (n_months, n_features), dtype=torch.bool
+                )
 
         # =====================================================================
         # DAILY FORECAST TARGETS

@@ -507,6 +507,156 @@ class TrainerConfig:
 
 
 # =============================================================================
+# TEMPORAL REGULARIZATION (Temporal Deconfounding)
+# =============================================================================
+
+class TemporalRegularizer(nn.Module):
+    """
+    Regularizer to prevent the model from learning temporal shortcuts.
+
+    Implements two penalties:
+    1. Correlation Penalty: Penalizes predictions that correlate with time position
+    2. Smoothness Penalty: Penalizes overly smooth predictions (indicates position-based learning)
+
+    Based on temporal-deconfounding-plan.md - addresses 71% spurious correlations.
+    """
+
+    def __init__(
+        self,
+        correlation_weight: float = 0.01,
+        smoothness_weight: float = 0.001,
+        target_roughness: float = 0.1,
+    ):
+        """
+        Initialize temporal regularizer.
+
+        Args:
+            correlation_weight: Weight for correlation penalty (default: 0.01)
+            smoothness_weight: Weight for smoothness penalty (default: 0.001)
+            target_roughness: Target variance in prediction deltas (default: 0.1)
+        """
+        super().__init__()
+        self.correlation_weight = correlation_weight
+        self.smoothness_weight = smoothness_weight
+        self.target_roughness = target_roughness
+
+    def compute_correlation_penalty(
+        self,
+        predictions: torch.Tensor,
+        seq_len: int,
+        device: torch.device,
+    ) -> torch.Tensor:
+        """
+        Compute penalty for predictions that correlate with temporal position.
+
+        Args:
+            predictions: Tensor of shape [batch, seq, features] or [batch, seq]
+            seq_len: Sequence length
+            device: Device for computation
+
+        Returns:
+            Scalar penalty tensor
+        """
+        # Create normalized position vector: [0, 1, 2, ...] -> mean=0, std=1
+        positions = torch.arange(seq_len, dtype=predictions.dtype, device=device)
+        pos_normalized = (positions - positions.mean()) / (positions.std() + 1e-8)
+
+        # Flatten predictions to [batch, seq] if needed
+        if predictions.dim() == 3:
+            # Average across feature dimension
+            pred_flat = predictions.mean(dim=-1)  # [batch, seq]
+        else:
+            pred_flat = predictions
+
+        # Normalize predictions per-sample
+        pred_mean = pred_flat.mean(dim=-1, keepdim=True)
+        pred_std = pred_flat.std(dim=-1, keepdim=True) + 1e-8
+        pred_normalized = (pred_flat - pred_mean) / pred_std
+
+        # Compute correlation for each sample: (pred * pos).mean()
+        # pos_normalized is [seq], pred_normalized is [batch, seq]
+        correlations = (pred_normalized * pos_normalized.unsqueeze(0)).mean(dim=-1)  # [batch]
+
+        # Only penalize positive correlations (predictions increasing with time)
+        penalty = torch.relu(correlations).mean()
+
+        return penalty
+
+    def compute_smoothness_penalty(
+        self,
+        predictions: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Penalize overly smooth predictions (indicates position-based learning).
+
+        If predictions change too slowly over time, it suggests the model is
+        using position rather than features.
+
+        Args:
+            predictions: Tensor of shape [batch, seq, features] or [batch, seq]
+
+        Returns:
+            Scalar penalty tensor
+        """
+        if predictions.dim() == 2:
+            predictions = predictions.unsqueeze(-1)  # [batch, seq, 1]
+
+        # Compute temporal deltas
+        deltas = predictions[:, 1:, :] - predictions[:, :-1, :]  # [batch, seq-1, features]
+
+        # Compute variance of deltas (roughness)
+        roughness = deltas.pow(2).mean(dim=1)  # [batch, features]
+
+        # Penalize if roughness is below target
+        penalty = torch.relu(self.target_roughness - roughness).mean()
+
+        return penalty
+
+    def forward(
+        self,
+        outputs: Dict[str, torch.Tensor],
+        seq_len: int,
+        device: torch.device,
+    ) -> Tuple[torch.Tensor, Dict[str, float]]:
+        """
+        Compute total temporal regularization penalty.
+
+        Args:
+            outputs: Dict with model outputs (casualty_pred, regime_logits, etc.)
+            seq_len: Sequence length
+            device: Computation device
+
+        Returns:
+            Tuple of (total_penalty, penalty_breakdown_dict)
+        """
+        total_penalty = torch.tensor(0.0, device=device)
+        penalty_breakdown = {}
+
+        # Apply to casualty predictions
+        if 'casualty_pred' in outputs:
+            corr_penalty = self.compute_correlation_penalty(
+                outputs['casualty_pred'], seq_len, device
+            )
+            total_penalty = total_penalty + self.correlation_weight * corr_penalty
+            penalty_breakdown['casualty_corr'] = corr_penalty.item()
+
+            smooth_penalty = self.compute_smoothness_penalty(outputs['casualty_pred'])
+            total_penalty = total_penalty + self.smoothness_weight * smooth_penalty
+            penalty_breakdown['casualty_smooth'] = smooth_penalty.item()
+
+        # Apply to regime logits (use softmax to get probabilities)
+        if 'regime_logits' in outputs:
+            regime_probs = torch.softmax(outputs['regime_logits'], dim=-1)
+            corr_penalty = self.compute_correlation_penalty(
+                regime_probs, seq_len, device
+            )
+            total_penalty = total_penalty + self.correlation_weight * corr_penalty
+            penalty_breakdown['regime_corr'] = corr_penalty.item()
+
+        return total_penalty, penalty_breakdown
+
+
+# =============================================================================
 # MULTI-TASK LOSS WITH UNCERTAINTY WEIGHTING
 # =============================================================================
 
@@ -1247,6 +1397,9 @@ class MultiResolutionTrainer:
         run_manager: Optional[TrainingRunManager] = None,
         use_amp: bool = True,
         gradient_checkpointing: bool = True,
+        use_temporal_reg: bool = False,
+        temporal_corr_weight: float = 0.01,
+        temporal_smooth_weight: float = 0.001,
     ):
         """
         Initialize trainer.
@@ -1268,6 +1421,9 @@ class MultiResolutionTrainer:
             run_manager: Optional TrainingRunManager for organized output (probe integration)
             use_amp: Use automatic mixed precision (bf16/fp16) for faster training
             gradient_checkpointing: Trade compute for memory by recomputing activations
+            use_temporal_reg: Enable temporal regularization to prevent temporal shortcuts
+            temporal_corr_weight: Weight for temporal correlation penalty
+            temporal_smooth_weight: Weight for temporal smoothness penalty
         """
         # Detect device
         if device == 'auto':
@@ -1404,6 +1560,18 @@ class MultiResolutionTrainer:
             task_names=task_names,
             use_task_priors=True,  # Probe-based weight initialization
         ).to(self.device)
+
+        # Temporal regularizer (temporal-deconfounding-plan.md)
+        # Prevents model from learning temporal shortcuts that cause early overfitting
+        self.use_temporal_reg = use_temporal_reg
+        if use_temporal_reg:
+            self.temporal_regularizer = TemporalRegularizer(
+                correlation_weight=temporal_corr_weight,
+                smoothness_weight=temporal_smooth_weight,
+            ).to(self.device)
+            print(f"Temporal regularization enabled: corr_weight={temporal_corr_weight}, smooth_weight={temporal_smooth_weight}")
+        else:
+            self.temporal_regularizer = None
 
         # Add loss parameters to optimizer
         self.optimizer.add_param_group({
@@ -2160,6 +2328,14 @@ class MultiResolutionTrainer:
                 # Combine with uncertainty weighting
                 total_loss, task_weights = self.multi_task_loss(task_losses)
 
+                # Add temporal regularization if enabled
+                if self.use_temporal_reg and self.temporal_regularizer is not None:
+                    seq_len = batch['daily_features'][list(batch['daily_features'].keys())[0]].shape[1]
+                    temp_penalty, temp_breakdown = self.temporal_regularizer(
+                        outputs, seq_len, self.device
+                    )
+                    total_loss = total_loss + temp_penalty
+
             # Scale very large losses to prevent gradient explosion
             if total_loss.item() > 1e6:
                 warnings.warn(f"Total loss {total_loss.item():.2e} exceeds 1e6, scaling down")
@@ -2704,6 +2880,9 @@ def test_collate_variable_lengths():
             self.daily_dates = np.array([])
             self.monthly_dates = np.array([])
             self.sample_idx = 0
+            self.forecast_targets = None
+            self.forecast_masks = None
+            self.isw_embedding = None
 
     try:
         batch = [
@@ -3020,6 +3199,24 @@ def main():
     parser.add_argument('--no-detrend-viirs', action='store_true',
                         help='Disable VIIRS detrending')
 
+    # Detrending configuration (temporal-deconfounding-plan.md)
+    parser.add_argument('--apply-detrending', action='store_true', default=False,
+                        help='Apply detrending to remove slow trends while preserving daily fluctuations (default: False)')
+    parser.add_argument('--no-apply-detrending', action='store_true',
+                        help='Disable detrending')
+    parser.add_argument('--detrending-window', type=int, default=14,
+                        help='Rolling window size for detrending in days (default: 14)')
+
+    # Temporal regularization (temporal-deconfounding-plan.md)
+    parser.add_argument('--use-temporal-reg', action='store_true', default=False,
+                        help='Enable temporal regularization to prevent learning time shortcuts (default: False)')
+    parser.add_argument('--no-temporal-reg', action='store_true',
+                        help='Disable temporal regularization')
+    parser.add_argument('--temporal-corr-weight', type=float, default=0.01,
+                        help='Weight for correlation penalty in temporal regularization (default: 0.01)')
+    parser.add_argument('--temporal-smooth-weight', type=float, default=0.001,
+                        help='Weight for smoothness penalty in temporal regularization (default: 0.001)')
+
     # ISW alignment
     parser.add_argument('--use-isw-alignment', action='store_true', default=False,
                         help='Enable ISW narrative alignment via contrastive learning (default: False)')
@@ -3066,6 +3263,8 @@ def main():
     # Resolve data configuration flags (handle --no-* overrides)
     use_disaggregated_equipment = args.use_disaggregated_equipment and not args.no_disaggregated_equipment
     detrend_viirs = args.detrend_viirs and not args.no_detrend_viirs
+    apply_detrending = args.apply_detrending and not args.no_apply_detrending
+    use_temporal_reg = args.use_temporal_reg and not args.no_temporal_reg
 
     # Resolve memory optimization flags
     use_amp = args.use_amp and not args.no_amp
@@ -3162,6 +3361,8 @@ def main():
         detrend_viirs=detrend_viirs,
         include_spatial_features=args.include_spatial,
         start_date=args.start_date,
+        apply_detrending=apply_detrending,
+        detrending_window=args.detrending_window,
     )
 
     train_dataset = MultiResolutionDataset(config=config, split='train')
@@ -3357,6 +3558,9 @@ def main():
         run_manager=run_manager,
         use_amp=use_amp,
         gradient_checkpointing=gradient_checkpointing,
+        use_temporal_reg=use_temporal_reg,
+        temporal_corr_weight=args.temporal_corr_weight,
+        temporal_smooth_weight=args.temporal_smooth_weight,
     )
 
     # Resume if requested

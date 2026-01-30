@@ -289,6 +289,63 @@ Types: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`
 
 ---
 
+## Remote Training Server (vast.ai)
+
+Training runs on a remote GPU server. Code changes must be synced via git.
+
+### Server Details
+- **Host**: `158.51.110.52`
+- **SSH Port**: `26539`
+- **GPU**: RTX 5090 (32GB VRAM)
+- **Python**: `/venv/main/bin/python3`
+- **Repo location**: `/workspace/ML_OSINT`
+
+### Code Change Workflow
+
+When making code changes locally that need to run on the server:
+
+```bash
+# 1. LOCAL: Make changes and commit
+git add <files>
+git commit -m "description"
+
+# 2. LOCAL: Push to GitHub
+git push origin main
+
+# 3. SERVER: Pull changes
+ssh -p 26539 root@158.51.110.52 "cd /workspace/ML_OSINT && git pull origin main"
+```
+
+### Running Training
+
+```bash
+# SSH to server
+ssh -p 26539 root@158.51.110.52
+
+# Run training (with logging)
+cd /workspace/ML_OSINT
+python -u -m analysis.train_multi_resolution --all-raion-sources --epochs 100 --batch_size 8 --d_model 256 --nhead 16 2>&1 | tee training.log
+
+# Or run in background with tmux
+tmux new-session -d -s train "cd /workspace/ML_OSINT && python -u -m analysis.train_multi_resolution --all-raion-sources --epochs 100 2>&1 | tee training.log"
+```
+
+### Key Training Arguments
+- `--all-raion-sources`: Enable all raion-level geographic sources
+- `--batch_size`: 8 (safe) or 16 (faster, more VRAM)
+- `--d_model`: Hidden dimension (128 default, 256 for more capacity)
+- `--nhead`: Attention heads (8 default, 16 for more capacity)
+- `--epochs`: Training epochs
+
+### Syncing Checkpoints Back
+
+```bash
+# Pull checkpoints from server to local
+rsync -avz -e "ssh -p 26539" root@158.51.110.52:/workspace/ML_OSINT/analysis/checkpoints/ ./analysis/checkpoints/
+```
+
+---
+
 ## Troubleshooting
 
 ### Common Issues

@@ -634,21 +634,24 @@ class TemporalRegularizer(nn.Module):
 
         # Apply to casualty predictions
         if 'casualty_pred' in outputs:
+            pred = outputs['casualty_pred']
+            actual_seq_len = pred.shape[1]  # Get seq_len from tensor, not parameter
             corr_penalty = self.compute_correlation_penalty(
-                outputs['casualty_pred'], seq_len, device
+                pred, actual_seq_len, device
             )
             total_penalty = total_penalty + self.correlation_weight * corr_penalty
             penalty_breakdown['casualty_corr'] = corr_penalty.item()
 
-            smooth_penalty = self.compute_smoothness_penalty(outputs['casualty_pred'])
+            smooth_penalty = self.compute_smoothness_penalty(pred)
             total_penalty = total_penalty + self.smoothness_weight * smooth_penalty
             penalty_breakdown['casualty_smooth'] = smooth_penalty.item()
 
         # Apply to regime logits (use softmax to get probabilities)
         if 'regime_logits' in outputs:
             regime_probs = torch.softmax(outputs['regime_logits'], dim=-1)
+            actual_seq_len = regime_probs.shape[1]  # Get seq_len from tensor
             corr_penalty = self.compute_correlation_penalty(
-                regime_probs, seq_len, device
+                regime_probs, actual_seq_len, device
             )
             total_penalty = total_penalty + self.correlation_weight * corr_penalty
             penalty_breakdown['regime_corr'] = corr_penalty.item()

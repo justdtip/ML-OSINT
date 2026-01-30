@@ -3166,6 +3166,8 @@ def main():
                         help='Use all available raion sources (convenience flag)')
     parser.add_argument('--raion-only', action='store_true', default=False,
                         help='Use ONLY raion sources (exclude default non-raion sources like equipment, viina, etc.)')
+    parser.add_argument('--no-raion', action='store_true', default=False,
+                        help='Exclude all raion sources (use only non-spatial sources like equipment/personnel)')
 
     # Other arguments
     parser.add_argument('--test', action='store_true',

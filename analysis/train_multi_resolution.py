@@ -693,7 +693,6 @@ class MultiTaskLoss(nn.Module):
         'anomaly': 1.4,      # exp(-1.4) ≈ 0.25 weight
         'forecast': 1.9,     # exp(-1.9) ≈ 0.15 weight (lowest - suspicious loss)
         'daily_forecast': 1.4,  # exp(-1.4) ≈ 0.25 weight (daily-resolution predictions)
-        'isw_alignment': 2.3,  # exp(-2.3) ≈ 0.10 weight (auxiliary alignment task)
     }
 
     def __init__(
@@ -1308,31 +1307,6 @@ def enhanced_multi_resolution_collate_fn(
             batched_forecast_targets[source_name] = targets_batch
             batched_forecast_masks[source_name] = masks_batch
 
-    # =========================================================================
-    # BATCH ISW EMBEDDINGS (for narrative alignment)
-    # =========================================================================
-    batched_isw_embedding = None
-    batched_isw_mask = None
-
-    if batch[0].isw_embedding is not None:
-        isw_embedding_dim = batch[0].isw_embedding.shape[1]
-
-        batched_isw_embedding = torch.zeros(
-            (batch_size, max_daily_len, isw_embedding_dim),
-            dtype=torch.float32
-        )
-        batched_isw_mask = torch.zeros(
-            (batch_size, max_daily_len),
-            dtype=torch.bool
-        )
-
-        for i, sample in enumerate(batch):
-            if sample.isw_embedding is not None:
-                seq_len = sample.isw_embedding.shape[0]
-                batched_isw_embedding[i, :seq_len] = sample.isw_embedding
-                if sample.isw_mask is not None:
-                    batched_isw_mask[i, :seq_len] = sample.isw_mask
-
     return {
         'daily_features': batched_daily_features,
         'daily_masks': batched_daily_masks,
@@ -1349,8 +1323,6 @@ def enhanced_multi_resolution_collate_fn(
         'monthly_year_months': batch_monthly_year_months,
         'forecast_targets': batched_forecast_targets,
         'forecast_masks': batched_forecast_masks,
-        'isw_embedding': batched_isw_embedding,
-        'isw_mask': batched_isw_mask,
     }
 
 
@@ -1546,19 +1518,12 @@ class MultiResolutionTrainer:
             min_lr=1e-6,
         )
 
-        # ISW alignment weight (applied separately, not through multi-task uncertainty)
-        # Lower weight (0.1) because ISW alignment is auxiliary to main prediction tasks
-        self.isw_alignment_weight = 0.1
-
         # Multi-task loss (updated task names to match real targets)
         # Use task priors to rebalance from dominant casualty head (62.6% -> 25%)
         task_names = ['casualty', 'regime', 'transition', 'anomaly', 'forecast']
         # Add daily forecast if model has the head
         if hasattr(model, 'daily_forecast_head'):
             task_names.append('daily_forecast')
-        # Add ISW alignment if model has it enabled
-        if hasattr(model, 'use_isw_alignment') and model.use_isw_alignment:
-            task_names.append('isw_alignment')
         self.multi_task_loss = MultiTaskLoss(
             task_names=task_names,
             use_task_priors=True,  # Probe-based weight initialization
@@ -2105,51 +2070,6 @@ class MultiResolutionTrainer:
                 losses['daily_forecast'] = daily_forecast_loss
             else:
                 losses['daily_forecast'] = daily_forecast_pred.pow(2).mean() * 1e-6
-
-        # =====================================================================
-        # ISW Narrative Alignment Loss (optional)
-        # =====================================================================
-        # Compute contrastive alignment loss between model temporal representations
-        # and ISW narrative embeddings if:
-        # 1. Model has ISW alignment module enabled
-        # 2. Batch contains ISW embeddings
-        if (hasattr(self.model, 'isw_alignment') and
-            self.model.isw_alignment is not None and
-            'isw_embedding' in batch):
-
-            isw_embeddings = batch['isw_embedding']  # [batch, seq, 1024]
-            isw_mask = batch.get('isw_mask', None)    # [batch, seq] True = valid
-
-            # Get temporal output from model outputs
-            temporal_output = outputs.get('temporal_output')  # [batch, seq, d_model]
-
-            if temporal_output is not None and isw_embeddings is not None:
-                # Align sequence lengths
-                min_seq = min(temporal_output.shape[1], isw_embeddings.shape[1])
-                temporal_aligned = temporal_output[:, :min_seq, :]
-                isw_aligned = isw_embeddings[:, :min_seq, :]
-
-                if isw_mask is not None:
-                    isw_mask_aligned = isw_mask[:, :min_seq]
-                else:
-                    isw_mask_aligned = None
-
-                # Project to shared space
-                model_proj, isw_proj = self.model.isw_alignment(
-                    temporal_aligned,
-                    isw_aligned,
-                    isw_mask_aligned,
-                )
-
-                # Compute contrastive alignment loss
-                isw_alignment_loss = self.model.isw_alignment.compute_alignment_loss(
-                    model_proj,
-                    isw_proj,
-                    isw_mask_aligned,
-                )
-
-                # Add to losses with weight 0.1 (lower than primary tasks)
-                losses['isw_alignment'] = isw_alignment_loss * self.isw_alignment_weight
 
         return losses
 
@@ -2885,7 +2805,6 @@ def test_collate_variable_lengths():
             self.sample_idx = 0
             self.forecast_targets = None
             self.forecast_masks = None
-            self.isw_embedding = None
 
     try:
         batch = [
@@ -3220,11 +3139,15 @@ def main():
     parser.add_argument('--temporal-smooth-weight', type=float, default=0.001,
                         help='Weight for smoothness penalty in temporal regularization (default: 0.001)')
 
-    # ISW alignment
-    parser.add_argument('--use-isw-alignment', action='store_true', default=False,
-                        help='Enable ISW narrative alignment via contrastive learning (default: False)')
-    parser.add_argument('--isw-weight', type=float, default=0.1,
-                        help='Weight for ISW alignment loss (default: 0.1)')
+    # PCA configuration (Probe 1.1.2 redundancy reduction)
+    parser.add_argument('--use-pca', action='store_true', default=False,
+                        help='Apply PCA to equipment features to reduce redundancy (default: False)')
+    parser.add_argument('--no-pca', action='store_true',
+                        help='Disable PCA (explicit override)')
+    parser.add_argument('--pca-components', type=int, default=15,
+                        help='Number of PCA components (default: 15, from 45 equipment features)')
+    parser.add_argument('--pca-variance', type=float, default=None,
+                        help='Alternative: keep components explaining this variance ratio (e.g., 0.95)')
 
     # Spatial features (unit positions, frontlines, fire hotspots per region)
     parser.add_argument('--include-spatial', action='store_true', default=False,
@@ -3268,6 +3191,7 @@ def main():
     detrend_viirs = args.detrend_viirs and not args.no_detrend_viirs
     apply_detrending = args.apply_detrending and not args.no_apply_detrending
     use_temporal_reg = args.use_temporal_reg and not args.no_temporal_reg
+    use_pca = args.use_pca and not args.no_pca
 
     # Resolve memory optimization flags
     use_amp = args.use_amp and not args.no_amp
@@ -3303,6 +3227,12 @@ def main():
     print(f"  detrend_viirs: {detrend_viirs}")
     print(f"  include_spatial_features: {args.include_spatial}")
     print(f"  start_date: {args.start_date}")
+    print(f"  use_pca: {use_pca}")
+    if use_pca:
+        if args.pca_variance:
+            print(f"    pca_variance_threshold: {args.pca_variance}")
+        else:
+            print(f"    pca_n_components: {args.pca_components}")
     print(f"\nGeographic Prior Configuration:")
     print(f"  use_geographic_prior: {use_geographic_prior}")
     if raion_sources:
@@ -3366,14 +3296,22 @@ def main():
         start_date=args.start_date,
         apply_detrending=apply_detrending,
         detrending_window=args.detrending_window,
+        # PCA configuration
+        use_pca=use_pca,
+        pca_n_components=args.pca_components,
+        pca_variance_threshold=args.pca_variance,
     )
 
     train_dataset = MultiResolutionDataset(config=config, split='train')
     val_dataset = MultiResolutionDataset(
-        config=config, split='val', norm_stats=train_dataset.norm_stats
+        config=config, split='val',
+        norm_stats=train_dataset.norm_stats,
+        pca_transformer=train_dataset.pca_transformer
     )
     test_dataset = MultiResolutionDataset(
-        config=config, split='test', norm_stats=train_dataset.norm_stats
+        config=config, split='test',
+        norm_stats=train_dataset.norm_stats,
+        pca_transformer=train_dataset.pca_transformer
     )
 
     # Get feature dimensions from dataset and create SourceConfig objects
@@ -3407,26 +3345,14 @@ def main():
     print("\n" + "-" * 80)
     print("Creating model...")
 
-    # Check for ISW alignment flag
-    use_isw_alignment = getattr(args, 'use_isw_alignment', False)
-
-    # Auto-detect ISW from checkpoint if resuming
+    # Auto-detect configuration from checkpoint if resuming
     if args.resume:
         checkpoint_path = Path(args.resume)
         if checkpoint_path.exists():
             print(f"\nDetecting model configuration from checkpoint: {args.resume}")
             checkpoint_peek = torch.load(args.resume, map_location='cpu', weights_only=False)
-            checkpoint_keys = checkpoint_peek.get('model_state_dict', {}).keys()
-            has_isw_keys = any('isw_alignment' in k for k in checkpoint_keys)
 
-            if has_isw_keys and not use_isw_alignment:
-                print(f"  Checkpoint has ISW alignment weights - enabling ISW alignment automatically")
-                use_isw_alignment = True
-            elif not has_isw_keys and use_isw_alignment:
-                print(f"  WARNING: --use-isw-alignment specified but checkpoint has no ISW weights")
-                print(f"           ISW module will be randomly initialized")
-
-            # Also detect other checkpoint metadata if available
+            # Detect checkpoint metadata if available
             if 'epoch' in checkpoint_peek:
                 print(f"  Checkpoint epoch: {checkpoint_peek['epoch']}")
             if 'best_val_loss' in checkpoint_peek:
@@ -3459,14 +3385,10 @@ def main():
         num_monthly_layers=args.num_monthly_layers,
         num_fusion_layers=args.num_fusion_layers,
         dropout=args.dropout,
-        use_isw_alignment=use_isw_alignment,
-        isw_dim=1024,  # Voyage embedding dimension
         use_geographic_prior=use_geographic_prior,
         custom_spatial_configs=custom_spatial_configs,
     )
 
-    if use_isw_alignment:
-        print(f"ISW alignment enabled (1024-dim embeddings)")
     if use_geographic_prior:
         print(f"Geographic prior enabled for {len(custom_spatial_configs or {})} raion sources")
 
@@ -3524,8 +3446,6 @@ def main():
             'warmup_epochs': args.warmup_epochs,
             'use_disaggregated_equipment': use_disaggregated_equipment,
             'detrend_viirs': detrend_viirs,
-            'use_isw_alignment': use_isw_alignment,
-            'isw_weight': args.isw_weight if use_isw_alignment else None,
             'use_geographic_prior': use_geographic_prior,
             'raion_sources': raion_sources if raion_sources else None,
             'raion_spatial_configs': {

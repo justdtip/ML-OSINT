@@ -30,6 +30,14 @@ from enum import Enum
 import json
 import warnings
 
+# Optional sklearn import for PCA (graceful fallback if not available)
+try:
+    from sklearn.decomposition import PCA
+    SKLEARN_AVAILABLE = True
+except ImportError:
+    SKLEARN_AVAILABLE = False
+    PCA = None
+
 
 # =============================================================================
 # CONSTANTS AND CONFIGURATION
@@ -43,7 +51,6 @@ from config.paths import (
     UCDP_EVENTS_FILE, FIRMS_ARCHIVE_FILE, FIRMS_NRT_FILE,
     EQUIPMENT_LOSSES_FILE, PERSONNEL_LOSSES_FILE,
     SENTINEL_RAW_FILE, SENTINEL_WEEKLY_FILE,
-    ISW_EMBEDDINGS_DIR,
 )
 
 # Import spatial loaders for rich spatial features
@@ -173,6 +180,17 @@ class MultiResolutionConfig:
     # This reduces spurious correlations caused by shared time trends (71% correlation reduction).
     apply_detrending: bool = False  # Default False for backward compatibility
     detrending_window: int = 14  # Default rolling window size
+
+    # PCA configuration for equipment features (Probe 1.1.2 redundancy reduction)
+    # Equipment sources (personnel, drones, armor, artillery) have 71% correlation
+    # explained by time trend. PCA reduces redundancy while preserving tactical patterns
+    # like "mechanized infantry operations" (high APC + high personnel).
+    use_pca: bool = False  # Apply PCA to equipment features
+    pca_n_components: int = 15  # Target components (from 45 equipment features)
+    pca_variance_threshold: Optional[float] = 0.95  # Alternative: keep components explaining this variance
+    pca_sources: List[str] = field(default_factory=lambda: [
+        "personnel", "drones", "armor", "artillery"
+    ])  # Sources to apply PCA to (combined, then decomposed)
 
     # Spatial feature configuration (DEPRECATED - use raion sources instead)
     # Legacy spatial features from DeepState/FIRMS tiling.
@@ -1853,12 +1871,6 @@ class MultiResolutionSample:
     # daily_forecast_masks: Tensor[horizon, total_daily_features] - validity masks
     daily_forecast_masks: Optional[torch.Tensor] = None
 
-    # ISW narrative embeddings (optional - aligned with daily sequence)
-    # isw_embedding: Tensor[daily_seq_len, 1024] - ISW assessment embeddings per day
-    isw_embedding: Optional[torch.Tensor] = None
-    # isw_mask: Tensor[daily_seq_len] - True where ISW embedding exists for that day
-    isw_mask: Optional[torch.Tensor] = None
-
     # Per-raion masks for spatial sources (optional - for GeographicSourceEncoder)
     # raion_masks: Dict[source_name, Tensor[daily_seq_len, n_raions]] - per-raion observation mask
     # These provide finer granularity than daily_masks for raion-structured sources
@@ -1896,6 +1908,7 @@ class MultiResolutionDataset(Dataset):
         val_ratio: float = 0.15,
         test_ratio: float = 0.15,
         norm_stats: Optional[Dict[str, Dict[str, np.ndarray]]] = None,
+        pca_transformer: Optional[Any] = None,
         seed: int = 42
     ):
         """
@@ -1907,6 +1920,7 @@ class MultiResolutionDataset(Dataset):
             val_ratio: Fraction of data for validation
             test_ratio: Fraction of data for testing
             norm_stats: Pre-computed normalization stats (required for val/test)
+            pca_transformer: Pre-fitted PCA transformer (required for val/test if use_pca=True)
             seed: Random seed for reproducibility
         """
         if split not in ('train', 'val', 'test'):
@@ -1958,14 +1972,28 @@ class MultiResolutionDataset(Dataset):
         # Apply normalization
         self._apply_normalization()
 
+        # Handle PCA for equipment features (reduces redundancy)
+        if self.config.use_pca:
+            if not SKLEARN_AVAILABLE:
+                raise ImportError("PCA requires scikit-learn. Install with: pip install scikit-learn")
+            if split == 'train':
+                self.pca_transformer = self._fit_pca()
+            else:
+                if pca_transformer is None:
+                    raise ValueError(
+                        f"pca_transformer must be provided for {split} split when use_pca=True"
+                    )
+                self.pca_transformer = pca_transformer
+            # Apply PCA transformation
+            self._apply_pca()
+        else:
+            self.pca_transformer = None
+
         # Convert to tensors
         self._convert_to_tensors()
 
         # Precompute daily-to-monthly aggregations for forecast targets
         self._precompute_monthly_aggregations()
-
-        # Load ISW embeddings for narrative context
-        self._load_isw_embeddings()
 
         print(f"Dataset initialized: {len(self)} samples in {split} split")
 
@@ -2417,6 +2445,145 @@ class MultiResolutionDataset(Dataset):
             df_norm[feature_cols] = normalized
             self.monthly_data[source_name] = (df_norm, mask)
 
+    def _fit_pca(self) -> Dict[str, Any]:
+        """
+        Fit PCA on equipment features from training data.
+
+        Combines specified sources (personnel, drones, armor, artillery by default),
+        fits PCA, and returns the transformer for use in val/test splits.
+
+        Returns:
+            Dict containing fitted PCA object and metadata for transformation.
+        """
+        pca_sources = self.config.pca_sources
+        available_sources = [s for s in pca_sources if s in self.daily_data]
+
+        if not available_sources:
+            warnings.warn(f"No PCA sources available from {pca_sources}")
+            return {'pca': None, 'sources': [], 'feature_names': []}
+
+        print(f"  Fitting PCA on sources: {available_sources}")
+
+        # Collect all features from PCA sources
+        all_features = []
+        all_feature_names = []
+        source_feature_counts = {}
+
+        for source_name in available_sources:
+            df, mask = self.daily_data[source_name]
+            feature_cols = [c for c in df.columns if c != 'date']
+            source_feature_counts[source_name] = len(feature_cols)
+            all_feature_names.extend([f"{source_name}__{c}" for c in feature_cols])
+
+            # Get values (already normalized)
+            values = df[feature_cols].values
+
+            # Replace missing values with 0 for PCA (will be masked later)
+            values = np.where(values == self.config.missing_value, 0, values)
+            all_features.append(values)
+
+        # Concatenate all features
+        combined_features = np.concatenate(all_features, axis=1)
+        print(f"    Combined shape: {combined_features.shape} ({len(all_feature_names)} features)")
+
+        # Determine number of components
+        if self.config.pca_variance_threshold is not None:
+            # Fit with all components first to determine how many explain threshold variance
+            pca_full = PCA(n_components=min(combined_features.shape))
+            pca_full.fit(combined_features)
+            cumsum = np.cumsum(pca_full.explained_variance_ratio_)
+            n_components = np.argmax(cumsum >= self.config.pca_variance_threshold) + 1
+            n_components = max(n_components, 3)  # At least 3 components
+            print(f"    PCA variance threshold {self.config.pca_variance_threshold}: {n_components} components")
+        else:
+            n_components = min(self.config.pca_n_components, combined_features.shape[1])
+
+        # Fit final PCA
+        pca = PCA(n_components=n_components)
+        pca.fit(combined_features)
+
+        explained_var = pca.explained_variance_ratio_.sum()
+        print(f"    PCA fitted: {n_components} components explain {explained_var:.1%} variance")
+
+        return {
+            'pca': pca,
+            'sources': available_sources,
+            'source_feature_counts': source_feature_counts,
+            'feature_names': all_feature_names,
+            'n_components': n_components,
+            'explained_variance': explained_var,
+        }
+
+    def _apply_pca(self) -> None:
+        """
+        Apply PCA transformation to equipment features.
+
+        Replaces the original PCA sources with a single 'equipment_pca' source
+        containing the principal components.
+        """
+        if self.pca_transformer is None or self.pca_transformer.get('pca') is None:
+            return
+
+        pca = self.pca_transformer['pca']
+        available_sources = self.pca_transformer['sources']
+        source_feature_counts = self.pca_transformer['source_feature_counts']
+
+        if not available_sources:
+            return
+
+        print(f"  Applying PCA transformation to: {available_sources}")
+
+        # Collect features in same order as fitting
+        all_features = []
+        combined_mask = None
+        dates = None
+
+        for source_name in available_sources:
+            df, mask = self.daily_data[source_name]
+            feature_cols = [c for c in df.columns if c != 'date']
+            values = df[feature_cols].values
+
+            # Replace missing values with 0 for transformation
+            values = np.where(values == self.config.missing_value, 0, values)
+            all_features.append(values)
+
+            # Combine masks (observed if ANY source is observed)
+            if combined_mask is None:
+                combined_mask = mask.copy()
+                dates = df['date'].values
+            else:
+                combined_mask = combined_mask | mask
+
+        # Concatenate and transform
+        combined_features = np.concatenate(all_features, axis=1)
+        pca_features = pca.transform(combined_features)
+
+        # Create new DataFrame for PCA features
+        pca_cols = [f'pc_{i+1}' for i in range(pca_features.shape[1])]
+        pca_df = pd.DataFrame(pca_features, columns=pca_cols)
+        pca_df['date'] = dates
+
+        # Reorder columns
+        pca_df = pca_df[['date'] + pca_cols]
+
+        # Remove original PCA sources
+        for source_name in available_sources:
+            del self.daily_data[source_name]
+            if source_name in self.norm_stats:
+                del self.norm_stats[source_name]
+
+        # Add PCA source
+        self.daily_data['equipment_pca'] = (pca_df, combined_mask)
+
+        # Add norm stats for PCA features (already normalized since inputs were normalized)
+        self.norm_stats['equipment_pca'] = {
+            'mean': np.zeros(len(pca_cols)),
+            'std': np.ones(len(pca_cols)),
+            'type': 'pca'
+        }
+
+        print(f"    Created equipment_pca source: {pca_features.shape[1]} components")
+
     def _convert_to_tensors(self) -> None:
         """Convert DataFrames to tensors for efficient access."""
         self.daily_tensors: Dict[str, torch.Tensor] = {}
@@ -2517,114 +2684,6 @@ class MultiResolutionDataset(Dataset):
 
         _elapsed = _time.time() - _start
         print(f"  Precomputed monthly aggregations for {len(self.daily_tensors)} sources in {_elapsed:.2f}s")
-
-    def _load_isw_embeddings(self) -> None:
-        """Load ISW (Institute for the Study of War) narrative embeddings.
-
-        ISW embeddings provide daily narrative context from expert conflict assessments.
-        The embeddings are 1024-dimensional vectors generated from ISW daily assessment texts.
-
-        Loads:
-            - isw_embedding_matrix.npy: Shape (n_dates, 1024) float32 embedding matrix
-            - isw_date_index.json: Maps dates to row indices in the embedding matrix
-
-        Sets instance attributes:
-            - self.isw_embedding_matrix: torch.Tensor of shape (n_dates, 1024)
-            - self.isw_date_to_idx: Dict mapping date strings (YYYY-MM-DD) to matrix row indices
-            - self.isw_embedding_dim: int, the embedding dimension (1024)
-        """
-        embedding_matrix_path = ISW_EMBEDDINGS_DIR / "isw_embedding_matrix.npy"
-        date_index_path = ISW_EMBEDDINGS_DIR / "isw_date_index.json"
-
-        # Initialize as None/empty in case loading fails
-        self.isw_embedding_matrix: Optional[torch.Tensor] = None
-        self.isw_date_to_idx: Dict[str, int] = {}
-        self.isw_embedding_dim: int = 1024  # Default embedding dimension
-
-        if not embedding_matrix_path.exists():
-            warnings.warn(
-                f"ISW embedding matrix not found at {embedding_matrix_path}. "
-                "ISW embeddings will not be available."
-            )
-            return
-
-        if not date_index_path.exists():
-            warnings.warn(
-                f"ISW date index not found at {date_index_path}. "
-                "ISW embeddings will not be available."
-            )
-            return
-
-        try:
-            # Load the embedding matrix
-            embedding_matrix = np.load(embedding_matrix_path)
-            self.isw_embedding_matrix = torch.tensor(embedding_matrix, dtype=torch.float32)
-            self.isw_embedding_dim = embedding_matrix.shape[1]
-
-            # Load the date index
-            with open(date_index_path, 'r') as f:
-                date_index_data = json.load(f)
-
-            # Build date-to-index mapping
-            # The JSON has a "dates" list where index corresponds to row in matrix
-            if "dates" in date_index_data:
-                dates_list = date_index_data["dates"]
-                self.isw_date_to_idx = {date_str: idx for idx, date_str in enumerate(dates_list)}
-            else:
-                warnings.warn(
-                    "ISW date index JSON does not contain 'dates' key. "
-                    "ISW embeddings will not be available."
-                )
-                self.isw_embedding_matrix = None
-                return
-
-            print(f"  Loaded ISW embeddings: {self.isw_embedding_matrix.shape[0]} dates, "
-                  f"{self.isw_embedding_dim}d vectors")
-
-        except Exception as e:
-            warnings.warn(f"Failed to load ISW embeddings: {e}")
-            self.isw_embedding_matrix = None
-            self.isw_date_to_idx = {}
-
-    def _get_isw_embeddings_for_dates(
-        self, dates: np.ndarray
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Retrieve ISW embeddings for a sequence of dates.
-
-        Args:
-            dates: Array of datetime64 or Timestamp objects for the daily sequence
-
-        Returns:
-            Tuple of:
-                - embeddings: Tensor of shape [seq_len, embedding_dim] with ISW embeddings.
-                  Days without ISW data have zero vectors.
-                - mask: Tensor of shape [seq_len] with True where ISW embedding exists.
-        """
-        seq_len = len(dates)
-        embeddings = torch.zeros(seq_len, self.isw_embedding_dim, dtype=torch.float32)
-        mask = torch.zeros(seq_len, dtype=torch.bool)
-
-        # If ISW embeddings weren't loaded, return zeros
-        if self.isw_embedding_matrix is None or not self.isw_date_to_idx:
-            return embeddings, mask
-
-        # Look up embedding for each date
-        for i, date in enumerate(dates):
-            # Convert to string format YYYY-MM-DD
-            if isinstance(date, (pd.Timestamp, datetime)):
-                date_str = date.strftime("%Y-%m-%d")
-            elif isinstance(date, np.datetime64):
-                date_str = pd.Timestamp(date).strftime("%Y-%m-%d")
-            else:
-                date_str = str(date)[:10]  # Take first 10 chars (YYYY-MM-DD)
-
-            # Look up in the date index
-            if date_str in self.isw_date_to_idx:
-                idx = self.isw_date_to_idx[date_str]
-                embeddings[i] = self.isw_embedding_matrix[idx]
-                mask[i] = True
-
-        return embeddings, mask
 
     def __len__(self) -> int:
         """Return number of valid samples in this split."""
@@ -2826,12 +2885,6 @@ class MultiResolutionDataset(Dataset):
         daily_forecast_masks = torch.cat(daily_mask_list, dim=1)
 
         # =====================================================================
-        # ISW NARRATIVE EMBEDDINGS
-        # Retrieve ISW embeddings aligned with the daily sequence
-        # =====================================================================
-        isw_embedding, isw_mask = self._get_isw_embeddings_for_dates(daily_dates)
-
-        # =====================================================================
         # PER-RAION MASKS (for GeographicSourceEncoder)
         # Slice per-raion masks to match the daily sequence
         # =====================================================================
@@ -2854,8 +2907,6 @@ class MultiResolutionDataset(Dataset):
             forecast_masks=forecast_masks,
             daily_forecast_targets=daily_forecast_targets,
             daily_forecast_masks=daily_forecast_masks,
-            isw_embedding=isw_embedding,
-            isw_mask=isw_mask,
             raion_masks=raion_masks if raion_masks else None,
         )
 
@@ -3052,35 +3103,6 @@ def multi_resolution_collate_fn(
                     batched_daily_forecast_masks[i] = sample.daily_forecast_masks
 
     # =========================================================================
-    # BATCH ISW EMBEDDINGS (narrative context aligned with daily sequence)
-    # =========================================================================
-    batched_isw_embedding: Optional[torch.Tensor] = None
-    batched_isw_mask: Optional[torch.Tensor] = None
-
-    # Check if ISW embeddings are available in the first sample
-    if batch[0].isw_embedding is not None:
-        # Get embedding dimension from first sample
-        isw_embedding_dim = batch[0].isw_embedding.shape[1]
-
-        # Initialize batched tensors with padding (zeros for embeddings, False for mask)
-        batched_isw_embedding = torch.zeros(
-            (batch_size, max_daily_len, isw_embedding_dim),
-            dtype=torch.float32
-        )
-        batched_isw_mask = torch.zeros(
-            (batch_size, max_daily_len),
-            dtype=torch.bool
-        )
-
-        # Fill in the embeddings for each sample
-        for i, sample in enumerate(batch):
-            if sample.isw_embedding is not None:
-                seq_len = sample.isw_embedding.shape[0]
-                batched_isw_embedding[i, :seq_len] = sample.isw_embedding
-                if sample.isw_mask is not None:
-                    batched_isw_mask[i, :seq_len] = sample.isw_mask
-
-    # =========================================================================
     # BATCH PER-RAION MASKS (for GeographicSourceEncoder)
     # These provide finer-grained observation info than daily_masks
     # =========================================================================
@@ -3118,8 +3140,6 @@ def multi_resolution_collate_fn(
         'forecast_masks': batched_forecast_masks,
         'daily_forecast_targets': batched_daily_forecast_targets,
         'daily_forecast_masks': batched_daily_forecast_masks,
-        'isw_embedding': batched_isw_embedding,
-        'isw_mask': batched_isw_mask,
         'raion_masks': batched_raion_masks,  # Per-raion masks for GeographicSourceEncoder
         'daily_seq_lens': daily_seq_lens,
         'monthly_seq_lens': monthly_seq_lens,
@@ -3163,14 +3183,17 @@ def create_multi_resolution_dataloaders(
         val_loader: DataLoader for validation data
         test_loader: DataLoader for test data
         norm_stats: Normalization statistics from training data
+        pca_transformer: PCA transformer (if use_pca=True, else None)
     """
     config = config or MultiResolutionConfig()
 
     print("=" * 80)
     print("Creating Multi-Resolution DataLoaders")
     print("=" * 80)
+    if config.use_pca:
+        print(f"  PCA enabled: reducing {config.pca_sources} to {config.pca_n_components} components")
 
-    # Create training dataset first (computes normalization stats)
+    # Create training dataset first (computes normalization stats and fits PCA)
     print("\n--- Training Dataset ---")
     train_dataset = MultiResolutionDataset(
         config=config,
@@ -3181,6 +3204,7 @@ def create_multi_resolution_dataloaders(
     )
 
     norm_stats = train_dataset.norm_stats
+    pca_transformer = train_dataset.pca_transformer  # May be None if use_pca=False
 
     # Create validation dataset
     print("\n--- Validation Dataset ---")
@@ -3190,6 +3214,7 @@ def create_multi_resolution_dataloaders(
         val_ratio=val_ratio,
         test_ratio=test_ratio,
         norm_stats=norm_stats,
+        pca_transformer=pca_transformer,
         seed=seed
     )
 
@@ -3201,6 +3226,7 @@ def create_multi_resolution_dataloaders(
         val_ratio=val_ratio,
         test_ratio=test_ratio,
         norm_stats=norm_stats,
+        pca_transformer=pca_transformer,
         seed=seed
     )
 
@@ -3238,8 +3264,10 @@ def create_multi_resolution_dataloaders(
     print(f"Train: {len(train_dataset)} samples, {len(train_loader)} batches")
     print(f"Val: {len(val_dataset)} samples, {len(val_loader)} batches")
     print(f"Test: {len(test_dataset)} samples, {len(test_loader)} batches")
+    if config.use_pca and pca_transformer:
+        print(f"PCA: {pca_transformer['n_components']} components ({pca_transformer['explained_variance']:.1%} variance)")
 
-    return train_loader, val_loader, test_loader, norm_stats
+    return train_loader, val_loader, test_loader, norm_stats, pca_transformer
 
 
 # =============================================================================

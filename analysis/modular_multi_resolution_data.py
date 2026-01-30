@@ -99,7 +99,7 @@ except ImportError:
 # Import centralized paths
 from config.paths import (
     PROJECT_ROOT, DATA_DIR, VIIRS_DIR, FIRMS_DIR, DEEPSTATE_DIR,
-    ANALYSIS_DIR, ISW_EMBEDDINGS_DIR,
+    ANALYSIS_DIR,
 )
 
 

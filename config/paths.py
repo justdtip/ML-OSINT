@@ -192,6 +192,8 @@ VIINA_DIR = DATA_DIR / "viina"
 
 # Embedding directories
 WAYBACK_DIR = DATA_DIR / "wayback_archives"
+# NOTE: ISW embeddings removed from model on 2026-01-30 (near-zero correlation with latents).
+# Path kept for reference by analysis/validation scripts but not used in training.
 ISW_EMBEDDINGS_DIR = WAYBACK_DIR / "isw_assessments" / "embeddings"
 TIMELINE_DIR = DATA_DIR / "timelines"
 TIMELINE_EMBEDDINGS_DIR = TIMELINE_DIR / "embeddings"

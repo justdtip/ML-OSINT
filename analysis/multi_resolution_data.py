@@ -2524,9 +2524,20 @@ class MultiResolutionDataset(Dataset):
         if self.pca_transformer is None or self.pca_transformer.get('pca') is None:
             return
 
+        # Check if PCA was already applied (via shared cache from train split)
+        if 'equipment_pca' in self.daily_data:
+            print(f"  PCA already applied (using cached equipment_pca)")
+            return
+
         pca = self.pca_transformer['pca']
         available_sources = self.pca_transformer['sources']
         source_feature_counts = self.pca_transformer['source_feature_counts']
+
+        # Check if sources still exist (they may have been removed by train split's PCA)
+        sources_present = [s for s in available_sources if s in self.daily_data]
+        if not sources_present:
+            print(f"  PCA sources already removed (using cached data)")
+            return
 
         if not available_sources:
             return

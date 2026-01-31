@@ -566,6 +566,10 @@ class AvailabilityGatedLoss(nn.Module):
         # Availability info is logged but not returned to match MultiTaskLoss signature
         return total_loss, task_weights
 
+    def get_task_weights(self) -> Dict[str, float]:
+        """Get current task weights from base loss (for API compatibility)."""
+        return self.base_loss.get_task_weights()
+
 
 # =============================================================================
 # 5. CROSS-RESOLUTION CYCLE CONSISTENCY (from gpt52)

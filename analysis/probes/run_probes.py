@@ -749,29 +749,41 @@ class MasterProbeRunner:
                     self.logger.info("ISW alignment AUTO-DETECTED from checkpoint - enabling for model")
 
             # =========================================================================
-            # Infer d_model from checkpoint if not in config
+            # ALWAYS infer d_model from checkpoint weights (ground truth)
             # The source_type_embedding shape is [n_sources, d_model]
+            # Config may be stale or from a different run, so checkpoint is authoritative
             # =========================================================================
-            if 'd_model' not in config_dict:
-                if 'daily_fusion.source_type_embedding.weight' in checkpoint_state:
-                    inferred_d_model = checkpoint_state['daily_fusion.source_type_embedding.weight'].shape[1]
-                    config_dict['d_model'] = inferred_d_model
-                    self.logger.info(f"Inferred d_model={inferred_d_model} from checkpoint source_type_embedding")
-                else:
-                    self.logger.warning("Could not infer d_model from checkpoint, using default=64")
+            if 'daily_fusion.source_type_embedding.weight' in checkpoint_state:
+                inferred_d_model = checkpoint_state['daily_fusion.source_type_embedding.weight'].shape[1]
+                if 'd_model' in config_dict and config_dict['d_model'] != inferred_d_model:
+                    self.logger.warning(
+                        f"Config says d_model={config_dict['d_model']} but checkpoint has d_model={inferred_d_model}. "
+                        f"Using checkpoint value (authoritative)."
+                    )
+                config_dict['d_model'] = inferred_d_model
+                self.logger.info(f"Inferred d_model={inferred_d_model} from checkpoint source_type_embedding")
+            elif 'd_model' not in config_dict:
+                self.logger.warning("Could not infer d_model from checkpoint, using default=64")
 
-            # Infer nhead from checkpoint if not in config (from attention weights)
-            if 'nhead' not in config_dict:
-                # Try to find attention in_proj_weight to infer nhead
-                # Shape is [3*d_model, d_model] for multi-head attention
-                # We can't directly infer nhead, but common ratios are d_model/nhead = 16 or 32
-                d_model = config_dict.get('d_model', 64)
-                if d_model == 128:
-                    config_dict['nhead'] = 8  # Common config for d_model=128
-                    self.logger.info(f"Inferred nhead=8 for d_model=128")
-                elif d_model == 64:
-                    config_dict['nhead'] = 4  # Common config for d_model=64
-                    self.logger.info(f"Inferred nhead=4 for d_model=64")
+            # ALWAYS infer nhead based on d_model (checkpoint is authoritative)
+            # Common ratios are d_model/nhead = 16 for small, 32 for large models
+            d_model = config_dict.get('d_model', 64)
+            inferred_nhead = None
+            if d_model == 256:
+                inferred_nhead = 16  # Common config for d_model=256
+            elif d_model == 128:
+                inferred_nhead = 8  # Common config for d_model=128
+            elif d_model == 64:
+                inferred_nhead = 4  # Common config for d_model=64
+
+            if inferred_nhead is not None:
+                if 'nhead' in config_dict and config_dict['nhead'] != inferred_nhead:
+                    self.logger.warning(
+                        f"Config says nhead={config_dict['nhead']} but d_model={d_model} suggests nhead={inferred_nhead}. "
+                        f"Using inferred value."
+                    )
+                config_dict['nhead'] = inferred_nhead
+                self.logger.info(f"Using nhead={inferred_nhead} for d_model={d_model}")
 
             # Create model with parameters from config (inferred or loaded)
             # Build model kwargs - only include parameters the model supports

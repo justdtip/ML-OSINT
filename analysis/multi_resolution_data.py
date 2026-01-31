@@ -1967,10 +1967,14 @@ class MultiResolutionDataset(Dataset):
         if cache_key in _SHARED_DATA_CACHE:
             print(f"  Using cached data (key={cache_key[:8]}...)")
             cached = _SHARED_DATA_CACHE[cache_key]
-            self.daily_data = cached['daily_data']
-            self.monthly_data = cached['monthly_data']
-            self.raion_mask_data = cached['raion_mask_data']
-            self.alignment = cached['alignment']
+            # Make shallow copies so modifications don't affect the cache
+            # (correlation filter modifies daily_data entries in place)
+            self.daily_data = {k: (df.copy(), mask.copy() if mask is not None else None)
+                               for k, (df, mask) in cached['daily_data'].items()}
+            self.monthly_data = {k: (df.copy(), mask.copy() if mask is not None else None)
+                                 for k, (df, mask) in cached['monthly_data'].items()}
+            self.raion_mask_data = dict(cached['raion_mask_data'])
+            self.alignment = cached['alignment'].copy() if hasattr(cached['alignment'], 'copy') else cached['alignment']
         else:
             print(f"  Loading data (will cache for subsequent splits)...")
             # Load all data sources
@@ -1989,7 +1993,23 @@ class MultiResolutionDataset(Dataset):
         # Compute split indices
         self._compute_splits(val_ratio, test_ratio)
 
-        # Handle normalization
+        # Handle correlation filter for raion sources (removes redundant features)
+        # This MUST run BEFORE normalization so that norm stats are computed on filtered features
+        if self.config.use_correlation_filter:
+            if split == 'train':
+                self.correlation_filter_info = self._fit_correlation_filter()
+            else:
+                if correlation_filter_info is None:
+                    raise ValueError(
+                        f"correlation_filter_info must be provided for {split} split when use_correlation_filter=True"
+                    )
+                self.correlation_filter_info = correlation_filter_info
+            # Apply correlation filter
+            self._apply_correlation_filter()
+        else:
+            self.correlation_filter_info = None
+
+        # Handle normalization (after correlation filter so shapes match)
         if split == 'train':
             self.norm_stats = self._compute_normalization_stats()
         else:
@@ -2018,22 +2038,6 @@ class MultiResolutionDataset(Dataset):
             self._apply_pca()
         else:
             self.pca_transformer = None
-
-        # Handle correlation filter for raion sources (removes redundant features)
-        # This runs BEFORE raion PCA to reduce the feature set first
-        if self.config.use_correlation_filter:
-            if split == 'train':
-                self.correlation_filter_info = self._fit_correlation_filter()
-            else:
-                if correlation_filter_info is None:
-                    raise ValueError(
-                        f"correlation_filter_info must be provided for {split} split when use_correlation_filter=True"
-                    )
-                self.correlation_filter_info = correlation_filter_info
-            # Apply correlation filter
-            self._apply_correlation_filter()
-        else:
-            self.correlation_filter_info = None
 
         # Handle raion PCA for spatial features (reduces per-raion feature dimensionality)
         # This runs AFTER correlation filter if both are enabled

@@ -444,6 +444,15 @@ class SoftplusKendallLoss(nn.Module):
                 weights[task_name] = torch.exp(-scale).item()
         return weights
 
+    def get_uncertainties(self) -> Dict[str, float]:
+        """Get current task uncertainties (variance = exp(scale))."""
+        uncertainties = {}
+        with torch.no_grad():
+            for task_name in self.task_names:
+                scale = F.softplus(self.raw_scales[task_name])
+                uncertainties[task_name] = torch.exp(scale).item()
+        return uncertainties
+
 
 # =============================================================================
 # 4. AVAILABILITY-GATED LOSS (from gpt52)
@@ -569,6 +578,10 @@ class AvailabilityGatedLoss(nn.Module):
     def get_task_weights(self) -> Dict[str, float]:
         """Get current task weights from base loss (for API compatibility)."""
         return self.base_loss.get_task_weights()
+
+    def get_uncertainties(self) -> Dict[str, float]:
+        """Get current task uncertainties from base loss (for API compatibility)."""
+        return self.base_loss.get_uncertainties()
 
 
 # =============================================================================

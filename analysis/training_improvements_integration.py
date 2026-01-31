@@ -242,8 +242,8 @@ class ImprovedTrainingStep:
             Tuple of (total_loss, task_weights)
         """
         if isinstance(self.loss_fn, AvailabilityGatedLoss):
-            total, weights, avail = self.loss_fn(task_losses, targets, masks)
-            return total, weights
+            # AvailabilityGatedLoss returns (total, weights) - targets is optional
+            return self.loss_fn(task_losses, targets, masks)
         elif self.loss_fn is not None:
             return self.loss_fn(task_losses, masks)
         else:

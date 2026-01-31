@@ -520,20 +520,26 @@ class AvailabilityGatedLoss(nn.Module):
     def forward(
         self,
         losses: Dict[str, Tensor],
-        targets: Dict[str, Tensor],
+        targets: Optional[Dict[str, Tensor]] = None,
         masks: Optional[Dict[str, Tensor]] = None,
-    ) -> Tuple[Tensor, Dict[str, float], Dict[str, float]]:
+    ) -> Tuple[Tensor, Dict[str, float]]:
         """
         Compute availability-gated loss.
 
         Args:
             losses: Dict mapping task names to loss tensors
-            targets: Dict of target tensors (for availability computation)
+            targets: Optional dict of target tensors (for availability computation).
+                     If None, all tasks are assumed to have full availability.
             masks: Optional availability masks
 
         Returns:
-            Tuple of (total_loss, task_weights, availability)
+            Tuple of (total_loss, task_weights)
+            Note: availability dict removed from return for API compatibility
         """
+        # If no targets provided, assume full availability (fallback mode)
+        if targets is None:
+            return self.base_loss(losses, masks)
+
         # Compute availability
         availability = self.compute_availability(targets, masks)
 
@@ -556,7 +562,9 @@ class AvailabilityGatedLoss(nn.Module):
             total_loss = torch.tensor(1e-6, device=device, requires_grad=True)
             task_weights = {}
 
-        return total_loss, task_weights, availability
+        # Return only (total_loss, task_weights) for API compatibility
+        # Availability info is logged but not returned to match MultiTaskLoss signature
+        return total_loss, task_weights
 
 
 # =============================================================================
@@ -961,7 +969,9 @@ def test_improvements():
         'task1': torch.randn(10),  # 100% available
         'task2': torch.tensor([float('nan')] * 8 + [1.0, 1.0]),  # 20% available
     }
-    total, weights, avail = gated_loss(losses, targets)
+    # Compute availability separately for testing
+    avail = gated_loss.compute_availability(targets)
+    total, weights = gated_loss(losses, targets)
     print(f"   Availability: {avail}")
     print(f"   Task2 gated out (20% < 50%): {'task2' not in weights} ✓")
 

@@ -136,6 +136,12 @@ from config.paths import (
     HAN_BEST_MODEL, HAN_FINAL_MODEL, ensure_dir,
 )
 
+# Training improvements (synthesized from kimik2/gpt52/gemini proposals)
+from training_improvements_integration import (
+    apply_training_improvements,
+    ImprovedTrainingConfig,
+)
+
 # Training run management (for probe integration)
 from training_output_manager import (
     TrainingRunManager,
@@ -3187,6 +3193,18 @@ def main():
     parser.add_argument('--no-raion', action='store_true', default=False,
                         help='Exclude all raion sources (use only non-spatial sources like equipment/personnel)')
 
+    # Training improvements (synthesized from kimik2/gpt52/gemini proposals)
+    parser.add_argument('--use-improved-training', action='store_true', default=True,
+                        help='Enable training improvements: SoftplusKendall, PCGrad, AvailabilityGating (default: True)')
+    parser.add_argument('--no-improved-training', action='store_true',
+                        help='Disable training improvements (use original MultiTaskLoss)')
+    parser.add_argument('--use-pcgrad', action='store_true', default=True,
+                        help='Use PCGrad gradient surgery to prevent task interference (default: True)')
+    parser.add_argument('--no-pcgrad', action='store_true',
+                        help='Disable PCGrad gradient surgery')
+    parser.add_argument('--min-availability', type=float, default=0.2,
+                        help='Minimum target availability to include a task (default: 0.2)')
+
     # Other arguments
     parser.add_argument('--test', action='store_true',
                         help='Run tests instead of training')
@@ -3525,6 +3543,26 @@ def main():
         temporal_corr_weight=args.temporal_corr_weight,
         temporal_smooth_weight=args.temporal_smooth_weight,
     )
+
+    # Apply training improvements (synthesized from kimik2/gpt52/gemini proposals)
+    use_improved_training = args.use_improved_training and not getattr(args, 'no_improved_training', False)
+    use_pcgrad = args.use_pcgrad and not getattr(args, 'no_pcgrad', False)
+
+    if use_improved_training:
+        print("\n" + "=" * 60)
+        print("APPLYING TRAINING IMPROVEMENTS")
+        print("=" * 60)
+        improvement_config = ImprovedTrainingConfig(
+            use_pcgrad=use_pcgrad,
+            use_softplus_kendall=True,  # Fix negative loss pathology
+            use_availability_gating=True,  # Prevent task collapse
+            min_availability=args.min_availability,
+            use_cycle_consistency=False,  # Requires model changes, disabled for now
+            use_physical_consistency=False,  # Requires model changes, disabled for now
+            use_latent_prediction=False,  # Requires model changes, disabled for now
+        )
+        apply_training_improvements(trainer, improvement_config)
+        print("=" * 60 + "\n")
 
     # Resume if requested
     if args.resume:

@@ -83,17 +83,23 @@ class LatentStatePredictor(nn.Module):
         self,
         context_latent: Tensor,
         return_all_horizons: bool = True,
+        mask: Optional[Tensor] = None,  # Unused, for API compatibility
     ) -> Tensor:
         """
         Predict future latent states from context.
 
         Args:
-            context_latent: Context latent state [batch, d_model]
+            context_latent: Context latent state [batch, d_model] or [batch, seq_len, d_model]
             return_all_horizons: If True, return all horizon predictions
+            mask: Optional mask (unused, for API compatibility with DailyForecastingHead)
 
         Returns:
             Predicted future latents [batch, horizon, d_model] or [batch, d_model]
         """
+        # Handle 3D input by extracting last timestep
+        if context_latent.dim() == 3:
+            context_latent = context_latent[:, -1, :]  # [batch, d_model]
+
         batch_size = context_latent.shape[0]
         device = context_latent.device
 

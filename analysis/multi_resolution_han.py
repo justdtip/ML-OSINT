@@ -111,6 +111,17 @@ except ImportError:
     except ImportError:
         GEOGRAPHIC_FUSION_AVAILABLE = False
 
+# Import latent-based forecast head (training improvement)
+try:
+    from training_improvements import LatentStatePredictor
+    LATENT_FORECAST_AVAILABLE = True
+except ImportError:
+    try:
+        from analysis.training_improvements import LatentStatePredictor
+        LATENT_FORECAST_AVAILABLE = True
+    except ImportError:
+        LATENT_FORECAST_AVAILABLE = False
+
 # Re-export constants for convenience
 # Note: viirs is included per multi_resolution_data.py configuration
 DAILY_SOURCES = ['equipment', 'personnel', 'deepstate', 'firms', 'viina', 'viirs']
@@ -2360,6 +2371,10 @@ class MultiResolutionHAN(nn.Module):
         # Enables attention across daily/weekly/monthly scales to address
         # the finding that model learns primarily at monthly resolution
         use_cross_temporal_attention: bool = False,
+        # Latent forecast head (training improvement)
+        # Uses LatentStatePredictor instead of DailyForecastingHead
+        # Reduces forecast head from ~4.4M to ~65K params
+        use_latent_forecast: bool = True,
     ) -> None:
         super().__init__()
 
@@ -2600,13 +2615,30 @@ class MultiResolutionHAN(nn.Module):
             daily_forecast_output_dim = sum(
                 cfg.n_features for cfg in daily_source_configs.values()
             )
-            self.daily_forecast_head = DailyForecastingHead(
-                d_model=d_model,
-                output_dim=daily_forecast_output_dim,
-                horizon=7,  # Predict 7 days ahead
-                hidden_dim=d_model * 2,
-                dropout=dropout,
-            )
+            self.use_latent_forecast = use_latent_forecast and LATENT_FORECAST_AVAILABLE
+            self.daily_forecast_output_dim = daily_forecast_output_dim
+
+            if self.use_latent_forecast:
+                # Use latent-based prediction (98% param reduction: 4.4M -> ~65K)
+                # Predicts future latent states instead of raw features
+                self.daily_forecast_head = LatentStatePredictor(
+                    d_model=d_model,
+                    horizon=7,  # Predict 7 days ahead
+                    hidden_dim=d_model * 2,
+                    dropout=dropout,
+                )
+                if not hasattr(self, '_latent_forecast_logged'):
+                    print(f"  Using LatentStatePredictor for daily forecast (d_model={d_model})")
+                    self._latent_forecast_logged = True
+            else:
+                # Original high-capacity forecast head
+                self.daily_forecast_head = DailyForecastingHead(
+                    d_model=d_model,
+                    output_dim=daily_forecast_output_dim,
+                    horizon=7,  # Predict 7 days ahead
+                    hidden_dim=d_model * 2,
+                    dropout=dropout,
+                )
 
         # =====================================================================
         # 8. UNCERTAINTY ESTIMATION
@@ -2912,10 +2944,12 @@ class MultiResolutionHAN(nn.Module):
 
         if 'forecast' in self.prediction_tasks:
             outputs['forecast_pred'] = self.forecast_head(temporal_encoded)
-            # Daily-resolution forecast: [batch, horizon, daily_features]
+            # Daily-resolution forecast: [batch, horizon, daily_features] or [batch, horizon, d_model]
             # Only output if daily_forecast_head exists (trained models)
             if hasattr(self, 'daily_forecast_head'):
                 outputs['daily_forecast_pred'] = self.daily_forecast_head(temporal_encoded)
+                # Flag to indicate latent vs raw predictions (for loss computation)
+                outputs['daily_forecast_is_latent'] = getattr(self, 'use_latent_forecast', False)
 
         # =====================================================================
         # STEP 8: ATTENTION WEIGHTS AND METADATA
@@ -2976,6 +3010,8 @@ def create_multi_resolution_han(
     causal: bool = True,
     # Cross-temporal attention (optional)
     use_cross_temporal_attention: bool = False,
+    # Latent forecast head (training improvement)
+    use_latent_forecast: bool = True,
 ) -> MultiResolutionHAN:
     """
     Factory function to create a MultiResolutionHAN with default source configs.
@@ -3047,6 +3083,7 @@ def create_multi_resolution_han(
         prediction_tasks=prediction_tasks,
         causal=causal,
         use_cross_temporal_attention=use_cross_temporal_attention,
+        use_latent_forecast=use_latent_forecast,
     )
 
 

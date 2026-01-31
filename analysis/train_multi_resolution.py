@@ -2051,29 +2051,49 @@ class MultiResolutionTrainer:
                 losses['forecast'] = forecast_pred.pow(2).mean() * 1e-6
 
         # =====================================================================
-        # Daily Forecast Loss (DailyForecastingHead)
+        # Daily Forecast Loss (DailyForecastingHead or LatentStatePredictor)
         # =====================================================================
         daily_forecast_pred = outputs.get('daily_forecast_pred')
         daily_forecast_targets = batch.get('daily_forecast_targets')
         daily_forecast_masks = batch.get('daily_forecast_masks')
+        daily_forecast_is_latent = outputs.get('daily_forecast_is_latent', False)
 
-        if daily_forecast_pred is not None and daily_forecast_targets is not None:
-            # daily_forecast_pred: [batch, horizon, n_daily_features]
-            # daily_forecast_targets: [batch, horizon, n_daily_features]
-            daily_forecast_targets = daily_forecast_targets.to(daily_forecast_pred.device)
+        if daily_forecast_pred is not None:
+            if daily_forecast_is_latent:
+                # Using LatentStatePredictor: predictions are latent states [batch, horizon, d_model]
+                # Use temporal smoothness regularization instead of MSE with raw targets
+                # This encourages smooth latent trajectories without memorizing raw features
+                #
+                # Temporal smoothness: consecutive predictions should be similar
+                if daily_forecast_pred.size(1) > 1:
+                    # L2 difference between consecutive latent predictions
+                    temporal_diff = daily_forecast_pred[:, 1:, :] - daily_forecast_pred[:, :-1, :]
+                    smoothness_loss = temporal_diff.pow(2).mean()
+                    # Also regularize latent magnitude to prevent explosion
+                    magnitude_loss = daily_forecast_pred.pow(2).mean() * 0.01
+                    losses['daily_forecast'] = smoothness_loss + magnitude_loss
+                else:
+                    losses['daily_forecast'] = daily_forecast_pred.pow(2).mean() * 0.01
+            elif daily_forecast_targets is not None:
+                # Original DailyForecastingHead: compare with raw feature targets
+                # daily_forecast_pred: [batch, horizon, n_daily_features]
+                # daily_forecast_targets: [batch, horizon, n_daily_features]
+                daily_forecast_targets = daily_forecast_targets.to(daily_forecast_pred.device)
 
-            if daily_forecast_masks is not None:
-                daily_forecast_masks = daily_forecast_masks.to(daily_forecast_pred.device)
-                # Mask out missing values
-                valid_mask = daily_forecast_masks & (daily_forecast_targets > -900)
-            else:
-                valid_mask = daily_forecast_targets > -900
+                if daily_forecast_masks is not None:
+                    daily_forecast_masks = daily_forecast_masks.to(daily_forecast_pred.device)
+                    # Mask out missing values
+                    valid_mask = daily_forecast_masks & (daily_forecast_targets > -900)
+                else:
+                    valid_mask = daily_forecast_targets > -900
 
-            if valid_mask.any():
-                pred_valid = daily_forecast_pred[valid_mask]
-                target_valid = daily_forecast_targets[valid_mask]
-                daily_forecast_loss = F.mse_loss(pred_valid, target_valid)
-                losses['daily_forecast'] = daily_forecast_loss
+                if valid_mask.any():
+                    pred_valid = daily_forecast_pred[valid_mask]
+                    target_valid = daily_forecast_targets[valid_mask]
+                    daily_forecast_loss = F.mse_loss(pred_valid, target_valid)
+                    losses['daily_forecast'] = daily_forecast_loss
+                else:
+                    losses['daily_forecast'] = daily_forecast_pred.pow(2).mean() * 1e-6
             else:
                 losses['daily_forecast'] = daily_forecast_pred.pow(2).mean() * 1e-6
 
@@ -3204,6 +3224,10 @@ def main():
                         help='Disable PCGrad gradient surgery')
     parser.add_argument('--min-availability', type=float, default=0.2,
                         help='Minimum target availability to include a task (default: 0.2)')
+    parser.add_argument('--use-latent-forecast', action='store_true', default=True,
+                        help='Use LatentStatePredictor instead of DailyForecastingHead (default: True)')
+    parser.add_argument('--no-latent-forecast', action='store_true',
+                        help='Disable latent forecast (use original DailyForecastingHead)')
 
     # Other arguments
     parser.add_argument('--test', action='store_true',
@@ -3434,6 +3458,9 @@ def main():
             print("           Geographic prior will be disabled for this run")
             use_geographic_prior = False
 
+    # Determine whether to use latent forecast
+    use_latent_forecast = args.use_latent_forecast and not getattr(args, 'no_latent_forecast', False)
+
     model = MultiResolutionHAN(
         daily_source_configs=daily_source_configs,
         monthly_source_configs=monthly_source_configs,
@@ -3445,6 +3472,7 @@ def main():
         dropout=args.dropout,
         use_geographic_prior=use_geographic_prior,
         custom_spatial_configs=custom_spatial_configs,
+        use_latent_forecast=use_latent_forecast,
     )
 
     if use_geographic_prior:

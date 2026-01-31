@@ -590,6 +590,57 @@ class MasterProbeRunner:
             if 'detrend_viirs' in config_dict:
                 data_config_kwargs['detrend_viirs'] = config_dict['detrend_viirs']
 
+            # Infer raion sources from checkpoint model state dict
+            checkpoint_daily_sources = set()
+            for key in inspection_state_dict.keys():
+                if key.startswith('daily_encoders.'):
+                    source = key.split('.')[1]
+                    checkpoint_daily_sources.add(source)
+
+            self.logger.info(f"Checkpoint daily sources: {sorted(checkpoint_daily_sources)}")
+
+            # Check for raion PCA sources
+            raion_pca_sources_in_ckpt = [s for s in checkpoint_daily_sources if '_raion_pca' in s]
+            if raion_pca_sources_in_ckpt:
+                # Extract base raion source names (without _pca suffix)
+                base_raion_sources = [s.replace('_pca', '') for s in raion_pca_sources_in_ckpt]
+                self.logger.info(f"Detected raion PCA sources in checkpoint: {raion_pca_sources_in_ckpt}")
+                data_config_kwargs['use_raion_pca'] = True
+                data_config_kwargs['raion_pca_sources'] = base_raion_sources
+                # Use same PCA config as training
+                data_config_kwargs['raion_pca_n_components'] = config_dict.get('raion_pca_n_components', 8)
+                data_config_kwargs['raion_pca_variance_threshold'] = config_dict.get('raion_pca_variance', 0.9)
+
+                # Raion sources need to be in daily_sources to be loaded, then PCA is applied
+                # daily_sources should include both base sources AND the raion sources (before PCA)
+                non_raion_sources = [s for s in checkpoint_daily_sources if '_raion' not in s]
+                # Raion sources go in daily_sources (without _pca suffix)
+                data_config_kwargs['daily_sources'] = sorted(non_raion_sources) + base_raion_sources
+                self.logger.info(f"Setting daily_sources to: {data_config_kwargs['daily_sources']}")
+
+            # Also infer monthly source count from checkpoint
+            for key in inspection_state_dict.keys():
+                if 'monthly_encoder.source_type_embedding.weight' in key:
+                    n_monthly_sources = inspection_state_dict[key].shape[0]
+                    self.logger.info(f"Detected {n_monthly_sources} monthly sources in checkpoint")
+                    # Default monthly sources are 5: sentinel, hdx_conflict, hdx_food, hdx_rainfall, iom
+                    # If checkpoint has fewer (e.g., 4 = no IOM), exclude missing sources
+                    default_monthly = ['sentinel', 'hdx_conflict', 'hdx_food', 'hdx_rainfall', 'iom']
+                    if n_monthly_sources < 5:
+                        data_config_kwargs['monthly_sources'] = default_monthly[:n_monthly_sources]
+                        self.logger.info(f"Setting monthly_sources to: {data_config_kwargs['monthly_sources']}")
+                    break
+            else:
+                # Check for non-PCA raion sources - these go in daily_sources directly
+                raion_sources = [s for s in checkpoint_daily_sources if '_raion' in s and '_pca' not in s]
+                if raion_sources:
+                    self.logger.info(f"Detected raion sources in checkpoint: {raion_sources}")
+                    non_raion_sources = [s for s in checkpoint_daily_sources if '_raion' not in s]
+                    data_config_kwargs['daily_sources'] = sorted(non_raion_sources) + sorted(raion_sources)
+                else:
+                    # No raion sources - use only the sources from checkpoint
+                    data_config_kwargs['daily_sources'] = sorted(checkpoint_daily_sources)
+
             data_config = MultiResolutionConfig(**data_config_kwargs)
 
             # Log the data configuration being used for debugging
@@ -723,19 +774,27 @@ class MasterProbeRunner:
                     self.logger.info(f"Inferred nhead=4 for d_model=64")
 
             # Create model with parameters from config (inferred or loaded)
-            self.model = MultiResolutionHAN(
-                daily_source_configs=daily_source_configs,
-                monthly_source_configs=monthly_source_configs,
-                d_model=config_dict.get('d_model', 64),
-                nhead=config_dict.get('nhead', 4),
-                num_daily_layers=config_dict.get('num_daily_layers', 3),
-                num_monthly_layers=config_dict.get('num_monthly_layers', 2),
-                num_fusion_layers=config_dict.get('num_fusion_layers', 2),
-                num_temporal_layers=2,
-                dropout=0.0,  # No dropout for inference
-                use_isw_alignment=use_isw_alignment,
-                isw_dim=1024,  # Voyage embedding dimension
-            )
+            # Build model kwargs - only include parameters the model supports
+            model_kwargs = {
+                'daily_source_configs': daily_source_configs,
+                'monthly_source_configs': monthly_source_configs,
+                'd_model': config_dict.get('d_model', 64),
+                'nhead': config_dict.get('nhead', 4),
+                'num_daily_layers': config_dict.get('num_daily_layers', 3),
+                'num_monthly_layers': config_dict.get('num_monthly_layers', 2),
+                'num_fusion_layers': config_dict.get('num_fusion_layers', 2),
+                'num_temporal_layers': 2,
+                'dropout': 0.0,  # No dropout for inference
+            }
+
+            # Only add use_latent_forecast if checkpoint indicates it was used
+            if any('daily_forecast_head.context_encoder' in k for k in inspection_state_dict.keys()):
+                model_kwargs['use_latent_forecast'] = True
+                self.logger.info("Detected LatentStatePredictor in checkpoint - enabling use_latent_forecast")
+            else:
+                model_kwargs['use_latent_forecast'] = False
+
+            self.model = MultiResolutionHAN(**model_kwargs)
 
             # Reuse the checkpoint we already loaded for inspection, but move to correct device
             # This avoids loading the checkpoint twice

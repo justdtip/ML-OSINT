@@ -910,6 +910,498 @@ def create_improved_loss_fn(
 
 
 # =============================================================================
+# 9. A³DRO LOSS (from gpt52) - RECOMMENDED FOR VALIDATION
+# =============================================================================
+# Availability-Aware Anchored Distributionally-Robust Objective
+# KEY ADVANTAGE: No learned weights -> validation loss directly comparable
+
+
+class A3DROLoss(nn.Module):
+    """
+    Availability-Aware Anchored Distributionally-Robust Objective (A³DRO).
+
+    Replaces learned task weighting with principled robust aggregation:
+    1. Normalize each task by frozen anchor/scale -> prevents domination
+    2. Soft gate by label availability -> prevents collapse under sparse supervision
+    3. Robust log-sum-exp across tasks -> focuses on worst-performing task
+    4. NO LEARNED WEIGHTS -> validation/early stopping are meaningful
+
+    Mathematical formulation:
+        r_i = log(L_i + ε) - log(b_i + ε)  # Anchored regret
+        g_i = sigmoid(κ(a_i - a_min))      # Soft availability gate
+        p̃_i = p_i * g_i / Σ_j(p_j * g_j)  # Effective prior
+        L = λ * log(Σ_i p̃_i * exp(r_i / λ))  # Robust aggregation
+
+    Args:
+        task_names: List of task identifiers
+        priors: Dict of prior task weights (default: uniform)
+        lambda_temp: Temperature for robust aggregation (smaller = more focus on worst)
+        a_min: Minimum availability threshold
+        kappa: Steepness of availability gate sigmoid
+        warmup_epochs: Epochs before freezing baselines
+    """
+
+    def __init__(
+        self,
+        task_names: List[str],
+        priors: Optional[Dict[str, float]] = None,
+        lambda_temp: float = 1.0,
+        a_min: float = 0.2,
+        kappa: float = 20.0,
+        warmup_epochs: int = 3,
+    ) -> None:
+        super().__init__()
+
+        self.task_names = list(task_names)
+        self.lambda_temp = lambda_temp
+        self.a_min = a_min
+        self.kappa = kappa
+        self.warmup_epochs = warmup_epochs
+
+        # Task priors (fixed, not learned)
+        if priors is None:
+            priors = {name: 1.0 / len(task_names) for name in task_names}
+        self.priors = priors
+
+        # Anchors and scales (frozen after warmup)
+        # Using buffers so they're saved with state_dict but not trained
+        self.register_buffer(
+            'baselines',
+            torch.zeros(len(task_names))
+        )
+        self.register_buffer(
+            'scales',
+            torch.ones(len(task_names))
+        )
+        self.register_buffer(
+            'baseline_frozen',
+            torch.tensor(False)
+        )
+
+        # EMA for computing baselines during warmup
+        self._loss_ema = {name: None for name in task_names}
+        self._loss_var_ema = {name: None for name in task_names}
+        self._ema_alpha = 0.1
+
+    def update_baselines(self, losses: Dict[str, Tensor], epoch: int) -> None:
+        """Update baseline EMAs during warmup, freeze after warmup_epochs."""
+        if self.baseline_frozen.item():
+            return
+
+        for i, task_name in enumerate(self.task_names):
+            if task_name not in losses:
+                continue
+
+            loss_val = losses[task_name].detach().item()
+
+            # Update EMA
+            if self._loss_ema[task_name] is None:
+                self._loss_ema[task_name] = loss_val
+                self._loss_var_ema[task_name] = 0.0
+            else:
+                delta = loss_val - self._loss_ema[task_name]
+                self._loss_ema[task_name] += self._ema_alpha * delta
+                self._loss_var_ema[task_name] = (
+                    (1 - self._ema_alpha) * self._loss_var_ema[task_name] +
+                    self._ema_alpha * delta ** 2
+                )
+
+        # Freeze after warmup
+        if epoch >= self.warmup_epochs:
+            for i, task_name in enumerate(self.task_names):
+                if self._loss_ema[task_name] is not None:
+                    self.baselines[i] = self._loss_ema[task_name]
+                    # Use sqrt of variance as scale (MAD approximation)
+                    self.scales[i] = max(
+                        (self._loss_var_ema[task_name] ** 0.5),
+                        1e-6
+                    )
+            self.baseline_frozen.fill_(True)
+
+    def compute_availability(
+        self,
+        targets: Optional[Dict[str, Tensor]] = None,
+        masks: Optional[Dict[str, Tensor]] = None,
+    ) -> Dict[str, float]:
+        """Compute availability for each task."""
+        availability = {}
+        for task_name in self.task_names:
+            if masks and task_name in masks:
+                avail = masks[task_name].float().mean().item()
+            elif targets and task_name in targets:
+                target = targets[task_name]
+                valid = ~torch.isnan(target) if target.is_floating_point() else torch.ones_like(target, dtype=torch.bool)
+                avail = valid.float().mean().item()
+            else:
+                avail = 1.0  # Assume full availability if not provided
+            availability[task_name] = avail
+        return availability
+
+    def forward(
+        self,
+        losses: Dict[str, Tensor],
+        targets: Optional[Dict[str, Tensor]] = None,
+        masks: Optional[Dict[str, Tensor]] = None,
+        epoch: int = 0,
+    ) -> Tuple[Tensor, Dict[str, float]]:
+        """
+        Compute A³DRO aggregated loss.
+
+        Args:
+            losses: Dict mapping task names to scalar loss tensors
+            targets: Optional targets for availability computation
+            masks: Optional explicit availability masks
+            epoch: Current epoch (for baseline warmup)
+
+        Returns:
+            Tuple of (total_loss, effective_weights dict)
+        """
+        device = next(iter(losses.values())).device
+
+        # Update baselines during warmup
+        if not self.baseline_frozen.item():
+            self.update_baselines(losses, epoch)
+
+        # Compute availability
+        availability = self.compute_availability(targets, masks)
+
+        # Soft availability gating: g_i = sigmoid(κ(a_i - a_min))
+        gates = {}
+        for task_name in self.task_names:
+            a_i = availability.get(task_name, 1.0)
+            g_i = torch.sigmoid(
+                torch.tensor(self.kappa * (a_i - self.a_min), device=device)
+            )
+            gates[task_name] = g_i
+
+        # Effective prior with gating: p̃_i = p_i * g_i / Z
+        p_eff_unnorm = {
+            name: self.priors.get(name, 1.0) * gates[name]
+            for name in self.task_names
+        }
+        Z = sum(p_eff_unnorm.values()) + 1e-8
+        p_eff = {name: p_eff_unnorm[name] / Z for name in self.task_names}
+
+        # Compute anchored regrets: r_i = log(L_i) - log(b_i)
+        regrets = []
+        valid_tasks = []
+        effective_weights = {}
+
+        for i, task_name in enumerate(self.task_names):
+            if task_name not in losses:
+                continue
+
+            task_loss = losses[task_name]
+            if torch.isnan(task_loss) or torch.isinf(task_loss):
+                continue
+
+            # Anchored log-ratio regret
+            if self.baseline_frozen.item():
+                baseline = self.baselines[i]
+            else:
+                baseline = torch.tensor(1.0, device=device)
+            regret = torch.log(task_loss + 1e-8) - torch.log(baseline + 1e-8)
+
+            regrets.append(regret)
+            valid_tasks.append(task_name)
+            effective_weights[task_name] = p_eff[task_name].item()
+
+        if not regrets:
+            return torch.tensor(0.0, device=device, requires_grad=True), {}
+
+        # Robust log-sum-exp aggregation
+        # L = λ * log(Σ_i p̃_i * exp(r_i / λ))
+        logits = torch.stack([
+            torch.log(p_eff[name] + 1e-12) + regrets[i] / self.lambda_temp
+            for i, name in enumerate(valid_tasks)
+        ])
+        total_loss = self.lambda_temp * torch.logsumexp(logits, dim=0)
+
+        return total_loss, effective_weights
+
+    def get_baselines(self) -> Dict[str, float]:
+        """Get frozen baseline values."""
+        return {
+            name: self.baselines[i].item()
+            for i, name in enumerate(self.task_names)
+        }
+
+    def get_task_weights(self) -> Dict[str, float]:
+        """Get current effective task weights (for API compatibility).
+
+        A³DRO doesn't have learned weights - returns uniform effective weights.
+        The actual weighting happens dynamically based on regret.
+        """
+        # Return uniform weights since A³DRO uses dynamic robust aggregation
+        return {name: 1.0 / len(self.task_names) for name in self.task_names}
+
+    def get_uncertainties(self) -> Dict[str, float]:
+        """Get task uncertainties (for API compatibility).
+
+        A³DRO doesn't track uncertainties like Kendall - returns scale factors.
+        """
+        return {
+            name: self.scales[i].item()
+            for i, name in enumerate(self.task_names)
+        }
+
+
+# =============================================================================
+# 10. SPECTRAL DRIFT PENALTY (from gemini) - FOR FORECAST REGULARIZATION
+# =============================================================================
+# Penalizes low-frequency (trend) errors more than high-frequency (noise) errors
+
+
+class SpectralDriftPenalty(nn.Module):
+    """
+    FFT-based spectral loss that penalizes trend drift more than noise.
+
+    The key insight: for forecasting, we care about the *trend* (low frequency)
+    more than the day-to-day jitter (high frequency). This loss:
+    1. Transforms prediction error to frequency domain via FFT
+    2. Weights low-frequency components more heavily
+    3. Returns weighted spectral magnitude
+
+    This directly addresses the 140x Train/Val gap by ignoring high-frequency
+    noise that the model was memorizing.
+
+    Args:
+        weight_decay: Exponential decay rate for frequency weights
+            Higher = more focus on very low frequencies
+        weight: Multiplier for the spectral loss
+    """
+
+    def __init__(
+        self,
+        weight_decay: float = 0.5,
+        weight: float = 0.1,
+    ) -> None:
+        super().__init__()
+        self.weight_decay = weight_decay
+        self.weight = weight
+
+    def forward(
+        self,
+        predictions: Tensor,
+        targets: Tensor,
+        mask: Optional[Tensor] = None,
+    ) -> Tensor:
+        """
+        Compute spectral drift penalty.
+
+        Args:
+            predictions: Predicted sequence [batch, seq_len, features]
+            targets: Target sequence [batch, seq_len, features]
+            mask: Optional mask for valid timesteps [batch, seq_len]
+
+        Returns:
+            Scalar spectral drift loss
+        """
+        # Compute error signal
+        error = predictions - targets  # [batch, seq_len, features]
+
+        # Apply mask if provided
+        if mask is not None:
+            error = error * mask.unsqueeze(-1)
+
+        # FFT along time dimension
+        # Using rfft for real signals (more efficient)
+        fft_error = torch.fft.rfft(error, dim=1)
+        magnitude = torch.abs(fft_error)  # [batch, freq_bins, features]
+
+        # Create low-pass filter weighting
+        # Lower frequencies (DC, trends) get higher weight
+        freq_bins = magnitude.shape[1]
+        freqs = torch.arange(freq_bins, device=magnitude.device, dtype=magnitude.dtype)
+        weights = torch.exp(-self.weight_decay * freqs)  # [freq_bins]
+
+        # Expand for broadcasting: [1, freq_bins, 1]
+        weights = weights.view(1, -1, 1)
+
+        # Weighted spectral magnitude
+        weighted_magnitude = weights * magnitude
+        spectral_loss = weighted_magnitude.mean()
+
+        return self.weight * spectral_loss
+
+
+# =============================================================================
+# 11. UNIFIED VALIDATION LOSS (Recommended from audit)
+# =============================================================================
+# Fixed weights for comparable validation metrics across epochs
+
+
+class UniformValidationLoss(nn.Module):
+    """
+    Fixed uniform weights for validation - ensures loss comparability.
+
+    This addresses the key audit finding: learned weights during training
+    make validation loss non-comparable across epochs and runs.
+
+    For validation and early stopping, use this instead of SoftplusKendallLoss.
+
+    Args:
+        task_names: List of task identifiers
+        weights: Optional fixed weights (default: uniform 1/N)
+    """
+
+    def __init__(
+        self,
+        task_names: List[str],
+        weights: Optional[Dict[str, float]] = None,
+    ) -> None:
+        super().__init__()
+
+        self.task_names = list(task_names)
+        if weights is None:
+            weights = {name: 1.0 / len(task_names) for name in task_names}
+        self.weights = weights
+
+    def forward(
+        self,
+        losses: Dict[str, Tensor],
+        masks: Optional[Dict[str, Tensor]] = None,
+    ) -> Tuple[Tensor, Dict[str, float]]:
+        """
+        Compute uniformly weighted loss.
+
+        Args:
+            losses: Dict mapping task names to scalar loss tensors
+            masks: Unused, for API compatibility
+
+        Returns:
+            Tuple of (total_loss, weights dict)
+        """
+        device = next(iter(losses.values())).device
+        total_loss = torch.tensor(0.0, device=device)
+        used_weights = {}
+
+        for task_name in self.task_names:
+            if task_name not in losses:
+                continue
+
+            task_loss = losses[task_name]
+            if torch.isnan(task_loss) or torch.isinf(task_loss):
+                continue
+
+            weight = self.weights.get(task_name, 1.0 / len(self.task_names))
+            total_loss = total_loss + weight * task_loss
+            used_weights[task_name] = weight
+
+        return total_loss, used_weights
+
+    def get_task_weights(self) -> Dict[str, float]:
+        """Get fixed task weights."""
+        return self.weights.copy()
+
+    def get_uncertainties(self) -> Dict[str, float]:
+        """Get task uncertainties (returns 1.0 for all - no uncertainty tracking)."""
+        return {name: 1.0 for name in self.task_names}
+
+
+# =============================================================================
+# 12. HYBRID LOSS CONFIGURATION (Recommended Final Approach)
+# =============================================================================
+
+
+class HybridLossConfig:
+    """
+    Recommended configuration combining best of all proposals:
+    - A³DRO or SoftplusKendall for training (with AvailabilityGating)
+    - UniformValidation for validation/early stopping
+    - SpectralDriftPenalty for forecast regularization
+    - CrossResolutionCycleConsistency for daily/monthly alignment
+    """
+
+    def __init__(
+        self,
+        # Loss selection
+        use_a3dro: bool = True,  # Recommended: True for robust aggregation
+        use_spectral_penalty: bool = True,  # Recommended: True for forecast regularization
+        use_cycle_consistency: bool = True,
+
+        # A³DRO parameters
+        lambda_temp: float = 0.5,  # Smaller = more focus on worst task
+        warmup_epochs: int = 3,
+
+        # Spectral penalty parameters
+        spectral_weight_decay: float = 0.5,
+        spectral_weight: float = 0.1,
+
+        # Cycle consistency parameters
+        cycle_weight: float = 0.2,
+
+        # Availability gating (still useful even with A³DRO soft gating)
+        use_hard_availability_gating: bool = True,
+        min_availability: float = 0.2,
+    ):
+        self.use_a3dro = use_a3dro
+        self.use_spectral_penalty = use_spectral_penalty
+        self.use_cycle_consistency = use_cycle_consistency
+        self.lambda_temp = lambda_temp
+        self.warmup_epochs = warmup_epochs
+        self.spectral_weight_decay = spectral_weight_decay
+        self.spectral_weight = spectral_weight
+        self.cycle_weight = cycle_weight
+        self.use_hard_availability_gating = use_hard_availability_gating
+        self.min_availability = min_availability
+
+
+def create_training_losses(
+    task_names: List[str],
+    config: HybridLossConfig,
+) -> Dict[str, nn.Module]:
+    """
+    Create training and validation loss functions based on config.
+
+    Returns:
+        Dict with keys:
+            'training': Loss for training (A³DRO or SoftplusKendall)
+            'validation': Loss for validation (UniformValidation)
+            'spectral': Optional SpectralDriftPenalty
+            'cycle': Optional CrossResolutionCycleConsistency
+    """
+    losses = {}
+
+    # Training loss
+    if config.use_a3dro:
+        base_loss = A3DROLoss(
+            task_names=task_names,
+            lambda_temp=config.lambda_temp,
+            warmup_epochs=config.warmup_epochs,
+        )
+    else:
+        base_loss = SoftplusKendallLoss(task_names)
+
+    if config.use_hard_availability_gating:
+        losses['training'] = AvailabilityGatedLoss(
+            task_names=task_names,
+            min_availability=config.min_availability,
+            base_loss=base_loss,
+        )
+    else:
+        losses['training'] = base_loss
+
+    # Validation loss (ALWAYS use fixed weights for comparability)
+    losses['validation'] = UniformValidationLoss(task_names)
+
+    # Auxiliary losses
+    if config.use_spectral_penalty:
+        losses['spectral'] = SpectralDriftPenalty(
+            weight_decay=config.spectral_weight_decay,
+            weight=config.spectral_weight,
+        )
+
+    if config.use_cycle_consistency:
+        losses['cycle'] = CrossResolutionCycleConsistency(
+            loss_type='cosine',
+            weight=config.cycle_weight,
+        )
+
+    return losses
+
+
+# =============================================================================
 # TESTING
 # =============================================================================
 
@@ -998,7 +1490,69 @@ def test_improvements():
     print(f"   Availability: {avail}")
     print(f"   Task2 gated out (20% < 50%): {'task2' not in weights} ✓")
 
-    print("\n✓ All tests passed!")
+    # Test A³DRO Loss
+    print("\n8. Testing A3DROLoss...")
+    a3dro = A3DROLoss(
+        task_names=['task1', 'task2', 'task3'],
+        lambda_temp=0.5,
+        warmup_epochs=2,
+    )
+    losses = {
+        'task1': torch.tensor(1.0),
+        'task2': torch.tensor(5.0),  # Higher loss
+        'task3': torch.tensor(0.5),
+    }
+    # Simulate warmup
+    for epoch in range(3):
+        total, eff_weights = a3dro(losses, epoch=epoch)
+    print(f"   Total A³DRO loss: {total.item():.4f}")
+    print(f"   Effective weights: {eff_weights}")
+    print(f"   Baselines frozen: {a3dro.baseline_frozen.item()} ✓")
+    print(f"   Baselines: {a3dro.get_baselines()}")
+
+    # Test SpectralDriftPenalty
+    print("\n9. Testing SpectralDriftPenalty...")
+    spectral = SpectralDriftPenalty(weight_decay=0.5, weight=0.1)
+    predictions = torch.randn(batch_size, horizon, n_features)
+    targets_seq = torch.randn(batch_size, horizon, n_features)
+    spectral_loss = spectral(predictions, targets_seq)
+    assert spectral_loss.item() >= 0, "Spectral loss should be non-negative"
+    print(f"   Spectral drift loss: {spectral_loss.item():.4f} ✓")
+
+    # Test UniformValidationLoss
+    print("\n10. Testing UniformValidationLoss...")
+    uniform_val = UniformValidationLoss(['task1', 'task2', 'task3'])
+    losses = {
+        'task1': torch.tensor(1.0),
+        'task2': torch.tensor(2.0),
+        'task3': torch.tensor(3.0),
+    }
+    total, weights = uniform_val(losses)
+    expected = (1.0 + 2.0 + 3.0) / 3
+    assert abs(total.item() - expected) < 1e-5, "Uniform loss should be simple average"
+    print(f"   Total uniform loss: {total.item():.4f} (expected: {expected:.4f}) ✓")
+    print(f"   Weights: {weights}")
+
+    # Test HybridLossConfig and factory
+    print("\n11. Testing HybridLossConfig + create_training_losses...")
+    config = HybridLossConfig(
+        use_a3dro=True,
+        use_spectral_penalty=True,
+        use_cycle_consistency=True,
+    )
+    task_names = ['regime', 'casualty', 'forecast', 'daily_forecast']
+    loss_modules = create_training_losses(task_names, config)
+    assert 'training' in loss_modules
+    assert 'validation' in loss_modules
+    assert 'spectral' in loss_modules
+    assert 'cycle' in loss_modules
+    print(f"   Training loss type: {type(loss_modules['training']).__name__}")
+    print(f"   Validation loss type: {type(loss_modules['validation']).__name__}")
+    print(f"   Created all loss modules ✓")
+
+    print("\n" + "="*60)
+    print("✓ All tests passed!")
+    print("="*60)
 
 
 if __name__ == '__main__':

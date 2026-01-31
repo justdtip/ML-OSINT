@@ -140,6 +140,10 @@ from config.paths import (
 from training_improvements_integration import (
     apply_training_improvements,
     ImprovedTrainingConfig,
+    # New hybrid loss integration
+    apply_hybrid_loss_improvements,
+    HybridLossConfig,
+    HybridTrainingStep,
 )
 
 # Training run management (for probe integration)
@@ -3228,6 +3232,14 @@ def main():
                         help='Use LatentStatePredictor instead of DailyForecastingHead (default: True)')
     parser.add_argument('--no-latent-forecast', action='store_true',
                         help='Disable latent forecast (use original DailyForecastingHead)')
+    parser.add_argument('--use-hybrid-loss', action='store_true', default=True,
+                        help='Use A³DRO + Spectral + Uniform Validation hybrid loss (recommended, default: True)')
+    parser.add_argument('--no-hybrid-loss', action='store_true',
+                        help='Disable hybrid loss (use SoftplusKendall instead of A³DRO)')
+    parser.add_argument('--spectral-weight', type=float, default=0.1,
+                        help='Weight for spectral drift penalty (default: 0.1)')
+    parser.add_argument('--a3dro-lambda', type=float, default=0.5,
+                        help='A³DRO temperature (smaller = focus on worst task, default: 0.5)')
 
     # Other arguments
     parser.add_argument('--test', action='store_true',
@@ -3260,6 +3272,9 @@ def main():
     # Resolve memory optimization flags
     use_amp = args.use_amp and not args.no_amp
     gradient_checkpointing = args.gradient_checkpointing and not args.no_gradient_checkpointing
+
+    # Resolve hybrid loss flag
+    use_hybrid_loss = args.use_hybrid_loss and not args.no_hybrid_loss
 
     print("=" * 80)
     print("MULTI-RESOLUTION HAN TRAINING PIPELINE")
@@ -3580,16 +3595,35 @@ def main():
         print("\n" + "=" * 60)
         print("APPLYING TRAINING IMPROVEMENTS")
         print("=" * 60)
-        improvement_config = ImprovedTrainingConfig(
-            use_pcgrad=use_pcgrad,
-            use_softplus_kendall=True,  # Fix negative loss pathology
-            use_availability_gating=True,  # Prevent task collapse
-            min_availability=args.min_availability,
-            use_cycle_consistency=False,  # Requires model changes, disabled for now
-            use_physical_consistency=False,  # Requires model changes, disabled for now
-            use_latent_prediction=False,  # Requires model changes, disabled for now
-        )
-        apply_training_improvements(trainer, improvement_config)
+
+        if use_hybrid_loss:
+            # Use recommended hybrid approach: A³DRO + Spectral + Uniform Validation
+            hybrid_config = HybridLossConfig(
+                use_a3dro=True,  # Robust aggregation, no learned weights
+                use_spectral_penalty=True,  # FFT-based forecast regularization
+                use_cycle_consistency=True,  # Daily/monthly alignment
+                lambda_temp=args.a3dro_lambda,  # A³DRO temperature
+                spectral_weight=args.spectral_weight,  # Spectral penalty weight
+                cycle_weight=0.2,  # Cycle consistency weight
+                use_hard_availability_gating=True,  # Prevent task collapse
+                min_availability=args.min_availability,
+            )
+            apply_hybrid_loss_improvements(trainer, hybrid_config)
+            print("\n  Loss Strategy: A³DRO (robust, comparable validation)")
+        else:
+            # Use original approach with SoftplusKendall
+            improvement_config = ImprovedTrainingConfig(
+                use_pcgrad=use_pcgrad,
+                use_softplus_kendall=True,  # Fix negative loss pathology
+                use_availability_gating=True,  # Prevent task collapse
+                min_availability=args.min_availability,
+                use_cycle_consistency=False,  # Requires model changes, disabled for now
+                use_physical_consistency=False,  # Requires model changes, disabled for now
+                use_latent_prediction=False,  # Requires model changes, disabled for now
+            )
+            apply_training_improvements(trainer, improvement_config)
+            print("\n  Loss Strategy: SoftplusKendall (learned weights)")
+
         print("=" * 60 + "\n")
 
     # Resume if requested

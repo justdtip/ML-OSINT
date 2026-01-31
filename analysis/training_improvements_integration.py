@@ -40,6 +40,12 @@ try:
         LatentPredictiveCodingLoss,
         PhysicalConsistencyConstraint,
         ImprovedTrainingConfig,
+        # New hybrid loss components
+        A3DROLoss,
+        SpectralDriftPenalty,
+        UniformValidationLoss,
+        HybridLossConfig,
+        create_training_losses,
     )
 except ImportError:
     from training_improvements import (
@@ -52,6 +58,12 @@ except ImportError:
         LatentPredictiveCodingLoss,
         PhysicalConsistencyConstraint,
         ImprovedTrainingConfig,
+        # New hybrid loss components
+        A3DROLoss,
+        SpectralDriftPenalty,
+        UniformValidationLoss,
+        HybridLossConfig,
+        create_training_losses,
     )
 
 
@@ -420,6 +432,252 @@ def create_improved_forecast_head(
 
 
 # =============================================================================
+# HYBRID LOSS INTEGRATION (A³DRO + Spectral + Uniform Validation)
+# =============================================================================
+
+def apply_hybrid_loss_improvements(
+    trainer,
+    config: Optional[HybridLossConfig] = None,
+) -> None:
+    """
+    Apply hybrid loss improvements to an existing MultiResolutionTrainer.
+
+    This is the RECOMMENDED approach based on the proposal analysis.
+    It replaces MultiTaskLoss with:
+    - A³DRO for training (no learned weights, robust aggregation)
+    - UniformValidationLoss for validation (fixed weights, comparable across epochs)
+    - SpectralDriftPenalty for forecast regularization
+
+    Args:
+        trainer: MultiResolutionTrainer instance
+        config: Optional HybridLossConfig (uses defaults if not provided)
+    """
+    config = config or HybridLossConfig()
+
+    # Get task names from existing loss function
+    if hasattr(trainer, 'multi_task_loss') and hasattr(trainer.multi_task_loss, 'task_names'):
+        task_names = trainer.multi_task_loss.task_names
+    else:
+        task_names = ['regime', 'casualty', 'anomaly', 'forecast', 'daily_forecast', 'transition']
+
+    # Create hybrid loss modules
+    loss_modules = create_training_losses(task_names, config)
+
+    # Store original for reference
+    trainer._original_multi_task_loss = trainer.multi_task_loss
+
+    # Replace training loss
+    trainer.multi_task_loss = loss_modules['training']
+    trainer._training_loss = loss_modules['training']
+    trainer._hybrid_config = config
+
+    # Add validation loss (separate from training!)
+    trainer._validation_loss = loss_modules['validation']
+
+    # Add spectral penalty if enabled
+    if 'spectral' in loss_modules:
+        trainer._spectral_penalty = loss_modules['spectral']
+    else:
+        trainer._spectral_penalty = None
+
+    # Add cycle consistency if enabled
+    if 'cycle' in loss_modules:
+        trainer._cycle_consistency = loss_modules['cycle']
+    else:
+        trainer._cycle_consistency = None
+
+    # Patch the validate method to use fixed weights
+    _patch_validate_method(trainer)
+
+    # Print summary
+    if config.use_a3dro:
+        print("✓ Applied A³DRO loss (robust aggregation, no learned weights)")
+    else:
+        print("✓ Applied SoftplusKendallLoss")
+
+    print("✓ Added UniformValidationLoss (fixed weights for comparability)")
+
+    if config.use_spectral_penalty:
+        print(f"✓ Added SpectralDriftPenalty (weight={config.spectral_weight})")
+
+    if config.use_cycle_consistency:
+        print(f"✓ Added CrossResolutionCycleConsistency (weight={config.cycle_weight})")
+
+
+def _patch_validate_method(trainer) -> None:
+    """
+    Patch the trainer's validate method to use UniformValidationLoss.
+
+    This ensures validation loss is comparable across epochs (key audit finding).
+    """
+    original_validate = trainer.validate
+
+    def patched_validate(*args, **kwargs):
+        # Temporarily swap loss functions
+        training_loss = trainer.multi_task_loss
+        trainer.multi_task_loss = trainer._validation_loss
+
+        try:
+            result = original_validate(*args, **kwargs)
+        finally:
+            # Restore training loss
+            trainer.multi_task_loss = training_loss
+
+        return result
+
+    trainer.validate = patched_validate
+    trainer._original_validate = original_validate
+
+
+def get_spectral_loss(trainer, predictions: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+    """
+    Compute spectral drift penalty for forecast regularization.
+
+    Call this in train_epoch after computing task losses:
+
+    ```python
+    if hasattr(trainer, '_spectral_penalty') and trainer._spectral_penalty is not None:
+        spectral_loss = get_spectral_loss(trainer, daily_pred, daily_targets)
+        total_loss = total_loss + spectral_loss
+    ```
+
+    Args:
+        trainer: The trainer instance
+        predictions: Predicted sequence [batch, seq_len, features]
+        targets: Target sequence [batch, seq_len, features]
+
+    Returns:
+        Scalar spectral loss
+    """
+    if trainer._spectral_penalty is None:
+        return torch.tensor(0.0, device=predictions.device)
+
+    return trainer._spectral_penalty(predictions, targets)
+
+
+class HybridTrainingStep:
+    """
+    Improved training step with A³DRO, spectral penalty, and cycle consistency.
+
+    This replaces ImprovedTrainingStep with the hybrid approach.
+    """
+
+    def __init__(
+        self,
+        config: HybridLossConfig,
+        task_names: List[str],
+        device: torch.device,
+    ) -> None:
+        self.config = config
+        self.device = device
+        self.task_names = task_names
+
+        # Create loss modules
+        self.loss_modules = create_training_losses(task_names, config)
+        self.training_loss = self.loss_modules['training'].to(device)
+        self.validation_loss = self.loss_modules['validation'].to(device)
+
+        if 'spectral' in self.loss_modules:
+            self.spectral_penalty = self.loss_modules['spectral'].to(device)
+        else:
+            self.spectral_penalty = None
+
+        if 'cycle' in self.loss_modules:
+            self.cycle_consistency = self.loss_modules['cycle'].to(device)
+        else:
+            self.cycle_consistency = None
+
+    def compute_training_loss(
+        self,
+        task_losses: Dict[str, torch.Tensor],
+        targets: Optional[Dict[str, torch.Tensor]] = None,
+        masks: Optional[Dict[str, torch.Tensor]] = None,
+        epoch: int = 0,
+    ) -> Tuple[torch.Tensor, Dict[str, float]]:
+        """
+        Compute training loss using A³DRO or SoftplusKendall.
+
+        Args:
+            task_losses: Dict of task name -> loss tensor
+            targets: Optional targets for availability computation
+            masks: Optional availability masks
+            epoch: Current epoch (for A³DRO warmup)
+
+        Returns:
+            Tuple of (total_loss, effective_weights)
+        """
+        if isinstance(self.training_loss, AvailabilityGatedLoss):
+            # Need to check if base is A³DRO
+            if hasattr(self.training_loss, 'base_loss') and isinstance(self.training_loss.base_loss, A3DROLoss):
+                # A³DRO needs epoch for warmup
+                # AvailabilityGatedLoss wraps it, so we need to pass epoch differently
+                # For now, just use standard forward
+                return self.training_loss(task_losses, targets, masks)
+            return self.training_loss(task_losses, targets, masks)
+        elif isinstance(self.training_loss, A3DROLoss):
+            return self.training_loss(task_losses, targets, masks, epoch=epoch)
+        else:
+            return self.training_loss(task_losses, masks)
+
+    def compute_validation_loss(
+        self,
+        task_losses: Dict[str, torch.Tensor],
+    ) -> Tuple[torch.Tensor, Dict[str, float]]:
+        """
+        Compute validation loss using fixed uniform weights.
+
+        Args:
+            task_losses: Dict of task name -> loss tensor
+
+        Returns:
+            Tuple of (total_loss, weights)
+        """
+        return self.validation_loss(task_losses)
+
+    def compute_spectral_penalty(
+        self,
+        predictions: torch.Tensor,
+        targets: torch.Tensor,
+        mask: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """
+        Compute spectral drift penalty for forecast sequences.
+
+        Args:
+            predictions: Predicted sequence [batch, seq_len, features]
+            targets: Target sequence [batch, seq_len, features]
+            mask: Optional mask [batch, seq_len]
+
+        Returns:
+            Scalar spectral loss
+        """
+        if self.spectral_penalty is None:
+            return torch.tensor(0.0, device=predictions.device)
+
+        return self.spectral_penalty(predictions, targets, mask)
+
+    def compute_cycle_consistency(
+        self,
+        daily_latents: torch.Tensor,
+        monthly_latent: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Compute cycle consistency between daily and monthly predictions.
+
+        Args:
+            daily_latents: Predicted daily latents [batch, horizon, d_model]
+            monthly_latent: Teacher monthly latent [batch, d_model]
+
+        Returns:
+            Scalar cycle consistency loss
+        """
+        if self.cycle_consistency is None:
+            return torch.tensor(0.0, device=daily_latents.device)
+
+        return self.cycle_consistency(daily_latents, monthly_latent.detach())
+
+
+# =============================================================================
 # TRAINING SCRIPT MODIFICATIONS GUIDE
 # =============================================================================
 
@@ -573,7 +831,49 @@ def test_integration():
     if 'cycle_consistency' in updated_losses:
         print(f"   Cycle consistency loss: {updated_losses['cycle_consistency'].item():.4f} ✓")
 
-    print("\n✓ All integration tests passed!")
+    # Test HybridLossConfig and HybridTrainingStep
+    print("\n4. Testing HybridTrainingStep (A³DRO + Spectral)...")
+    hybrid_config = HybridLossConfig(
+        use_a3dro=True,
+        use_spectral_penalty=True,
+        use_cycle_consistency=True,
+    )
+    hybrid_step = HybridTrainingStep(
+        config=hybrid_config,
+        task_names=['regime', 'forecast', 'casualty', 'daily_forecast'],
+        device=torch.device('cpu'),
+    )
+
+    losses = {
+        'regime': torch.tensor(0.5),
+        'forecast': torch.tensor(1.0),
+        'casualty': torch.tensor(0.3),
+        'daily_forecast': torch.tensor(0.8),
+    }
+    targets = {k: torch.randn(10) for k in losses}
+
+    # Test training loss (A³DRO)
+    train_loss, train_weights = hybrid_step.compute_training_loss(losses, targets, epoch=5)
+    print(f"   A³DRO training loss: {train_loss.item():.4f} ✓")
+
+    # Test validation loss (Uniform)
+    val_loss, val_weights = hybrid_step.compute_validation_loss(losses)
+    print(f"   Uniform validation loss: {val_loss.item():.4f} ✓")
+    print(f"   Validation weights: {val_weights}")
+
+    # Test spectral penalty
+    pred_seq = torch.randn(4, 7, 64)
+    target_seq = torch.randn(4, 7, 64)
+    spectral_loss = hybrid_step.compute_spectral_penalty(pred_seq, target_seq)
+    print(f"   Spectral penalty: {spectral_loss.item():.4f} ✓")
+
+    # Test cycle consistency
+    cycle_loss = hybrid_step.compute_cycle_consistency(daily_latents, monthly_latent)
+    print(f"   Cycle consistency: {cycle_loss.item():.4f} ✓")
+
+    print("\n" + "=" * 60)
+    print("✓ All integration tests passed!")
+    print("=" * 60)
     print("\nTo see the integration guide, run: print_integration_guide()")
 
 

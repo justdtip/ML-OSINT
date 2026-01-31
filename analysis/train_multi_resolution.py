@@ -2749,7 +2749,7 @@ def test_dataloader_batch_shapes():
     )
 
     try:
-        train_loader, val_loader, _, norm_stats = create_multi_resolution_dataloaders(
+        train_loader, val_loader, _, norm_stats, _, _, _ = create_multi_resolution_dataloaders(
             config=config,
             batch_size=2,
             num_workers=0,
@@ -3149,6 +3149,24 @@ def main():
     parser.add_argument('--pca-variance', type=float, default=None,
                         help='Alternative: keep components explaining this variance ratio (e.g., 0.95)')
 
+    # Raion PCA configuration (reduces per-raion feature dimensionality)
+    parser.add_argument('--use-raion-pca', action='store_true', default=False,
+                        help='Apply PCA within each raion source to reduce feature dimensions (default: False)')
+    parser.add_argument('--no-raion-pca', action='store_true',
+                        help='Disable raion PCA (explicit override)')
+    parser.add_argument('--raion-pca-components', type=int, default=10,
+                        help='Number of PCA components per raion (default: 10)')
+    parser.add_argument('--raion-pca-variance', type=float, default=0.90,
+                        help='Keep components explaining this variance ratio per raion (default: 0.90)')
+
+    # Correlation filter configuration (removes redundant features before PCA)
+    parser.add_argument('--use-correlation-filter', action='store_true', default=False,
+                        help='Apply correlation-based feature filter to raion sources (default: False)')
+    parser.add_argument('--no-correlation-filter', action='store_true',
+                        help='Disable correlation filter (explicit override)')
+    parser.add_argument('--correlation-threshold', type=float, default=0.85,
+                        help='Correlation threshold for dropping redundant features (default: 0.85)')
+
     # Spatial features (unit positions, frontlines, fire hotspots per region)
     parser.add_argument('--include-spatial', action='store_true', default=False,
                         help='Include spatial features from DeepState (units, frontlines) and FIRMS (fire hotspots)')
@@ -3194,6 +3212,8 @@ def main():
     apply_detrending = args.apply_detrending and not args.no_apply_detrending
     use_temporal_reg = args.use_temporal_reg and not args.no_temporal_reg
     use_pca = args.use_pca and not args.no_pca
+    use_raion_pca = args.use_raion_pca and not args.no_raion_pca
+    use_correlation_filter = args.use_correlation_filter and not args.no_correlation_filter
 
     # Resolve memory optimization flags
     use_amp = args.use_amp and not args.no_amp
@@ -3235,6 +3255,13 @@ def main():
             print(f"    pca_variance_threshold: {args.pca_variance}")
         else:
             print(f"    pca_n_components: {args.pca_components}")
+    print(f"  use_raion_pca: {use_raion_pca}")
+    if use_raion_pca:
+        print(f"    raion_pca_variance_threshold: {args.raion_pca_variance}")
+        print(f"    raion_pca_n_components: {args.raion_pca_components}")
+    print(f"  use_correlation_filter: {use_correlation_filter}")
+    if use_correlation_filter:
+        print(f"    correlation_threshold: {args.correlation_threshold}")
     print(f"\nGeographic Prior Configuration:")
     print(f"  use_geographic_prior: {use_geographic_prior}")
     if raion_sources:
@@ -3302,18 +3329,29 @@ def main():
         use_pca=use_pca,
         pca_n_components=args.pca_components,
         pca_variance_threshold=args.pca_variance,
+        # Raion PCA configuration
+        use_raion_pca=use_raion_pca,
+        raion_pca_n_components=args.raion_pca_components,
+        raion_pca_variance_threshold=args.raion_pca_variance,
+        # Correlation filter configuration
+        use_correlation_filter=use_correlation_filter,
+        correlation_threshold=args.correlation_threshold,
     )
 
     train_dataset = MultiResolutionDataset(config=config, split='train')
     val_dataset = MultiResolutionDataset(
         config=config, split='val',
         norm_stats=train_dataset.norm_stats,
-        pca_transformer=train_dataset.pca_transformer
+        pca_transformer=train_dataset.pca_transformer,
+        raion_pca_transformer=train_dataset.raion_pca_transformer,
+        correlation_filter_info=train_dataset.correlation_filter_info
     )
     test_dataset = MultiResolutionDataset(
         config=config, split='test',
         norm_stats=train_dataset.norm_stats,
-        pca_transformer=train_dataset.pca_transformer
+        pca_transformer=train_dataset.pca_transformer,
+        raion_pca_transformer=train_dataset.raion_pca_transformer,
+        correlation_filter_info=train_dataset.correlation_filter_info
     )
 
     # Get feature dimensions from dataset and create SourceConfig objects

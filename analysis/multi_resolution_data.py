@@ -192,6 +192,32 @@ class MultiResolutionConfig:
         "personnel", "drones", "armor", "artillery"
     ])  # Sources to apply PCA to (combined, then decomposed)
 
+    # Correlation filter configuration (removes redundant features before PCA)
+    # For raion sources, many features are highly correlated (r > 0.9):
+    #   - geoconfirmed: 11 features in one cluster (total_events ≈ destroyed ≈ russian_losses)
+    #   - firms: 4 clusters (fire counts, confidence, FRP, brightness)
+    #   - ucdp: 2 clusters (event types, fatalities)
+    # Correlation filter keeps one representative from each cluster.
+    use_correlation_filter: bool = False  # Apply correlation-based feature selection
+    correlation_threshold: float = 0.85  # Drop features with |r| > threshold to another
+    correlation_filter_sources: List[str] = field(default_factory=lambda: [
+        "geoconfirmed_raion", "deepstate_raion", "firms_expanded_raion",
+        "ucdp_raion", "warspotting_raion", "air_raid_sirens_raion"
+    ])  # Sources to apply correlation filter to
+
+    # Raion PCA configuration (reduces per-raion feature dimensionality)
+    # Applied AFTER correlation filter if both are enabled.
+    # Instead of 50 features × 263 raions = 13,150 features for geoconfirmed,
+    # reduce to N PCA components × 263 raions while preserving spatial structure.
+    # PCA is fit across all raions jointly (features have same meaning across raions).
+    use_raion_pca: bool = False  # Apply PCA within each raion source
+    raion_pca_n_components: int = 10  # Target components per raion
+    raion_pca_variance_threshold: Optional[float] = 0.90  # Keep components explaining this variance
+    raion_pca_sources: List[str] = field(default_factory=lambda: [
+        "geoconfirmed_raion", "deepstate_raion", "firms_expanded_raion",
+        "ucdp_raion", "warspotting_raion", "air_raid_sirens_raion"
+    ])  # Raion sources to apply PCA to (each processed separately)
+
     # Spatial feature configuration (DEPRECATED - use raion sources instead)
     # Legacy spatial features from DeepState/FIRMS tiling.
     # Superseded by raion sources which provide finer granularity.
@@ -1909,6 +1935,8 @@ class MultiResolutionDataset(Dataset):
         test_ratio: float = 0.15,
         norm_stats: Optional[Dict[str, Dict[str, np.ndarray]]] = None,
         pca_transformer: Optional[Any] = None,
+        raion_pca_transformer: Optional[Dict[str, Any]] = None,
+        correlation_filter_info: Optional[Dict[str, Any]] = None,
         seed: int = 42
     ):
         """
@@ -1921,6 +1949,8 @@ class MultiResolutionDataset(Dataset):
             test_ratio: Fraction of data for testing
             norm_stats: Pre-computed normalization stats (required for val/test)
             pca_transformer: Pre-fitted PCA transformer (required for val/test if use_pca=True)
+            raion_pca_transformer: Pre-fitted raion PCA transformers (required for val/test if use_raion_pca=True)
+            correlation_filter_info: Pre-fitted correlation filter info (required for val/test if use_correlation_filter=True)
             seed: Random seed for reproducibility
         """
         if split not in ('train', 'val', 'test'):
@@ -1988,6 +2018,40 @@ class MultiResolutionDataset(Dataset):
             self._apply_pca()
         else:
             self.pca_transformer = None
+
+        # Handle correlation filter for raion sources (removes redundant features)
+        # This runs BEFORE raion PCA to reduce the feature set first
+        if self.config.use_correlation_filter:
+            if split == 'train':
+                self.correlation_filter_info = self._fit_correlation_filter()
+            else:
+                if correlation_filter_info is None:
+                    raise ValueError(
+                        f"correlation_filter_info must be provided for {split} split when use_correlation_filter=True"
+                    )
+                self.correlation_filter_info = correlation_filter_info
+            # Apply correlation filter
+            self._apply_correlation_filter()
+        else:
+            self.correlation_filter_info = None
+
+        # Handle raion PCA for spatial features (reduces per-raion feature dimensionality)
+        # This runs AFTER correlation filter if both are enabled
+        if self.config.use_raion_pca:
+            if not SKLEARN_AVAILABLE:
+                raise ImportError("Raion PCA requires scikit-learn. Install with: pip install scikit-learn")
+            if split == 'train':
+                self.raion_pca_transformer = self._fit_raion_pca()
+            else:
+                if raion_pca_transformer is None:
+                    raise ValueError(
+                        f"raion_pca_transformer must be provided for {split} split when use_raion_pca=True"
+                    )
+                self.raion_pca_transformer = raion_pca_transformer
+            # Apply raion PCA transformation
+            self._apply_raion_pca()
+        else:
+            self.raion_pca_transformer = None
 
         # Convert to tensors
         self._convert_to_tensors()
@@ -2595,6 +2659,357 @@ class MultiResolutionDataset(Dataset):
 
         print(f"    Created equipment_pca source: {pca_features.shape[1]} components")
 
+    def _fit_correlation_filter(self) -> Dict[str, Any]:
+        """
+        Fit correlation-based feature filter for raion sources.
+
+        For each raion source, identifies highly correlated feature pairs and
+        selects which features to keep (higher variance) vs drop.
+
+        Returns:
+            Dict mapping source_name to filter info (features_to_keep, features_to_drop).
+        """
+        filter_sources = self.config.correlation_filter_sources
+        available_sources = [s for s in filter_sources if s in self.daily_data]
+
+        if not available_sources:
+            print(f"  No correlation filter sources available from {filter_sources}")
+            return {}
+
+        threshold = self.config.correlation_threshold
+        print(f"  Fitting correlation filter (threshold={threshold}) on sources: {available_sources}")
+
+        filter_info = {}
+
+        for source_name in available_sources:
+            # Get raion metadata from registry
+            raion_info = get_per_raion_mask(source_name)
+            if raion_info is None:
+                print(f"    Skipping {source_name}: no raion info in registry")
+                continue
+
+            n_raions = raion_info.n_raions
+            n_features = raion_info.n_features_per_raion
+            feature_names = list(raion_info.feature_names)
+
+            if n_raions == 0 or n_features == 0:
+                continue
+
+            df, mask = self.daily_data[source_name]
+            feature_cols = [c for c in df.columns if c != 'date']
+
+            # Extract features for first raion to compute correlations
+            # (correlations are similar across raions since features have same meaning)
+            first_raion = raion_info.raion_keys[0]
+            raion_cols = [c for c in feature_cols if c.startswith(f"{first_raion}_")]
+
+            if len(raion_cols) != n_features:
+                print(f"    Warning: {source_name} column mismatch, skipping")
+                continue
+
+            # Build single-raion dataframe for correlation
+            raion_df = df[raion_cols].copy()
+            raion_df.columns = feature_names
+
+            # Replace missing values with NaN for correlation
+            raion_df = raion_df.replace(self.config.missing_value, np.nan)
+
+            # Compute correlation matrix
+            corr = raion_df.corr()
+
+            # Find features to drop using greedy selection
+            # For each highly correlated pair, drop the one with lower variance
+            features_to_drop = set()
+            variances = raion_df.var()
+
+            for i in range(len(feature_names)):
+                if feature_names[i] in features_to_drop:
+                    continue
+                for j in range(i + 1, len(feature_names)):
+                    if feature_names[j] in features_to_drop:
+                        continue
+                    r = corr.iloc[i, j]
+                    if abs(r) > threshold and not np.isnan(r):
+                        # Drop the one with lower variance
+                        if variances[feature_names[i]] < variances[feature_names[j]]:
+                            features_to_drop.add(feature_names[i])
+                            break  # This feature is dropped, move to next i
+                        else:
+                            features_to_drop.add(feature_names[j])
+
+            features_to_keep = [f for f in feature_names if f not in features_to_drop]
+
+            print(f"    {source_name}: {n_features} -> {len(features_to_keep)} features "
+                  f"(dropped {len(features_to_drop)} redundant)")
+
+            if len(features_to_drop) > 0:
+                # Show what was dropped
+                dropped_list = sorted(features_to_drop)[:5]
+                if len(features_to_drop) > 5:
+                    dropped_list.append(f"... and {len(features_to_drop) - 5} more")
+                print(f"      Dropped: {dropped_list}")
+
+            filter_info[source_name] = {
+                'features_to_keep': features_to_keep,
+                'features_to_drop': list(features_to_drop),
+                'n_raions': n_raions,
+                'raion_keys': raion_info.raion_keys,
+                'original_n_features': n_features,
+            }
+
+        return filter_info
+
+    def _apply_correlation_filter(self) -> None:
+        """
+        Apply correlation-based feature filter to raion sources.
+
+        Removes redundant features from each raion source based on the
+        fitted filter info.
+        """
+        if self.correlation_filter_info is None or not self.correlation_filter_info:
+            return
+
+        for source_name, filter_info in self.correlation_filter_info.items():
+            # Check if already filtered (via shared cache)
+            filtered_name = f"{source_name}_filtered"
+            if filtered_name in self.daily_data:
+                print(f"  Correlation filter already applied for {source_name}")
+                continue
+
+            if source_name not in self.daily_data:
+                print(f"  Source {source_name} not found (may be cached)")
+                continue
+
+            features_to_keep = filter_info['features_to_keep']
+            n_raions = filter_info['n_raions']
+            raion_keys = filter_info['raion_keys']
+            original_n_features = filter_info['original_n_features']
+
+            df, mask = self.daily_data[source_name]
+            dates = df['date'].values
+
+            # Build list of columns to keep (for all raions)
+            cols_to_keep = ['date']
+            for raion_key in raion_keys:
+                for feat in features_to_keep:
+                    col_name = f"{raion_key}_{feat}"
+                    if col_name in df.columns:
+                        cols_to_keep.append(col_name)
+
+            # Create filtered dataframe
+            filtered_df = df[cols_to_keep].copy()
+
+            # Update raion mask registry with new feature count
+            raion_info = get_per_raion_mask(source_name)
+            if raion_info is not None:
+                from analysis.loaders.raion_adapter import _RAION_MASK_REGISTRY, RaionMaskInfo
+                _RAION_MASK_REGISTRY[source_name] = RaionMaskInfo(
+                    source_name=source_name,
+                    mask=raion_info.mask,
+                    raion_keys=raion_info.raion_keys,
+                    feature_names=features_to_keep,
+                    n_raions=n_raions,
+                    n_features_per_raion=len(features_to_keep),
+                    dates=raion_info.dates,
+                )
+
+            # Update raion_mask_data with new feature count
+            if source_name in self.raion_mask_data:
+                mask_data, rkeys, _ = self.raion_mask_data[source_name]
+                self.raion_mask_data[source_name] = (mask_data, rkeys, len(features_to_keep))
+
+            # Replace the source data (in-place, keep same name)
+            self.daily_data[source_name] = (filtered_df, mask)
+
+            print(f"  Applied correlation filter to {source_name}: "
+                  f"{n_raions} × {original_n_features} -> {n_raions} × {len(features_to_keep)}")
+
+    def _fit_raion_pca(self) -> Dict[str, Any]:
+        """
+        Fit PCA for raion sources to reduce per-raion feature dimensionality.
+
+        For each raion source (e.g., geoconfirmed_raion with 50 features × 263 raions),
+        fits a single PCA across all raions jointly (features have same meaning across raions)
+        to reduce to N components per raion.
+
+        Returns:
+            Dict mapping source_name to fitted PCA transformer info.
+        """
+        raion_pca_sources = self.config.raion_pca_sources
+        available_sources = [s for s in raion_pca_sources if s in self.daily_data]
+
+        if not available_sources:
+            print(f"  No raion PCA sources available from {raion_pca_sources}")
+            return {}
+
+        print(f"  Fitting raion PCA on sources: {available_sources}")
+
+        raion_transformers = {}
+
+        for source_name in available_sources:
+            # Get raion metadata from registry
+            raion_info = get_per_raion_mask(source_name)
+            if raion_info is None:
+                print(f"    Skipping {source_name}: no raion info in registry")
+                continue
+
+            n_raions = raion_info.n_raions
+            n_features = raion_info.n_features_per_raion
+            raion_keys = raion_info.raion_keys
+            feature_names = raion_info.feature_names
+
+            df, mask = self.daily_data[source_name]
+            feature_cols = [c for c in df.columns if c != 'date']
+
+            # Verify dimensions match
+            expected_cols = n_raions * n_features
+            if len(feature_cols) != expected_cols:
+                print(f"    Warning: {source_name} has {len(feature_cols)} cols, expected {expected_cols}")
+                continue
+
+            print(f"    {source_name}: {n_raions} raions × {n_features} features = {expected_cols} total")
+
+            # Reshape from [n_days, n_raions * n_features] to [n_days * n_raions, n_features]
+            values = df[feature_cols].values
+            values = np.where(values == self.config.missing_value, 0, values)
+            n_days = values.shape[0]
+
+            # Reshape: [n_days, n_raions * n_features] -> [n_days, n_raions, n_features]
+            values_3d = values.reshape(n_days, n_raions, n_features)
+
+            # Transpose to: [n_days, n_raions, n_features] -> [n_days * n_raions, n_features]
+            values_2d = values_3d.reshape(n_days * n_raions, n_features)
+
+            # Determine number of components
+            if self.config.raion_pca_variance_threshold is not None:
+                pca_full = PCA(n_components=min(values_2d.shape))
+                pca_full.fit(values_2d)
+                cumsum = np.cumsum(pca_full.explained_variance_ratio_)
+                n_components = np.argmax(cumsum >= self.config.raion_pca_variance_threshold) + 1
+                n_components = max(n_components, 3)  # At least 3 components
+                print(f"      PCA variance threshold {self.config.raion_pca_variance_threshold}: {n_components} components")
+            else:
+                n_components = min(self.config.raion_pca_n_components, n_features)
+
+            # Fit PCA
+            pca = PCA(n_components=n_components)
+            pca.fit(values_2d)
+
+            explained_var = pca.explained_variance_ratio_.sum()
+            print(f"      PCA fitted: {n_features} -> {n_components} components ({explained_var:.1%} variance)")
+            print(f"      New total features: {n_raions} × {n_components} = {n_raions * n_components}")
+
+            raion_transformers[source_name] = {
+                'pca': pca,
+                'n_raions': n_raions,
+                'n_features_original': n_features,
+                'n_components': n_components,
+                'raion_keys': raion_keys,
+                'feature_names': feature_names,
+                'explained_variance': explained_var,
+            }
+
+        return raion_transformers
+
+    def _apply_raion_pca(self) -> None:
+        """
+        Apply raion PCA transformation to reduce per-raion feature dimensionality.
+
+        Transforms each raion source from [n_days, n_raions × n_features] to
+        [n_days, n_raions × n_components].
+        """
+        if self.raion_pca_transformer is None or not self.raion_pca_transformer:
+            return
+
+        for source_name, transformer in self.raion_pca_transformer.items():
+            # Check if already transformed (via shared cache)
+            pca_source_name = f"{source_name}_pca"
+            if pca_source_name in self.daily_data:
+                print(f"  Raion PCA already applied for {source_name}")
+                continue
+
+            if source_name not in self.daily_data:
+                print(f"  Raion source {source_name} already removed (using cached data)")
+                continue
+
+            pca = transformer['pca']
+            n_raions = transformer['n_raions']
+            n_features = transformer['n_features_original']
+            n_components = transformer['n_components']
+            raion_keys = transformer['raion_keys']
+
+            df, mask = self.daily_data[source_name]
+            feature_cols = [c for c in df.columns if c != 'date']
+            dates = df['date'].values
+
+            # Get values and reshape
+            values = df[feature_cols].values
+            values = np.where(values == self.config.missing_value, 0, values)
+            n_days = values.shape[0]
+
+            # Reshape: [n_days, n_raions * n_features] -> [n_days, n_raions, n_features]
+            values_3d = values.reshape(n_days, n_raions, n_features)
+
+            # Transform each raion's features: [n_days, n_raions, n_features] -> [n_days, n_raions, n_components]
+            # Reshape to [n_days * n_raions, n_features] for transform
+            values_2d = values_3d.reshape(n_days * n_raions, n_features)
+            pca_values_2d = pca.transform(values_2d)
+
+            # Reshape back: [n_days * n_raions, n_components] -> [n_days, n_raions, n_components]
+            pca_values_3d = pca_values_2d.reshape(n_days, n_raions, n_components)
+
+            # Flatten: [n_days, n_raions, n_components] -> [n_days, n_raions * n_components]
+            pca_values = pca_values_3d.reshape(n_days, n_raions * n_components)
+
+            # Create new column names
+            pca_cols = []
+            for raion_key in raion_keys:
+                for i in range(n_components):
+                    pca_cols.append(f"{raion_key}_pc{i+1}")
+
+            # Create new DataFrame
+            pca_df = pd.DataFrame(pca_values, columns=pca_cols)
+            pca_df['date'] = dates
+            pca_df = pca_df[['date'] + pca_cols]
+
+            # Update raion mask registry with new feature count
+            raion_info = get_per_raion_mask(source_name)
+            if raion_info is not None:
+                # Create updated mask info for PCA'd source
+                new_feature_names = [f'pc{i+1}' for i in range(n_components)]
+                from analysis.loaders import RaionMaskInfo
+                # Update the registry (global state)
+                from analysis.loaders.raion_adapter import _RAION_MASK_REGISTRY
+                _RAION_MASK_REGISTRY[pca_source_name] = RaionMaskInfo(
+                    source_name=pca_source_name,
+                    mask=raion_info.mask,
+                    raion_keys=raion_info.raion_keys,
+                    feature_names=new_feature_names,
+                    n_raions=n_raions,
+                    n_features_per_raion=n_components,
+                    dates=raion_info.dates,
+                )
+
+            # Remove original source
+            del self.daily_data[source_name]
+            if source_name in self.norm_stats:
+                del self.norm_stats[source_name]
+            if source_name in self.raion_mask_data:
+                # Update raion_mask_data with new feature count
+                mask_data, rkeys, _ = self.raion_mask_data[source_name]
+                self.raion_mask_data[pca_source_name] = (mask_data, rkeys, n_components)
+                del self.raion_mask_data[source_name]
+
+            # Add PCA'd source
+            self.daily_data[pca_source_name] = (pca_df, mask)
+            self.norm_stats[pca_source_name] = {
+                'mean': np.zeros(len(pca_cols)),
+                'std': np.ones(len(pca_cols)),
+                'type': 'raion_pca'
+            }
+
+            print(f"  Applied raion PCA to {source_name}: {n_raions} × {n_features} -> {n_raions} × {n_components}")
+
     def _convert_to_tensors(self) -> None:
         """Convert DataFrames to tensors for efficient access."""
         self.daily_tensors: Dict[str, torch.Tensor] = {}
@@ -3195,6 +3610,7 @@ def create_multi_resolution_dataloaders(
         test_loader: DataLoader for test data
         norm_stats: Normalization statistics from training data
         pca_transformer: PCA transformer (if use_pca=True, else None)
+        raion_pca_transformer: Raion PCA transformers dict (if use_raion_pca=True, else None)
     """
     config = config or MultiResolutionConfig()
 
@@ -3216,6 +3632,8 @@ def create_multi_resolution_dataloaders(
 
     norm_stats = train_dataset.norm_stats
     pca_transformer = train_dataset.pca_transformer  # May be None if use_pca=False
+    raion_pca_transformer = train_dataset.raion_pca_transformer  # May be None if use_raion_pca=False
+    correlation_filter_info = train_dataset.correlation_filter_info  # May be None if use_correlation_filter=False
 
     # Create validation dataset
     print("\n--- Validation Dataset ---")
@@ -3226,6 +3644,8 @@ def create_multi_resolution_dataloaders(
         test_ratio=test_ratio,
         norm_stats=norm_stats,
         pca_transformer=pca_transformer,
+        raion_pca_transformer=raion_pca_transformer,
+        correlation_filter_info=correlation_filter_info,
         seed=seed
     )
 
@@ -3238,6 +3658,8 @@ def create_multi_resolution_dataloaders(
         test_ratio=test_ratio,
         norm_stats=norm_stats,
         pca_transformer=pca_transformer,
+        raion_pca_transformer=raion_pca_transformer,
+        correlation_filter_info=correlation_filter_info,
         seed=seed
     )
 
@@ -3275,10 +3697,16 @@ def create_multi_resolution_dataloaders(
     print(f"Train: {len(train_dataset)} samples, {len(train_loader)} batches")
     print(f"Val: {len(val_dataset)} samples, {len(val_loader)} batches")
     print(f"Test: {len(test_dataset)} samples, {len(test_loader)} batches")
+    if config.use_correlation_filter and correlation_filter_info:
+        for source_name, info in correlation_filter_info.items():
+            print(f"Correlation filter ({source_name}): {info['original_n_features']} -> {len(info['features_to_keep'])} features/raion")
     if config.use_pca and pca_transformer:
         print(f"PCA: {pca_transformer['n_components']} components ({pca_transformer['explained_variance']:.1%} variance)")
+    if config.use_raion_pca and raion_pca_transformer:
+        for source_name, transformer in raion_pca_transformer.items():
+            print(f"Raion PCA ({source_name}): {transformer['n_features_original']} -> {transformer['n_components']} components/raion ({transformer['explained_variance']:.1%} variance)")
 
-    return train_loader, val_loader, test_loader, norm_stats, pca_transformer
+    return train_loader, val_loader, test_loader, norm_stats, pca_transformer, raion_pca_transformer, correlation_filter_info
 
 
 # =============================================================================
@@ -3298,7 +3726,7 @@ if __name__ == "__main__":
     )
 
     # Create data loaders
-    train_loader, val_loader, test_loader, norm_stats = create_multi_resolution_dataloaders(
+    train_loader, val_loader, test_loader, norm_stats, _, _, _ = create_multi_resolution_dataloaders(
         config=config,
         batch_size=2,
         num_workers=0

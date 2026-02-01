@@ -1439,11 +1439,161 @@ Testing Phase 2 components...
 - Active tasks (regime, forecast, daily_forecast) improving
 - Collapsed tasks (casualty, transition, anomaly) stuck at 0.000
 
-### 21.2 Phase 2 Run (Pending)
+### 21.2 Phase 1 Extended Trajectory (Epochs 0-21)
 
-Awaiting completion of Phase 1 for comparison baseline.
+Phase 1 training was stopped at epoch 21 after val loss plateau was confirmed.
+
+| Epoch | Train Loss | Val Loss | Regime | Forecast | Daily FC | Status |
+|-------|------------|----------|--------|----------|----------|--------|
+| 0 | -0.84 | -1.78 | 0.074 | 0.993 | 0.167 | Warmup |
+| 5 | -1.08 | -1.97 | 0.065 | 0.774 | 0.048 | Learning |
+| 9 | -1.35 | -2.00 | 0.048 | 0.558 | 0.046 | **Best val** |
+| 16 | -1.66 | -2.00 | 0.045 | 0.384 | 0.047 | Plateau |
+| 21 | -2.03 | -2.00 | 0.046 | 0.340 | 0.047 | **Stopped** |
+
+**Key Observations**:
+- Val loss plateaued at -2.0 from epoch 9 onwards (12 epochs of no improvement)
+- Train loss continued decreasing (-1.35 → -2.03) indicating overfitting
+- Train/val gap widened significantly
+
+### 21.3 Phase 2 Run (In Progress)
+
+**Configuration**: Phase 1 + Focal Loss + Source Dropout + Collapse Detection
+
+Early trajectory (epochs 0-2):
+
+| Epoch | Train Loss | Val Loss | Regime | Forecast | Transition |
+|-------|------------|----------|--------|----------|------------|
+| 0 | -0.84 | -1.79 | 0.074 | 0.997 | 0.000 |
+| 1 | -0.86 | -1.83 | 0.073 | 0.976 | 0.000 |
+| 2 | -0.89 | -1.93 | 0.072 | 0.947 | 0.000 |
+
+---
+
+## 22. Phase 1 Overfitting Analysis (2026-02-01)
+
+### 22.1 Overview
+
+Comparative analysis of two Phase 1 checkpoints to understand overfitting patterns:
+
+| Checkpoint | Epoch | Train Loss | Val Loss | Purpose |
+|------------|-------|------------|----------|---------|
+| **Best** | 9 | -1.35 | -2.00 | Best validation performance |
+| **Overfit** | 21 | -2.03 | -2.00 | Latest checkpoint (12 epochs past plateau) |
+
+### 22.2 Component-Level Weight Changes
+
+**Relative weight change** measures how much weights drifted from best to overfit checkpoint:
+
+| Component | Relative Change | Cosine Similarity | Interpretation |
+|-----------|-----------------|-------------------|----------------|
+| **monthly_encoders** | 0.579 | 0.865 | **Primary overfitting site** |
+| **temporal_encoder** | 0.390 | 0.926 | Attention biases drifted |
+| **cross_resolution_fusion** | 0.384 | 0.809 | **Unstable** - low cosine sim |
+| daily_encoders | 0.271 | 0.957 | Relatively stable |
+| daily_fusion | 0.214 | 0.958 | Relatively stable |
+
+**Key Finding**: Monthly encoders (sparse data) and cross-resolution fusion (bottleneck) overfitted most. Daily encoders (rich data) remained stable.
+
+### 22.3 Most Changed Individual Layers
+
+The top 10 layers with largest weight drift reveal specific memorization sites:
+
+| Layer | Component | Relative Change | Cosine Sim |
+|-------|-----------|-----------------|------------|
+| `sentinel.feature_attention.in_proj_bias` | monthly_encoders | **12.08** | 0.588 |
+| `temporal_encoder.0.self_attn.in_proj_bias` | temporal_encoder | **5.32** | 0.404 |
+| `temporal_encoder.1.self_attn.in_proj_bias` | temporal_encoder | **4.18** | 0.364 |
+| `hdx_rainfall.feature_attention.in_proj_bias` | monthly_encoders | 2.93 | 0.967 |
+| `sentinel.feature_projection.bias` | monthly_encoders | 2.29 | 0.792 |
+| `cross_attn_a_to_b.key_proj.bias` | cross_resolution_fusion | 2.21 | 0.380 |
+| `cross_attn_b_to_a.key_proj.bias` | cross_resolution_fusion | 2.15 | 0.310 |
+
+**Pattern Identified**:
+- **Attention bias terms** show the largest changes (12x for sentinel, 5x for temporal)
+- Biases learn "shortcut" attention patterns specific to training data
+- The model memorizes which timesteps/sources to attend to rather than learning general patterns
+
+### 22.4 Task Head Analysis
+
+| Task Head | Mean Relative Change | Cosine Sim | Status |
+|-----------|---------------------|------------|--------|
+| **forecast** | 0.178 | 0.984 | Overfitting (memorizing monthly targets) |
+| **regime** | 0.119 | 0.991 | Overfitting |
+| casualty | 0.0002 | 0.900 | Stable (collapsed - no signal to overfit) |
+| anomaly | 0.0002 | 0.875 | Stable (collapsed) |
+| uncertainty | 0.000 | 1.000 | Stable |
+
+**Interpretation**: The forecast and regime heads show significant overfitting. The collapsed heads (casualty, anomaly) didn't change because they output constants.
+
+### 22.5 Overfitting Propagation Path
+
+The analysis reveals a clear overfitting propagation:
+
+```
+Monthly Sources (sparse)           Cross-Resolution         Temporal Encoder
+        ↓                                ↓                        ↓
+┌─────────────────┐              ┌──────────────┐          ┌─────────────┐
+│ sentinel        │──────────────│              │──────────│             │
+│  12x bias drift │              │ fusion       │          │ attention   │
+│ hdx_rainfall    │              │  0.81 cosine │          │ biases 5x   │
+│  3x bias drift  │              │  (unstable)  │          │ drift       │
+│ hdx_conflict    │              │              │          │             │
+│  1.9x drift     │              └──────────────┘          └─────────────┘
+└─────────────────┘                     ↓
+                                 ┌──────────────┐
+                                 │ Forecast Head│
+                                 │  0.18 change │
+                                 │  (overfitting)│
+                                 └──────────────┘
+```
+
+**Root Cause**: The monthly encoders have sparse data (~48 timesteps vs 1400+ daily). With 644 training samples, the model can memorize attention patterns for each monthly observation.
+
+### 22.6 Implications for Phase 2
+
+The overfitting analysis validates several Phase 2 design decisions:
+
+| Finding | Phase 2 Mitigation |
+|---------|-------------------|
+| Monthly encoders overfit | **Source dropout** (hdx_rainfall 40%) breaks memorization |
+| Attention biases drift | Focal loss creates harder training signal, preventing easy shortcuts |
+| Cross-resolution fusion unstable | Regularization through PCGrad (if enabled) |
+| Collapsed tasks unchanged | **Focal loss** forces learning on transition/casualty |
+
+### 22.7 Recommendations Based on Analysis
+
+1. **Early stopping at epoch 9**: Val loss plateau is clear; continuing only memorizes training data
+
+2. **Monthly encoder regularization**:
+   - Add dropout (0.3) specifically to `sentinel` and `hdx_*` encoders
+   - Consider attention dropout on `feature_attention` layers
+
+3. **Attention bias regularization**:
+   - Add L2 regularization specifically to `in_proj_bias` parameters
+   - Or use attention entropy regularization to prevent sharp patterns
+
+4. **Reduce monthly encoder capacity**:
+   - Current: Same architecture as daily encoders
+   - Suggested: Simpler architecture for sparse monthly data
+
+5. **Freeze early in training**:
+   - Once val loss plateaus, freeze monthly encoders
+   - Continue training only daily encoders and heads
+
+### 22.8 Analysis Files Generated
+
+| File | Description |
+|------|-------------|
+| `outputs/analysis/phase1_overfit_comparison.md` | Full analysis report |
+| `outputs/analysis/phase1_weight_comparison.png` | Component weight changes |
+| `outputs/analysis/phase1_task_head_comparison.png` | Task head changes |
+| `outputs/analysis/phase1_encoder_comparison.png` | Encoder comparison |
+| `analysis/phase1_overfit_analysis.py` | Analysis script |
+| `analysis/checkpoints/phase1_comparison/phase1_best.pt` | Best checkpoint |
+| `analysis/checkpoints/phase1_comparison/phase1_overfit.pt` | Overfit checkpoint |
 
 ---
 
 *Report generated by Claude Code architecture review agents*
-*Last updated: 2026-02-01 (Section 20 expanded with full implementation, Section 21 added)*
+*Last updated: 2026-02-01 (Section 22 added: Phase 1 overfitting analysis)*

@@ -44,6 +44,7 @@ try:
         A3DROLoss,
         SpectralDriftPenalty,
         UniformValidationLoss,
+        AnchoredValidationLoss,  # GPT52
         HybridLossConfig,
         create_training_losses,
     )
@@ -62,6 +63,7 @@ except ImportError:
         A3DROLoss,
         SpectralDriftPenalty,
         UniformValidationLoss,
+        AnchoredValidationLoss,  # GPT52
         HybridLossConfig,
         create_training_losses,
     )
@@ -445,8 +447,13 @@ def apply_hybrid_loss_improvements(
     This is the RECOMMENDED approach based on the proposal analysis.
     It replaces MultiTaskLoss with:
     - A³DRO for training (no learned weights, robust aggregation)
-    - UniformValidationLoss for validation (fixed weights, comparable across epochs)
+    - AnchoredValidationLoss (GPT52) or UniformValidationLoss for validation
     - SpectralDriftPenalty for forecast regularization
+
+    GPT52 Enhancements:
+    - Budgeted A³DRO (budget_beta=0.35): Prevents any task from dominating
+    - Regret clipping (regret_clip=3.0): Numerical stability
+    - Anchored validation: Uses regrets instead of raw losses for comparability
 
     Args:
         trainer: MultiResolutionTrainer instance
@@ -474,6 +481,16 @@ def apply_hybrid_loss_improvements(
     # Add validation loss (separate from training!)
     trainer._validation_loss = loss_modules['validation']
 
+    # GPT52: Store reference to A³DRO base loss for baseline syncing
+    if config.use_a3dro:
+        # Get A³DRO from AvailabilityGatedLoss wrapper
+        if hasattr(loss_modules['training'], 'base_loss'):
+            trainer._a3dro_loss = loss_modules['training'].base_loss
+        else:
+            trainer._a3dro_loss = loss_modules['training']
+    else:
+        trainer._a3dro_loss = None
+
     # Add spectral penalty if enabled
     if 'spectral' in loss_modules:
         trainer._spectral_penalty = loss_modules['spectral']
@@ -487,32 +504,51 @@ def apply_hybrid_loss_improvements(
         trainer._cycle_consistency = None
 
     # Patch the validate method to use fixed weights
-    _patch_validate_method(trainer)
+    _patch_validate_method(trainer, config)
 
     # Print summary
     if config.use_a3dro:
-        print("✓ Applied A³DRO loss (robust aggregation, no learned weights)")
+        print(f"Applied A3DRO loss (budget_beta={config.budget_beta}, regret_clip={config.regret_clip})")
     else:
-        print("✓ Applied SoftplusKendallLoss")
+        print("Applied SoftplusKendallLoss")
 
-    print("✓ Added UniformValidationLoss (fixed weights for comparability)")
+    if config.use_anchored_validation:
+        print("Added AnchoredValidationLoss (GPT52: uses regrets for comparability)")
+    else:
+        print("Added UniformValidationLoss (fixed weights for comparability)")
 
     if config.use_spectral_penalty:
-        print(f"✓ Added SpectralDriftPenalty (weight={config.spectral_weight})")
+        print(f"Added SpectralDriftPenalty (weight={config.spectral_weight})")
 
     if config.use_cycle_consistency:
-        print(f"✓ Added CrossResolutionCycleConsistency (weight={config.cycle_weight})")
+        print(f"Added CrossResolutionCycleConsistency (weight={config.cycle_weight})")
 
 
-def _patch_validate_method(trainer) -> None:
+def _patch_validate_method(trainer, config: Optional[HybridLossConfig] = None) -> None:
     """
-    Patch the trainer's validate method to use UniformValidationLoss.
+    Patch the trainer's validate method to use AnchoredValidationLoss or UniformValidationLoss.
 
+    GPT52: If using anchored validation, also syncs baselines from A³DRO after warmup.
     This ensures validation loss is comparable across epochs (key audit finding).
+
+    Args:
+        trainer: The trainer instance
+        config: HybridLossConfig for GPT52 parameters
     """
     original_validate = trainer.validate
+    config = config or HybridLossConfig()
 
     def patched_validate(*args, **kwargs):
+        # GPT52: Sync baselines from A³DRO to AnchoredValidationLoss after warmup
+        if (config.use_anchored_validation
+                and hasattr(trainer, '_a3dro_loss')
+                and trainer._a3dro_loss is not None
+                and trainer._a3dro_loss.baseline_frozen.item()):
+            # Baselines are frozen, sync to validation loss
+            if hasattr(trainer._validation_loss, 'set_baselines'):
+                baselines = trainer._a3dro_loss.get_baselines()
+                trainer._validation_loss.set_baselines(baselines)
+
         # Temporarily swap loss functions
         training_loss = trainer.multi_task_loss
         trainer.multi_task_loss = trainer._validation_loss
@@ -527,6 +563,37 @@ def _patch_validate_method(trainer) -> None:
 
     trainer.validate = patched_validate
     trainer._original_validate = original_validate
+
+
+def sync_validation_baselines(trainer) -> None:
+    """
+    Manually sync baselines from A³DRO to AnchoredValidationLoss.
+
+    Call this after A³DRO warmup completes (typically after epoch >= warmup_epochs).
+
+    Usage:
+        # After warmup epochs
+        if epoch >= warmup_epochs:
+            sync_validation_baselines(trainer)
+
+    Args:
+        trainer: The trainer instance with hybrid loss improvements applied
+    """
+    if not hasattr(trainer, '_a3dro_loss') or trainer._a3dro_loss is None:
+        warnings.warn("No A³DRO loss found on trainer. Cannot sync baselines.")
+        return
+
+    if not trainer._a3dro_loss.baseline_frozen.item():
+        warnings.warn("A³DRO baselines not yet frozen. Wait for warmup to complete.")
+        return
+
+    if not hasattr(trainer._validation_loss, 'set_baselines'):
+        warnings.warn("Validation loss does not support set_baselines. Using UniformValidationLoss?")
+        return
+
+    baselines = trainer._a3dro_loss.get_baselines()
+    trainer._validation_loss.set_baselines(baselines)
+    print(f"Synced validation baselines from A3DRO: {baselines}")
 
 
 def get_spectral_loss(trainer, predictions: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
@@ -560,6 +627,11 @@ class HybridTrainingStep:
     Improved training step with A³DRO, spectral penalty, and cycle consistency.
 
     This replaces ImprovedTrainingStep with the hybrid approach.
+
+    GPT52 Enhancements:
+    - Budgeted A³DRO prevents any single task from dominating
+    - Regret clipping ensures numerical stability
+    - Anchored validation uses regrets for comparable metrics across epochs
     """
 
     def __init__(
@@ -576,6 +648,15 @@ class HybridTrainingStep:
         self.loss_modules = create_training_losses(task_names, config)
         self.training_loss = self.loss_modules['training'].to(device)
         self.validation_loss = self.loss_modules['validation'].to(device)
+
+        # GPT52: Store reference to A³DRO for baseline syncing
+        if config.use_a3dro:
+            if hasattr(self.training_loss, 'base_loss'):
+                self.a3dro_loss = self.training_loss.base_loss
+            else:
+                self.a3dro_loss = self.training_loss
+        else:
+            self.a3dro_loss = None
 
         if 'spectral' in self.loss_modules:
             self.spectral_penalty = self.loss_modules['spectral'].to(device)
@@ -596,6 +677,8 @@ class HybridTrainingStep:
     ) -> Tuple[torch.Tensor, Dict[str, float]]:
         """
         Compute training loss using A³DRO or SoftplusKendall.
+
+        GPT52: A³DRO now includes budget_beta and regret_clip for robustness.
 
         Args:
             task_losses: Dict of task name -> loss tensor
@@ -619,19 +702,46 @@ class HybridTrainingStep:
         else:
             return self.training_loss(task_losses, masks)
 
+    def sync_validation_baselines(self) -> bool:
+        """
+        Sync baselines from A³DRO to AnchoredValidationLoss.
+
+        GPT52: Call this after A³DRO warmup completes to enable anchored validation.
+
+        Returns:
+            True if sync was successful, False otherwise
+        """
+        if self.a3dro_loss is None:
+            return False
+
+        if not self.a3dro_loss.baseline_frozen.item():
+            return False
+
+        if not hasattr(self.validation_loss, 'set_baselines'):
+            return False
+
+        baselines = self.a3dro_loss.get_baselines()
+        self.validation_loss.set_baselines(baselines)
+        return True
+
     def compute_validation_loss(
         self,
         task_losses: Dict[str, torch.Tensor],
     ) -> Tuple[torch.Tensor, Dict[str, float]]:
         """
-        Compute validation loss using fixed uniform weights.
+        Compute validation loss using anchored regrets or uniform weights.
+
+        GPT52: If using AnchoredValidationLoss, returns uniform average of regrets.
+        This makes validation comparable across epochs and tasks.
 
         Args:
             task_losses: Dict of task name -> loss tensor
 
         Returns:
-            Tuple of (total_loss, weights)
+            Tuple of (total_loss, weights_or_regrets)
         """
+        # GPT52: Auto-sync baselines before validation
+        self.sync_validation_baselines()
         return self.validation_loss(task_losses)
 
     def compute_spectral_penalty(

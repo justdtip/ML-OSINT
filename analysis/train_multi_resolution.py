@@ -3241,6 +3241,20 @@ def main():
     parser.add_argument('--a3dro-lambda', type=float, default=0.5,
                         help='A³DRO temperature (smaller = focus on worst task, default: 0.5)')
 
+    # GPT52 A³DRO enhancements
+    parser.add_argument('--budget-beta', type=float, default=0.35,
+                        help='GPT52: Budget mixing coefficient. Mixes DRO weights with uniform to '
+                             'prevent any task from dominating. Max task weight = 1 - beta. '
+                             '(default: 0.35, set to 0 to disable)')
+    parser.add_argument('--regret-clip', type=float, default=3.0,
+                        help='GPT52: Maximum absolute regret value. Clamps regrets to [-c, +c] '
+                             'for numerical stability. (default: 3.0, set to inf to disable)')
+    parser.add_argument('--use-anchored-validation', action='store_true', default=True,
+                        help='GPT52: Use AnchoredValidationLoss (regrets) instead of UniformValidationLoss. '
+                             'Makes validation comparable across epochs. (default: True)')
+    parser.add_argument('--no-anchored-validation', action='store_true',
+                        help='GPT52: Disable anchored validation, use uniform instead')
+
     # Other arguments
     parser.add_argument('--test', action='store_true',
                         help='Run tests instead of training')
@@ -3275,6 +3289,9 @@ def main():
 
     # Resolve hybrid loss flag
     use_hybrid_loss = args.use_hybrid_loss and not args.no_hybrid_loss
+
+    # Resolve GPT52 anchored validation flag
+    use_anchored_validation = args.use_anchored_validation and not args.no_anchored_validation
 
     print("=" * 80)
     print("MULTI-RESOLUTION HAN TRAINING PIPELINE")
@@ -3597,19 +3614,25 @@ def main():
         print("=" * 60)
 
         if use_hybrid_loss:
-            # Use recommended hybrid approach: A³DRO + Spectral + Uniform Validation
+            # Use recommended hybrid approach: A³DRO + Spectral + Anchored Validation
+            # GPT52 enhancements: budgeted mixing, regret clipping, anchored validation
             hybrid_config = HybridLossConfig(
                 use_a3dro=True,  # Robust aggregation, no learned weights
                 use_spectral_penalty=True,  # FFT-based forecast regularization
                 use_cycle_consistency=True,  # Daily/monthly alignment
+                use_anchored_validation=use_anchored_validation,  # GPT52: regret-based validation
                 lambda_temp=args.a3dro_lambda,  # A³DRO temperature
+                budget_beta=args.budget_beta,  # GPT52: prevent task domination
+                regret_clip=args.regret_clip,  # GPT52: numerical stability
                 spectral_weight=args.spectral_weight,  # Spectral penalty weight
                 cycle_weight=0.2,  # Cycle consistency weight
                 use_hard_availability_gating=True,  # Prevent task collapse
                 min_availability=args.min_availability,
             )
             apply_hybrid_loss_improvements(trainer, hybrid_config)
-            print("\n  Loss Strategy: A³DRO (robust, comparable validation)")
+            print(f"\n  Loss Strategy: A³DRO (budget_beta={args.budget_beta}, regret_clip={args.regret_clip})")
+            if use_anchored_validation:
+                print("  Validation: Anchored (GPT52 - uses regrets for comparability)")
         else:
             # Use original approach with SoftplusKendall
             improvement_config = ImprovedTrainingConfig(

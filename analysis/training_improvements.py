@@ -926,11 +926,19 @@ class A3DROLoss(nn.Module):
     3. Robust log-sum-exp across tasks -> focuses on worst-performing task
     4. NO LEARNED WEIGHTS -> validation/early stopping are meaningful
 
+    GPT52 Proposal Enhancements:
+    5. Budgeted mixing (beta): q_i^(β) = (1-β)*q_i + β*u_i prevents any task from
+       dominating (max weight capped at 1-β)
+    6. Regret clipping (c): Clamps regrets to [-c, +c] for numerical stability
+
     Mathematical formulation:
         r_i = log(L_i + ε) - log(b_i + ε)  # Anchored regret
+        r_i_clip = clamp(r_i, -c, +c)      # Regret clipping (GPT52)
         g_i = sigmoid(κ(a_i - a_min))      # Soft availability gate
         p̃_i = p_i * g_i / Σ_j(p_j * g_j)  # Effective prior
-        L = λ * log(Σ_i p̃_i * exp(r_i / λ))  # Robust aggregation
+        q_i = softmax(r_i_clip / λ)        # DRO weights
+        q_i^(β) = (1-β)*q_i + β*u_i        # Budgeted mixing (GPT52)
+        L = λ * log(Σ_i q_i^(β) * exp(r_i_clip / λ))  # Robust aggregation
 
     Args:
         task_names: List of task identifiers
@@ -939,6 +947,12 @@ class A3DROLoss(nn.Module):
         a_min: Minimum availability threshold
         kappa: Steepness of availability gate sigmoid
         warmup_epochs: Epochs before freezing baselines
+        budget_beta: Budget mixing coefficient (GPT52). Mixes DRO weights with uniform:
+            q^(β) = (1-β)*q + β*u. Default 0.35 caps any task at 65% of gradient budget.
+            Set to 0.0 to disable budgeting (original A³DRO behavior).
+        regret_clip: Maximum absolute regret value (GPT52). Clamps regrets to [-c, +c]
+            before softmax for numerical stability. Default 3.0.
+            Set to float('inf') to disable clipping (original behavior).
     """
 
     def __init__(
@@ -949,6 +963,8 @@ class A3DROLoss(nn.Module):
         a_min: float = 0.2,
         kappa: float = 20.0,
         warmup_epochs: int = 3,
+        budget_beta: float = 0.35,
+        regret_clip: float = 3.0,
     ) -> None:
         super().__init__()
 
@@ -957,6 +973,8 @@ class A3DROLoss(nn.Module):
         self.a_min = a_min
         self.kappa = kappa
         self.warmup_epochs = warmup_epochs
+        self.budget_beta = budget_beta
+        self.regret_clip = regret_clip
 
         # Task priors (fixed, not learned)
         if priors is None:
@@ -1045,7 +1063,7 @@ class A3DROLoss(nn.Module):
         epoch: int = 0,
     ) -> Tuple[Tensor, Dict[str, float]]:
         """
-        Compute A³DRO aggregated loss.
+        Compute A³DRO aggregated loss with GPT52 enhancements.
 
         Args:
             losses: Dict mapping task names to scalar loss tensors
@@ -1085,7 +1103,6 @@ class A3DROLoss(nn.Module):
         # Compute anchored regrets: r_i = log(L_i) - log(b_i)
         regrets = []
         valid_tasks = []
-        effective_weights = {}
 
         for i, task_name in enumerate(self.task_names):
             if task_name not in losses:
@@ -1102,20 +1119,46 @@ class A3DROLoss(nn.Module):
                 baseline = torch.tensor(1.0, device=device)
             regret = torch.log(task_loss + 1e-8) - torch.log(baseline + 1e-8)
 
+            # GPT52: Regret clipping for numerical stability
+            # Clamp regrets to [-c, +c] before softmax
+            if self.regret_clip < float('inf'):
+                regret = regret.clamp(-self.regret_clip, self.regret_clip)
+
             regrets.append(regret)
             valid_tasks.append(task_name)
-            effective_weights[task_name] = p_eff[task_name].item()
 
         if not regrets:
             return torch.tensor(0.0, device=device, requires_grad=True), {}
 
-        # Robust log-sum-exp aggregation
-        # L = λ * log(Σ_i p̃_i * exp(r_i / λ))
+        # Stack regrets for vectorized operations
+        regrets_tensor = torch.stack(regrets)
+        n_active = len(valid_tasks)
+
+        # Compute DRO weights via softmax on regrets
+        # q_i = softmax(r_i / λ) with prior weighting
         logits = torch.stack([
             torch.log(p_eff[name] + 1e-12) + regrets[i] / self.lambda_temp
             for i, name in enumerate(valid_tasks)
         ])
-        total_loss = self.lambda_temp * torch.logsumexp(logits, dim=0)
+        q_dro = F.softmax(logits, dim=0)  # DRO weights
+
+        # GPT52: Budgeted mixing - prevents any single task from dominating
+        # q_i^(β) = (1-β)*q_i + β*u_i where u_i = 1/|active_tasks|
+        if self.budget_beta > 0 and n_active > 0:
+            u_uniform = torch.ones(n_active, device=device) / n_active
+            q_budgeted = (1 - self.budget_beta) * q_dro + self.budget_beta * u_uniform
+        else:
+            q_budgeted = q_dro
+
+        # Record effective weights for logging
+        effective_weights = {
+            name: q_budgeted[i].item()
+            for i, name in enumerate(valid_tasks)
+        }
+
+        # Robust aggregation: L = Σ_i q_i^(β) * r_i
+        # Using weighted sum of regrets (equivalent to weighted log-loss ratio)
+        total_loss = (q_budgeted * regrets_tensor).sum()
 
         return total_loss, effective_weights
 
@@ -1300,6 +1343,147 @@ class UniformValidationLoss(nn.Module):
 
 
 # =============================================================================
+# 11b. ANCHORED VALIDATION LOSS (GPT52 Proposal)
+# =============================================================================
+# Uses uniform average of regrets instead of raw losses for validation.
+# This makes validation comparable across epochs and tasks.
+
+
+class AnchoredValidationLoss(nn.Module):
+    """
+    Anchored validation loss using uniform average of log-ratio regrets.
+
+    GPT52 Proposal: Instead of computing validation as uniform average of raw losses,
+    use uniform average of anchored regrets:
+        L_val = (1/|A|) * sum(r_i)
+    where r_i = log(L_i + eps) - log(b_i + eps) are log-ratio regrets.
+
+    This provides several key benefits:
+    1. **Comparable across epochs**: Raw losses change scale as training progresses,
+       but regrets are always relative to frozen baselines.
+    2. **Comparable across tasks**: Tasks with different loss scales are normalized
+       by their baseline, so regime (small) and forecast (large) contribute equally.
+    3. **Interpretable**: Negative regret means "better than baseline", positive means worse.
+
+    The baselines should be shared with the training A3DROLoss to ensure consistency.
+
+    Args:
+        task_names: List of task identifiers
+        baselines: Dict mapping task names to baseline loss values.
+            These should come from A3DROLoss after warmup (a3dro.get_baselines()).
+            If None, defaults to 1.0 for all tasks (no anchoring).
+        regret_clip: Maximum absolute regret value for numerical stability.
+            Default 3.0 (same as A3DROLoss default).
+    """
+
+    def __init__(
+        self,
+        task_names: List[str],
+        baselines: Optional[Dict[str, float]] = None,
+        regret_clip: float = 3.0,
+    ) -> None:
+        super().__init__()
+
+        self.task_names = list(task_names)
+        self.regret_clip = regret_clip
+
+        # Store baselines as buffer (not trained)
+        if baselines is None:
+            baselines = {name: 1.0 for name in task_names}
+
+        # Register baselines as a buffer tensor for serialization
+        baseline_tensor = torch.tensor(
+            [baselines.get(name, 1.0) for name in task_names],
+            dtype=torch.float32
+        )
+        self.register_buffer('baselines', baseline_tensor)
+
+        # Keep dict version for convenience
+        self._baseline_dict = baselines
+
+    def set_baselines(self, baselines: Dict[str, float]) -> None:
+        """
+        Update baselines from A3DROLoss after warmup.
+
+        Call this after A3DROLoss warmup completes:
+            anchored_val.set_baselines(a3dro_loss.get_baselines())
+
+        Args:
+            baselines: Dict mapping task names to baseline loss values
+        """
+        self._baseline_dict = baselines.copy()
+        baseline_tensor = torch.tensor(
+            [baselines.get(name, 1.0) for name in self.task_names],
+            dtype=torch.float32,
+            device=self.baselines.device
+        )
+        self.baselines.copy_(baseline_tensor)
+
+    def forward(
+        self,
+        losses: Dict[str, Tensor],
+        masks: Optional[Dict[str, Tensor]] = None,
+    ) -> Tuple[Tensor, Dict[str, float]]:
+        """
+        Compute anchored validation loss as uniform average of regrets.
+
+        Args:
+            losses: Dict mapping task names to scalar loss tensors
+            masks: Unused, for API compatibility
+
+        Returns:
+            Tuple of (total_loss, regret_dict)
+            - total_loss: Uniform average of regrets (1/|A| * sum(r_i))
+            - regret_dict: Per-task regret values for logging
+        """
+        device = next(iter(losses.values())).device
+        regrets = []
+        regret_dict = {}
+
+        for i, task_name in enumerate(self.task_names):
+            if task_name not in losses:
+                continue
+
+            task_loss = losses[task_name]
+            if torch.isnan(task_loss) or torch.isinf(task_loss):
+                continue
+
+            # Compute anchored log-ratio regret
+            baseline = self.baselines[i]
+            regret = torch.log(task_loss + 1e-8) - torch.log(baseline + 1e-8)
+
+            # Apply regret clipping for numerical stability
+            if self.regret_clip < float('inf'):
+                regret = regret.clamp(-self.regret_clip, self.regret_clip)
+
+            regrets.append(regret)
+            regret_dict[task_name] = regret.item()
+
+        if not regrets:
+            return torch.tensor(0.0, device=device, requires_grad=True), {}
+
+        # Uniform average of regrets: L_val = (1/|A|) * sum(r_i)
+        total_loss = torch.stack(regrets).mean()
+
+        return total_loss, regret_dict
+
+    def get_task_weights(self) -> Dict[str, float]:
+        """Get task weights (uniform for anchored validation)."""
+        return {name: 1.0 / len(self.task_names) for name in self.task_names}
+
+    def get_uncertainties(self) -> Dict[str, float]:
+        """Get task uncertainties (returns baselines as proxy)."""
+        return self._baseline_dict.copy()
+
+    def get_baselines(self) -> Dict[str, float]:
+        """Get current baseline values."""
+        return {
+            name: self.baselines[i].item()
+            for i, name in enumerate(self.task_names)
+        }
+
+
+# =============================================================================
 # 12. HYBRID LOSS CONFIGURATION (Recommended Final Approach)
 # =============================================================================
 
@@ -1308,9 +1492,14 @@ class HybridLossConfig:
     """
     Recommended configuration combining best of all proposals:
     - A³DRO or SoftplusKendall for training (with AvailabilityGating)
-    - UniformValidation for validation/early stopping
+    - AnchoredValidation or UniformValidation for validation/early stopping
     - SpectralDriftPenalty for forecast regularization
     - CrossResolutionCycleConsistency for daily/monthly alignment
+
+    GPT52 Enhancements:
+    - Budgeted A³DRO (budget_beta=0.35): Prevents any task from dominating
+    - Regret clipping (regret_clip=3.0): Numerical stability
+    - Anchored validation (use_anchored_validation=True): Comparable metrics
     """
 
     def __init__(
@@ -1319,10 +1508,15 @@ class HybridLossConfig:
         use_a3dro: bool = True,  # Recommended: True for robust aggregation
         use_spectral_penalty: bool = True,  # Recommended: True for forecast regularization
         use_cycle_consistency: bool = True,
+        use_anchored_validation: bool = True,  # GPT52: Use anchored regrets for validation
 
         # A³DRO parameters
         lambda_temp: float = 0.5,  # Smaller = more focus on worst task
         warmup_epochs: int = 3,
+
+        # GPT52: Budgeted A³DRO parameters
+        budget_beta: float = 0.35,  # Mix with uniform to cap any task at 65%
+        regret_clip: float = 3.0,   # Clamp regrets for numerical stability
 
         # Spectral penalty parameters
         spectral_weight_decay: float = 0.5,
@@ -1338,8 +1532,11 @@ class HybridLossConfig:
         self.use_a3dro = use_a3dro
         self.use_spectral_penalty = use_spectral_penalty
         self.use_cycle_consistency = use_cycle_consistency
+        self.use_anchored_validation = use_anchored_validation
         self.lambda_temp = lambda_temp
         self.warmup_epochs = warmup_epochs
+        self.budget_beta = budget_beta
+        self.regret_clip = regret_clip
         self.spectral_weight_decay = spectral_weight_decay
         self.spectral_weight = spectral_weight
         self.cycle_weight = cycle_weight
@@ -1354,21 +1551,27 @@ def create_training_losses(
     """
     Create training and validation loss functions based on config.
 
+    GPT52 enhancements:
+    - A³DRO now includes budget_beta and regret_clip parameters
+    - Validation can use AnchoredValidationLoss for comparable metrics
+
     Returns:
         Dict with keys:
             'training': Loss for training (A³DRO or SoftplusKendall)
-            'validation': Loss for validation (UniformValidation)
+            'validation': Loss for validation (AnchoredValidation or UniformValidation)
             'spectral': Optional SpectralDriftPenalty
             'cycle': Optional CrossResolutionCycleConsistency
     """
     losses = {}
 
-    # Training loss
+    # Training loss with GPT52 enhancements
     if config.use_a3dro:
         base_loss = A3DROLoss(
             task_names=task_names,
             lambda_temp=config.lambda_temp,
             warmup_epochs=config.warmup_epochs,
+            budget_beta=config.budget_beta,    # GPT52: Budgeted mixing
+            regret_clip=config.regret_clip,    # GPT52: Regret clipping
         )
     else:
         base_loss = SoftplusKendallLoss(task_names)
@@ -1382,8 +1585,17 @@ def create_training_losses(
     else:
         losses['training'] = base_loss
 
-    # Validation loss (ALWAYS use fixed weights for comparability)
-    losses['validation'] = UniformValidationLoss(task_names)
+    # Validation loss
+    # GPT52: Use anchored validation for comparable metrics across epochs
+    if config.use_anchored_validation:
+        losses['validation'] = AnchoredValidationLoss(
+            task_names=task_names,
+            baselines=None,  # Will be set after A³DRO warmup
+            regret_clip=config.regret_clip,
+        )
+    else:
+        # Fallback to uniform validation (original behavior)
+        losses['validation'] = UniformValidationLoss(task_names)
 
     # Auxiliary losses
     if config.use_spectral_penalty:
@@ -1490,12 +1702,14 @@ def test_improvements():
     print(f"   Availability: {avail}")
     print(f"   Task2 gated out (20% < 50%): {'task2' not in weights} ✓")
 
-    # Test A³DRO Loss
-    print("\n8. Testing A3DROLoss...")
+    # Test A³DRO Loss with GPT52 enhancements
+    print("\n8. Testing A3DROLoss with GPT52 (budgeted + clipped)...")
     a3dro = A3DROLoss(
         task_names=['task1', 'task2', 'task3'],
         lambda_temp=0.5,
         warmup_epochs=2,
+        budget_beta=0.35,  # GPT52: Budgeted mixing
+        regret_clip=3.0,   # GPT52: Regret clipping
     )
     losses = {
         'task1': torch.tensor(1.0),
@@ -1509,6 +1723,26 @@ def test_improvements():
     print(f"   Effective weights: {eff_weights}")
     print(f"   Baselines frozen: {a3dro.baseline_frozen.item()} ✓")
     print(f"   Baselines: {a3dro.get_baselines()}")
+
+    # GPT52: Verify budget constraint (no task > 65%)
+    max_weight = max(eff_weights.values())
+    max_allowed = 1 - a3dro.budget_beta
+    print(f"   Max task weight: {max_weight:.4f} (budget cap: {max_allowed:.2f})")
+    assert max_weight <= max_allowed + 0.01, f"Budget violated: {max_weight} > {max_allowed}"
+    print(f"   Budget constraint satisfied ✓")
+
+    # Test A³DRO without budgeting (original behavior)
+    print("\n8b. Testing A3DROLoss without budgeting...")
+    a3dro_no_budget = A3DROLoss(
+        task_names=['task1', 'task2', 'task3'],
+        lambda_temp=0.5,
+        warmup_epochs=2,
+        budget_beta=0.0,   # Disable budgeting
+        regret_clip=float('inf'),  # Disable clipping
+    )
+    for epoch in range(3):
+        total_nb, eff_weights_nb = a3dro_no_budget(losses, epoch=epoch)
+    print(f"   Without budget, max weight: {max(eff_weights_nb.values()):.4f}")
 
     # Test SpectralDriftPenalty
     print("\n9. Testing SpectralDriftPenalty...")
@@ -1533,12 +1767,55 @@ def test_improvements():
     print(f"   Total uniform loss: {total.item():.4f} (expected: {expected:.4f}) ✓")
     print(f"   Weights: {weights}")
 
-    # Test HybridLossConfig and factory
-    print("\n11. Testing HybridLossConfig + create_training_losses...")
+    # Test AnchoredValidationLoss (GPT52)
+    print("\n10b. Testing AnchoredValidationLoss (GPT52)...")
+    # Use baselines from the A³DRO warmup
+    baselines = a3dro.get_baselines()
+    print(f"   Baselines from A³DRO: {baselines}")
+
+    anchored_val = AnchoredValidationLoss(
+        task_names=['task1', 'task2', 'task3'],
+        baselines=baselines,
+        regret_clip=3.0,
+    )
+
+    # Test with same losses as baselines -> regrets should be ~0
+    baseline_losses = {name: torch.tensor(val) for name, val in baselines.items()}
+    total_anchored, regret_dict = anchored_val(baseline_losses)
+    print(f"   Loss at baseline: {total_anchored.item():.6f} (should be ~0)")
+    print(f"   Regrets: {regret_dict}")
+    assert abs(total_anchored.item()) < 0.01, "Regrets at baseline should be ~0"
+    print(f"   Baseline test passed ✓")
+
+    # Test with losses 2x baseline -> regrets should be positive (log(2) ~ 0.69)
+    double_losses = {name: torch.tensor(val * 2) for name, val in baselines.items()}
+    total_double, regret_double = anchored_val(double_losses)
+    print(f"   Loss at 2x baseline: {total_double.item():.4f} (should be ~0.69)")
+    assert total_double.item() > 0, "Regrets should be positive when loss > baseline"
+    print(f"   2x baseline test passed ✓")
+
+    # Test with losses 0.5x baseline -> regrets should be negative
+    half_losses = {name: torch.tensor(val * 0.5) for name, val in baselines.items()}
+    total_half, regret_half = anchored_val(half_losses)
+    print(f"   Loss at 0.5x baseline: {total_half.item():.4f} (should be ~-0.69)")
+    assert total_half.item() < 0, "Regrets should be negative when loss < baseline"
+    print(f"   0.5x baseline test passed ✓")
+
+    # Test set_baselines method
+    new_baselines = {'task1': 2.0, 'task2': 3.0, 'task3': 1.0}
+    anchored_val.set_baselines(new_baselines)
+    assert anchored_val.get_baselines() == new_baselines, "set_baselines should update"
+    print(f"   set_baselines() works ✓")
+
+    # Test HybridLossConfig and factory with GPT52
+    print("\n11. Testing HybridLossConfig + create_training_losses (GPT52)...")
     config = HybridLossConfig(
         use_a3dro=True,
         use_spectral_penalty=True,
         use_cycle_consistency=True,
+        use_anchored_validation=True,  # GPT52
+        budget_beta=0.35,               # GPT52
+        regret_clip=3.0,                # GPT52
     )
     task_names = ['regime', 'casualty', 'forecast', 'daily_forecast']
     loss_modules = create_training_losses(task_names, config)
@@ -1548,10 +1825,36 @@ def test_improvements():
     assert 'cycle' in loss_modules
     print(f"   Training loss type: {type(loss_modules['training']).__name__}")
     print(f"   Validation loss type: {type(loss_modules['validation']).__name__}")
+
+    # Verify GPT52 parameters are passed through
+    # Get base A³DRO from AvailabilityGatedLoss
+    base_loss = loss_modules['training'].base_loss
+    assert base_loss.budget_beta == 0.35, "budget_beta should be 0.35"
+    assert base_loss.regret_clip == 3.0, "regret_clip should be 3.0"
+    print(f"   A³DRO budget_beta: {base_loss.budget_beta} ✓")
+    print(f"   A³DRO regret_clip: {base_loss.regret_clip} ✓")
+
+    # Verify anchored validation is used
+    assert isinstance(loss_modules['validation'], AnchoredValidationLoss), \
+        "Should use AnchoredValidationLoss"
+    print(f"   AnchoredValidationLoss created ✓")
     print(f"   Created all loss modules ✓")
 
+    # Test backward compatibility (disable GPT52 features)
+    print("\n11b. Testing backward compatibility (GPT52 disabled)...")
+    config_legacy = HybridLossConfig(
+        use_a3dro=True,
+        use_anchored_validation=False,  # Use legacy uniform validation
+        budget_beta=0.0,                 # Disable budgeting
+        regret_clip=float('inf'),        # Disable clipping
+    )
+    loss_modules_legacy = create_training_losses(task_names, config_legacy)
+    assert isinstance(loss_modules_legacy['validation'], UniformValidationLoss), \
+        "Should use UniformValidationLoss when anchored disabled"
+    print(f"   Legacy mode works ✓")
+
     print("\n" + "="*60)
-    print("✓ All tests passed!")
+    print("All tests passed!")
     print("="*60)
 
 

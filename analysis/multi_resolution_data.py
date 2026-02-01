@@ -2273,8 +2273,9 @@ class MultiResolutionDataset(Dataset):
         n_months = self.alignment.n_monthly
 
         # Calculate split sizes based on DAYS (not months)
-        n_test_days = max(1, int(n_days * test_ratio))
-        n_val_days = max(1, int(n_days * val_ratio))
+        # Allow 0 for test_ratio (no test set) or val_ratio (no validation set)
+        n_test_days = int(n_days * test_ratio) if test_ratio > 0 else 0
+        n_val_days = max(1, int(n_days * val_ratio)) if val_ratio > 0 else 0
         n_train_days = n_days - n_test_days - n_val_days
 
         # Temporal splits (no shuffling - preserve time order)

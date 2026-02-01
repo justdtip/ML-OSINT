@@ -3162,6 +3162,12 @@ def main():
     parser.add_argument('--warmup_epochs', type=int, default=10,
                         help='Warmup epochs (default: 10)')
 
+    # Data split arguments
+    parser.add_argument('--val-ratio', type=float, default=0.15,
+                        help='Fraction of data for validation (default: 0.15)')
+    parser.add_argument('--test-ratio', type=float, default=0.15,
+                        help='Fraction of data for test set (default: 0.15). Set to 0 for no test set.')
+
     # Device arguments
     parser.add_argument('--device', type=str, default='auto',
                         choices=['auto', 'cpu', 'cuda', 'mps'],
@@ -3491,21 +3497,30 @@ def main():
         correlation_threshold=args.correlation_threshold,
     )
 
-    train_dataset = MultiResolutionDataset(config=config, split='train')
+    train_dataset = MultiResolutionDataset(
+        config=config, split='train',
+        val_ratio=args.val_ratio, test_ratio=args.test_ratio
+    )
     val_dataset = MultiResolutionDataset(
         config=config, split='val',
+        val_ratio=args.val_ratio, test_ratio=args.test_ratio,
         norm_stats=train_dataset.norm_stats,
         pca_transformer=train_dataset.pca_transformer,
         raion_pca_transformer=train_dataset.raion_pca_transformer,
         correlation_filter_info=train_dataset.correlation_filter_info
     )
-    test_dataset = MultiResolutionDataset(
-        config=config, split='test',
-        norm_stats=train_dataset.norm_stats,
-        pca_transformer=train_dataset.pca_transformer,
-        raion_pca_transformer=train_dataset.raion_pca_transformer,
-        correlation_filter_info=train_dataset.correlation_filter_info
-    )
+    # Only create test dataset if test_ratio > 0
+    if args.test_ratio > 0:
+        test_dataset = MultiResolutionDataset(
+            config=config, split='test',
+            val_ratio=args.val_ratio, test_ratio=args.test_ratio,
+            norm_stats=train_dataset.norm_stats,
+            pca_transformer=train_dataset.pca_transformer,
+            raion_pca_transformer=train_dataset.raion_pca_transformer,
+            correlation_filter_info=train_dataset.correlation_filter_info
+        )
+    else:
+        test_dataset = None
 
     # Get feature dimensions from dataset and create SourceConfig objects
     feature_info = train_dataset.get_feature_info()
@@ -3612,7 +3627,7 @@ def main():
             monthly_seq_len=args.monthly_seq_len,
             n_train_samples=len(train_dataset),
             n_val_samples=len(val_dataset),
-            n_test_samples=len(test_dataset),
+            n_test_samples=len(test_dataset) if test_dataset else 0,
             han_n_params=n_params,
             batch_size=args.batch_size,
             learning_rate=args.learning_rate,
@@ -3764,11 +3779,14 @@ def main():
     if best_checkpoint.exists():
         trainer.load_checkpoint(str(best_checkpoint))
 
-    test_metrics = trainer.evaluate(test_dataset)
-
-    print("\nTest Metrics:")
-    for metric_name, value in test_metrics.items():
-        print(f"  {metric_name}: {value:.4f}")
+    if test_dataset is not None:
+        test_metrics = trainer.evaluate(test_dataset)
+        print("\nTest Metrics:")
+        for metric_name, value in test_metrics.items():
+            print(f"  {metric_name}: {value:.4f}")
+    else:
+        test_metrics = {}
+        print("\nNo test set (test_ratio=0)")
 
     # Save training summary
     summary = {

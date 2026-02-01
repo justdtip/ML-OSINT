@@ -47,6 +47,12 @@ try:
         AnchoredValidationLoss,  # GPT52
         HybridLossConfig,
         create_training_losses,
+        # Phase 2 (Gemini proposal) components
+        FocalLoss,
+        FocalLossWithCollapsePrevention,
+        SourceDropout,
+        AdaptiveSourceDropout,
+        CollapseDetector,
     )
 except ImportError:
     from training_improvements import (
@@ -66,6 +72,12 @@ except ImportError:
         AnchoredValidationLoss,  # GPT52
         HybridLossConfig,
         create_training_losses,
+        # Phase 2 (Gemini proposal) components
+        FocalLoss,
+        FocalLossWithCollapsePrevention,
+        SourceDropout,
+        AdaptiveSourceDropout,
+        CollapseDetector,
     )
 
 
@@ -788,6 +800,301 @@ class HybridTrainingStep:
 
 
 # =============================================================================
+# PHASE 2 (GEMINI PROPOSAL) INTEGRATION
+# =============================================================================
+# Fixes for task collapse and source over-reliance:
+# 1. Focal Loss for transition task (addresses collapse to constant)
+# 2. Source Dropout for hdx_rainfall (addresses spurious correlation)
+# 3. Collapse Detector for automatic intervention
+
+
+class Phase2Config:
+    """
+    Configuration for Phase 2 (Gemini proposal) improvements.
+
+    These address issues not fixed by Phase 1 (Budgeted A3DRO):
+    - Transition task collapse (loss ~1e-8 at epoch 0)
+    - Casualty task collapse (constant output)
+    - hdx_rainfall over-reliance (5.2% importance despite irrelevance)
+
+    Args:
+        use_focal_loss: Enable focal loss for transition task. Default True.
+        focal_alpha: Focal loss alpha (positive class weight). Default 0.25.
+        focal_gamma: Focal loss gamma (focusing parameter). Default 2.0.
+        use_source_dropout: Enable source dropout. Default True.
+        source_dropout_prob: Probability of dropping source. Default 0.4.
+        dropout_sources: List of sources to potentially drop.
+            Default ['hdx_rainfall'].
+        use_collapse_detection: Enable automatic collapse detection. Default True.
+        collapse_threshold: Loss below this triggers collapse intervention.
+            Default 1e-4.
+        auto_enable_focal_on_collapse: Automatically switch to focal loss when
+            collapse is detected. Default True.
+    """
+
+    def __init__(
+        self,
+        # Focal loss settings
+        use_focal_loss: bool = True,
+        focal_alpha: float = 0.25,
+        focal_gamma: float = 2.0,
+        # Source dropout settings
+        use_source_dropout: bool = True,
+        source_dropout_prob: float = 0.4,
+        dropout_sources: Optional[List[str]] = None,
+        # Collapse detection settings
+        use_collapse_detection: bool = True,
+        collapse_threshold: float = 1e-4,
+        auto_enable_focal_on_collapse: bool = True,
+    ):
+        self.use_focal_loss = use_focal_loss
+        self.focal_alpha = focal_alpha
+        self.focal_gamma = focal_gamma
+        self.use_source_dropout = use_source_dropout
+        self.source_dropout_prob = source_dropout_prob
+        self.dropout_sources = dropout_sources or ['hdx_rainfall']
+        self.use_collapse_detection = use_collapse_detection
+        self.collapse_threshold = collapse_threshold
+        self.auto_enable_focal_on_collapse = auto_enable_focal_on_collapse
+
+
+class Phase2TrainingStep:
+    """
+    Phase 2 training step with focal loss, source dropout, and collapse detection.
+
+    Integrates with HybridTrainingStep to add Phase 2 fixes:
+    1. Focal loss for transition task (prevents collapse)
+    2. Source dropout for monthly features (prevents over-reliance)
+    3. Collapse detection with automatic intervention
+
+    Usage:
+        phase2_step = Phase2TrainingStep(config, task_names, device)
+
+        # In training loop:
+        # Apply source dropout to monthly features
+        monthly_features, monthly_masks = phase2_step.apply_source_dropout(
+            monthly_features, monthly_masks
+        )
+
+        # Compute transition loss with focal loss
+        if 'transition' in task_losses:
+            task_losses['transition'] = phase2_step.compute_transition_loss(
+                transition_logits, transition_targets
+            )
+
+        # Check for collapse and log
+        phase2_step.update_collapse_detection(task_losses, epoch)
+    """
+
+    def __init__(
+        self,
+        config: Phase2Config,
+        task_names: List[str],
+        device: torch.device,
+    ) -> None:
+        self.config = config
+        self.device = device
+        self.task_names = task_names
+
+        # Initialize focal loss for transition task
+        if config.use_focal_loss:
+            self.focal_loss = FocalLossWithCollapsePrevention(
+                alpha=config.focal_alpha,
+                gamma=config.focal_gamma,
+                collapse_threshold=config.collapse_threshold,
+            ).to(device)
+        else:
+            self.focal_loss = None
+
+        # Initialize source dropout
+        if config.use_source_dropout:
+            self.source_dropout = SourceDropout(
+                dropout_sources=config.dropout_sources,
+                dropout_prob=config.source_dropout_prob,
+            ).to(device)
+        else:
+            self.source_dropout = None
+
+        # Initialize collapse detector
+        if config.use_collapse_detection:
+            self.collapse_detector = CollapseDetector(
+                task_names=task_names,
+                loss_threshold=config.collapse_threshold,
+            )
+        else:
+            self.collapse_detector = None
+
+        # Track whether we've auto-enabled focal loss
+        self._auto_focal_enabled = False
+
+    def apply_source_dropout(
+        self,
+        features: Dict[str, torch.Tensor],
+        masks: Dict[str, torch.Tensor],
+    ) -> Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
+        """
+        Apply source dropout to features.
+
+        Call this in training loop BEFORE passing features to model.
+
+        Args:
+            features: Dict[source_name, Tensor[batch, seq, features]]
+            masks: Dict[source_name, Tensor[batch, seq, features]]
+
+        Returns:
+            Tuple of (modified_features, modified_masks)
+        """
+        if self.source_dropout is None:
+            return features, masks
+
+        return self.source_dropout(features, masks)
+
+    def compute_transition_loss(
+        self,
+        logits: torch.Tensor,
+        targets: torch.Tensor,
+        use_focal: Optional[bool] = None,
+    ) -> torch.Tensor:
+        """
+        Compute transition loss with optional focal loss.
+
+        Args:
+            logits: Raw model outputs [batch] or [batch, 1]
+            targets: Binary targets [batch]
+            use_focal: Override focal loss usage. If None, uses config setting.
+
+        Returns:
+            Scalar loss
+        """
+        use_focal = use_focal if use_focal is not None else self.config.use_focal_loss
+
+        if use_focal and self.focal_loss is not None:
+            return self.focal_loss(logits, targets)
+        else:
+            # Fall back to BCE
+            logits = logits.view(-1)
+            targets = targets.view(-1).float()
+            return F.binary_cross_entropy_with_logits(logits, targets)
+
+    def update_collapse_detection(
+        self,
+        losses: Dict[str, torch.Tensor],
+        epoch: int,
+    ) -> Dict[str, bool]:
+        """
+        Update collapse detection with current losses.
+
+        Args:
+            losses: Dict mapping task name to loss tensor
+            epoch: Current training epoch
+
+        Returns:
+            Dict of newly collapsed tasks
+        """
+        if self.collapse_detector is None:
+            return {}
+
+        # Convert to float values
+        loss_values = {
+            name: loss.item() if isinstance(loss, torch.Tensor) else loss
+            for name, loss in losses.items()
+        }
+
+        # Update detector
+        newly_collapsed = self.collapse_detector.update(loss_values, epoch)
+
+        # Auto-enable focal loss if transition collapsed
+        if (self.config.auto_enable_focal_on_collapse
+                and 'transition' in newly_collapsed
+                and not self._auto_focal_enabled):
+            print("[Phase2] Auto-enabling focal loss for transition task")
+            self.config.use_focal_loss = True
+            if self.focal_loss is None:
+                self.focal_loss = FocalLossWithCollapsePrevention(
+                    alpha=self.config.focal_alpha,
+                    gamma=self.config.focal_gamma,
+                    collapse_threshold=self.config.collapse_threshold,
+                ).to(self.device)
+            self._auto_focal_enabled = True
+
+        return newly_collapsed
+
+    def is_collapsed(self, task_name: str) -> bool:
+        """Check if a task has collapsed."""
+        if self.collapse_detector is None:
+            return False
+        return self.collapse_detector.is_collapsed(task_name)
+
+    def get_collapsed_tasks(self) -> List[str]:
+        """Get list of collapsed task names."""
+        if self.collapse_detector is None:
+            return []
+        return self.collapse_detector.get_collapsed_tasks()
+
+    def set_training(self, mode: bool = True) -> None:
+        """Set training mode for dropout."""
+        if self.source_dropout is not None:
+            self.source_dropout.train(mode)
+
+
+def apply_phase2_improvements(
+    trainer,
+    config: Optional[Phase2Config] = None,
+) -> Phase2TrainingStep:
+    """
+    Apply Phase 2 (Gemini proposal) improvements to an existing trainer.
+
+    This adds:
+    - Focal loss for transition task
+    - Source dropout for hdx_rainfall
+    - Collapse detection with automatic intervention
+
+    Args:
+        trainer: MultiResolutionTrainer instance
+        config: Optional Phase2Config (uses defaults if not provided)
+
+    Returns:
+        Phase2TrainingStep instance for use in training loop
+    """
+    config = config or Phase2Config()
+
+    # Get task names
+    if hasattr(trainer, 'multi_task_loss') and hasattr(trainer.multi_task_loss, 'task_names'):
+        task_names = trainer.multi_task_loss.task_names
+    else:
+        task_names = ['regime', 'casualty', 'anomaly', 'forecast', 'daily_forecast', 'transition']
+
+    # Create Phase2 step handler
+    phase2_step = Phase2TrainingStep(
+        config=config,
+        task_names=task_names,
+        device=trainer.device,
+    )
+
+    # Store on trainer
+    trainer._phase2_step = phase2_step
+    trainer._phase2_config = config
+
+    # Print summary
+    print("\n" + "=" * 60)
+    print("APPLYING PHASE 2 (GEMINI PROPOSAL) IMPROVEMENTS")
+    print("=" * 60)
+
+    if config.use_focal_loss:
+        print(f"  Focal Loss: alpha={config.focal_alpha}, gamma={config.focal_gamma}")
+
+    if config.use_source_dropout:
+        print(f"  Source Dropout: {config.dropout_sources} @ {config.source_dropout_prob:.0%}")
+
+    if config.use_collapse_detection:
+        print(f"  Collapse Detection: threshold={config.collapse_threshold:.2e}")
+
+    print("=" * 60 + "\n")
+
+    return phase2_step
+
+
+# =============================================================================
 # TRAINING SCRIPT MODIFICATIONS GUIDE
 # =============================================================================
 
@@ -981,8 +1288,60 @@ def test_integration():
     cycle_loss = hybrid_step.compute_cycle_consistency(daily_latents, monthly_latent)
     print(f"   Cycle consistency: {cycle_loss.item():.4f} ✓")
 
+    # Test Phase 2 improvements
+    print("\n5. Testing Phase2Config and Phase2TrainingStep...")
+    phase2_config = Phase2Config(
+        use_focal_loss=True,
+        focal_alpha=0.25,
+        focal_gamma=2.0,
+        use_source_dropout=True,
+        source_dropout_prob=0.4,
+        dropout_sources=['hdx_rainfall'],
+        use_collapse_detection=True,
+        collapse_threshold=1e-4,
+    )
+    phase2_step = Phase2TrainingStep(
+        config=phase2_config,
+        task_names=['regime', 'casualty', 'transition'],
+        device=torch.device('cpu'),
+    )
+
+    # Test focal loss for transition
+    transition_logits = torch.randn(32)
+    transition_targets = torch.zeros(32)
+    transition_targets[5] = 1
+    transition_loss = phase2_step.compute_transition_loss(
+        transition_logits, transition_targets
+    )
+    print(f"   Focal transition loss: {transition_loss.item():.4f}")
+
+    # Test source dropout
+    phase2_step.set_training(True)
+    features = {
+        'equipment': torch.randn(4, 12, 38),
+        'hdx_rainfall': torch.randn(4, 12, 16),
+    }
+    masks = {
+        'equipment': torch.ones(4, 12, 38, dtype=torch.bool),
+        'hdx_rainfall': torch.ones(4, 12, 16, dtype=torch.bool),
+    }
+
+    dropped_count = 0
+    for _ in range(50):
+        feat_out, mask_out = phase2_step.apply_source_dropout(features, masks)
+        if feat_out['hdx_rainfall'].abs().sum() == 0:
+            dropped_count += 1
+    print(f"   Source dropout rate: {dropped_count * 2}% (expected ~40%)")
+
+    # Test collapse detection
+    phase2_step.update_collapse_detection(
+        {'transition': 1e-8, 'casualty': 0.5}, epoch=0
+    )
+    assert phase2_step.is_collapsed('transition'), "Should detect transition collapse"
+    print("   Collapse detection: working")
+
     print("\n" + "=" * 60)
-    print("✓ All integration tests passed!")
+    print("All integration tests passed (including Phase 2)!")
     print("=" * 60)
     print("\nTo see the integration guide, run: print_integration_guide()")
 

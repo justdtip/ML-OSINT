@@ -144,6 +144,14 @@ from training_improvements_integration import (
     apply_hybrid_loss_improvements,
     HybridLossConfig,
     HybridTrainingStep,
+    # Phase 2 (Gemini proposal) improvements
+    apply_phase2_improvements,
+    Phase2Config,
+    Phase2TrainingStep,
+    FocalLoss,
+    FocalLossWithCollapsePrevention,
+    SourceDropout,
+    CollapseDetector,
 )
 
 # Training run management (for probe integration)
@@ -1882,6 +1890,11 @@ class MultiResolutionTrainer:
         # =====================================================================
         # Use anomaly_score as a proxy for transition detection
         # (model should learn to detect phase transitions)
+        #
+        # Phase 2 (Gemini proposal): Use focal loss to address task collapse.
+        # The transition task often collapses to constant "no transition" prediction
+        # because ~95%+ of samples are negative. Focal loss down-weights easy
+        # negatives to focus learning on the rare positive transitions.
         anomaly_score = outputs['anomaly_score']  # [batch, seq, 1]
 
         if target_tensors is not None and 'daily_is_transition' in target_tensors:
@@ -1895,10 +1908,20 @@ class MultiResolutionTrainer:
                 valid_idx = phase_valid.nonzero(as_tuple=True)[0]
                 # Clamp logits to prevent extreme values
                 clamped_scores = anomaly_score_last[valid_idx].clamp(-50, 50)
-                transition_loss = F.binary_cross_entropy_with_logits(
-                    clamped_scores,
-                    transition_targets[valid_idx],
-                )
+                valid_targets = transition_targets[valid_idx]
+
+                # Phase 2: Use focal loss if available (fixes task collapse)
+                if hasattr(self, '_phase2_step') and self._phase2_step is not None:
+                    transition_loss = self._phase2_step.compute_transition_loss(
+                        clamped_scores,
+                        valid_targets,
+                    )
+                else:
+                    # Fall back to BCE
+                    transition_loss = F.binary_cross_entropy_with_logits(
+                        clamped_scores,
+                        valid_targets,
+                    )
                 losses['transition'] = torch.nan_to_num(transition_loss, nan=0.0)
             else:
                 # No valid targets - small regularization
@@ -2263,14 +2286,23 @@ class MultiResolutionTrainer:
                 print(f"  [B{batch_idx}] Loaded ({_load_time:.2f}s)", flush=True)
             batch = self._move_batch_to_device(batch)
 
+            # Phase 2: Apply source dropout to monthly features
+            # This prevents over-reliance on uninformative sources like hdx_rainfall
+            monthly_features = batch['monthly_features']
+            monthly_masks = batch['monthly_masks']
+            if hasattr(self, '_phase2_step') and self._phase2_step is not None:
+                monthly_features, monthly_masks = self._phase2_step.apply_source_dropout(
+                    monthly_features, monthly_masks
+                )
+
             # Forward pass with mixed precision
             with autocast(enabled=self.use_amp, dtype=self.amp_dtype):
                 # Forward pass (include raion_masks if available for geographic sources)
                 outputs = self.model(
                     daily_features=batch['daily_features'],
                     daily_masks=batch['daily_masks'],
-                    monthly_features=batch['monthly_features'],
-                    monthly_masks=batch['monthly_masks'],
+                    monthly_features=monthly_features,
+                    monthly_masks=monthly_masks,
                     month_boundaries=batch['month_boundary_indices'],
                     raion_masks=batch.get('raion_masks'),
                 )
@@ -2339,7 +2371,7 @@ class MultiResolutionTrainer:
         # Warn if any loss component has collapsed to near-zero
         collapse_threshold = 0.001
         collapsed_tasks = []
-        for task in ['regime', 'anomaly', 'forecast']:
+        for task in ['regime', 'anomaly', 'forecast', 'transition', 'casualty']:
             if task in results and results[task] < collapse_threshold:
                 collapsed_tasks.append(f"{task}={results[task]:.6f}")
         if collapsed_tasks:
@@ -2348,6 +2380,15 @@ class MultiResolutionTrainer:
                 f"Model may be outputting constant predictions. "
                 f"Consider increasing anti-collapse regularization weights."
             )
+
+        # Phase 2: Use enhanced collapse detection with automatic intervention
+        if hasattr(self, '_phase2_step') and self._phase2_step is not None:
+            newly_collapsed = self._phase2_step.update_collapse_detection(
+                results, self.current_epoch
+            )
+            if newly_collapsed:
+                for task in newly_collapsed:
+                    print(f"[Phase2] Automatic intervention triggered for {task}")
 
         # Step scheduler
         self.scheduler.step()
@@ -3255,6 +3296,39 @@ def main():
     parser.add_argument('--no-anchored-validation', action='store_true',
                         help='GPT52: Disable anchored validation, use uniform instead')
 
+    # Phase 2 (Gemini proposal) improvements - fixes for task collapse
+    parser.add_argument('--use-focal-loss', action='store_true', default=True,
+                        help='Phase 2: Use focal loss for transition task to prevent collapse. '
+                             '(default: True)')
+    parser.add_argument('--no-focal-loss', action='store_true',
+                        help='Phase 2: Disable focal loss, use BCE for transition')
+    parser.add_argument('--focal-alpha', type=float, default=0.25,
+                        help='Phase 2: Focal loss alpha (positive class weight). '
+                             'Higher = more weight on rare positives. (default: 0.25)')
+    parser.add_argument('--focal-gamma', type=float, default=2.0,
+                        help='Phase 2: Focal loss gamma (focusing parameter). '
+                             'Higher = more focus on hard examples. (default: 2.0)')
+    parser.add_argument('--use-source-dropout', action='store_true', default=True,
+                        help='Phase 2: Enable source dropout to prevent over-reliance. '
+                             '(default: True)')
+    parser.add_argument('--no-source-dropout', action='store_true',
+                        help='Phase 2: Disable source dropout')
+    parser.add_argument('--source-dropout-prob', type=float, default=0.4,
+                        help='Phase 2: Probability of dropping each source during training. '
+                             '(default: 0.4, i.e., 40%%)')
+    parser.add_argument('--dropout-sources', type=str, nargs='*',
+                        default=['hdx_rainfall'],
+                        help='Phase 2: List of sources to potentially drop. '
+                             '(default: hdx_rainfall)')
+    parser.add_argument('--use-collapse-detection', action='store_true', default=True,
+                        help='Phase 2: Enable automatic collapse detection. '
+                             '(default: True)')
+    parser.add_argument('--no-collapse-detection', action='store_true',
+                        help='Phase 2: Disable automatic collapse detection')
+    parser.add_argument('--collapse-threshold', type=float, default=1e-4,
+                        help='Phase 2: Loss below this triggers collapse detection. '
+                             '(default: 1e-4)')
+
     # Other arguments
     parser.add_argument('--test', action='store_true',
                         help='Run tests instead of training')
@@ -3292,6 +3366,11 @@ def main():
 
     # Resolve GPT52 anchored validation flag
     use_anchored_validation = args.use_anchored_validation and not args.no_anchored_validation
+
+    # Resolve Phase 2 (Gemini proposal) flags
+    use_focal_loss = args.use_focal_loss and not args.no_focal_loss
+    use_source_dropout = args.use_source_dropout and not args.no_source_dropout
+    use_collapse_detection = args.use_collapse_detection and not args.no_collapse_detection
 
     print("=" * 80)
     print("MULTI-RESOLUTION HAN TRAINING PIPELINE")
@@ -3648,6 +3727,24 @@ def main():
             print("\n  Loss Strategy: SoftplusKendall (learned weights)")
 
         print("=" * 60 + "\n")
+
+    # Apply Phase 2 (Gemini proposal) improvements
+    # These fix task collapse issues not addressed by Phase 1 (Budgeted A3DRO)
+    if use_focal_loss or use_source_dropout or use_collapse_detection:
+        phase2_config = Phase2Config(
+            use_focal_loss=use_focal_loss,
+            focal_alpha=args.focal_alpha,
+            focal_gamma=args.focal_gamma,
+            use_source_dropout=use_source_dropout,
+            source_dropout_prob=args.source_dropout_prob,
+            dropout_sources=args.dropout_sources,
+            use_collapse_detection=use_collapse_detection,
+            collapse_threshold=args.collapse_threshold,
+            auto_enable_focal_on_collapse=True,
+        )
+        phase2_step = apply_phase2_improvements(trainer, phase2_config)
+    else:
+        phase2_step = None
 
     # Resume if requested
     if args.resume:

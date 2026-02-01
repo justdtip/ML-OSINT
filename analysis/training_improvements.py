@@ -13,6 +13,13 @@ Core improvements:
 4. AvailabilityGatedLoss - Hard gate tasks with missing targets
 5. CrossResolutionCycleConsistency - Enforce daily->monthly aggregation consistency
 
+Phase 2 (Gemini Proposal) additions:
+6. FocalLoss - Focal loss for imbalanced binary classification (transition task)
+7. FocalLossWithCollapsePrevention - Extended focal loss with auto-collapse detection
+8. SourceDropout - Randomly drop out entire sources during training
+9. AdaptiveSourceDropout - Adaptive dropout based on source importance
+10. CollapseDetector - Monitors task losses for collapse and triggers interventions
+
 Author: Claude (synthesized from multiple AI proposals)
 Date: 2026-01-31
 """
@@ -20,6 +27,7 @@ Date: 2026-01-31
 from typing import Dict, List, Optional, Tuple, Union
 import warnings
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -1858,5 +1866,730 @@ def test_improvements():
     print("="*60)
 
 
+# =============================================================================
+# 13. FOCAL LOSS (Phase 2 - Gemini Proposal)
+# =============================================================================
+# Addresses transition task collapse by down-weighting easy negatives
+
+
+class FocalLoss(nn.Module):
+    """
+    Focal Loss for imbalanced binary classification.
+
+    Addresses the transition task collapse where the model learns to predict
+    "no transition" constantly (loss ~1e-8 at epoch 0). This happens because:
+    - ~95%+ of samples are "no transition" (class imbalance)
+    - BCE loss is dominated by easy negative examples
+    - Model converges to always-negative output
+
+    Focal Loss down-weights easy examples using:
+        FL = alpha * (1-pt)^gamma * BCE
+    where:
+        pt = exp(-BCE) = probability of correct class
+        (1-pt)^gamma = modulating factor that reduces loss for easy examples
+
+    Parameters:
+        alpha (float): Weighting factor for the positive class. Default 0.25.
+            Helps address class imbalance by upweighting the rare positive class.
+        gamma (float): Focusing parameter. Default 2.0.
+            gamma=0 reduces to standard BCE
+            gamma>0 reduces loss for well-classified examples
+        reduction (str): 'mean', 'sum', or 'none'
+        auto_detect_collapse (bool): If True, automatically detect loss collapse
+            and adjust alpha/gamma. Default True.
+        collapse_threshold (float): Loss below this triggers collapse detection.
+            Default 1e-4.
+
+    Reference:
+        Lin et al. (2017) "Focal Loss for Dense Object Detection"
+
+    Example:
+        >>> focal_loss = FocalLoss(alpha=0.25, gamma=2.0)
+        >>> logits = torch.randn(32)  # Raw scores
+        >>> targets = torch.zeros(32)  # Mostly negative
+        >>> targets[5] = 1  # Few positive
+        >>> loss = focal_loss(logits, targets)
+    """
+
+    def __init__(
+        self,
+        alpha: float = 0.25,
+        gamma: float = 2.0,
+        reduction: str = 'mean',
+        auto_detect_collapse: bool = True,
+        collapse_threshold: float = 1e-4,
+    ) -> None:
+        super().__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+        self.reduction = reduction
+        self.auto_detect_collapse = auto_detect_collapse
+        self.collapse_threshold = collapse_threshold
+
+        # Track collapse detection state
+        self._collapse_detected = False
+        self._original_alpha = alpha
+        self._original_gamma = gamma
+
+    def forward(
+        self,
+        logits: Tensor,
+        targets: Tensor,
+        weight: Optional[Tensor] = None,
+    ) -> Tensor:
+        """
+        Compute focal loss.
+
+        Args:
+            logits: Raw model outputs (before sigmoid) [batch] or [batch, 1]
+            targets: Binary targets (0 or 1) [batch] or [batch, 1]
+            weight: Optional per-sample weights [batch]
+
+        Returns:
+            Focal loss scalar (if reduction='mean'/'sum') or per-sample losses
+        """
+        # Flatten if needed
+        logits = logits.view(-1)
+        targets = targets.view(-1).float()
+
+        # Compute BCE with logits (numerically stable)
+        bce_loss = F.binary_cross_entropy_with_logits(
+            logits, targets, reduction='none'
+        )
+
+        # Compute pt = P(y=1) for positive, P(y=0) for negative
+        # pt = sigmoid(logit) for positive targets
+        # pt = 1 - sigmoid(logit) for negative targets
+        # Equivalently: pt = exp(-BCE)
+        pt = torch.exp(-bce_loss)
+
+        # Compute alpha factor
+        # alpha for positive class, (1-alpha) for negative class
+        alpha_factor = self.alpha * targets + (1 - self.alpha) * (1 - targets)
+
+        # Focal weight: (1-pt)^gamma
+        focal_weight = (1 - pt).pow(self.gamma)
+
+        # Final focal loss
+        focal_loss = alpha_factor * focal_weight * bce_loss
+
+        # Apply sample weights if provided
+        if weight is not None:
+            focal_loss = focal_loss * weight.view(-1)
+
+        # Reduction
+        if self.reduction == 'mean':
+            return focal_loss.mean()
+        elif self.reduction == 'sum':
+            return focal_loss.sum()
+        else:
+            return focal_loss
+
+    def detect_and_adjust_collapse(
+        self,
+        loss_value: float,
+        positive_rate: float,
+    ) -> bool:
+        """
+        Detect loss collapse and automatically adjust parameters.
+
+        Call this after computing loss to check for collapse. If detected,
+        parameters are adjusted to encourage learning.
+
+        Args:
+            loss_value: Current loss value
+            positive_rate: Fraction of positive samples in batch
+
+        Returns:
+            True if collapse was detected and parameters adjusted
+        """
+        if not self.auto_detect_collapse:
+            return False
+
+        if loss_value < self.collapse_threshold and not self._collapse_detected:
+            self._collapse_detected = True
+
+            # Increase alpha to upweight rare positive class
+            # Increase gamma to down-weight easy negatives more aggressively
+            new_alpha = min(0.75, self.alpha * 2)
+            new_gamma = min(5.0, self.gamma + 1.0)
+
+            print(f"[FocalLoss] Collapse detected (loss={loss_value:.2e}, "
+                  f"pos_rate={positive_rate:.3f})")
+            print(f"[FocalLoss] Adjusting alpha: {self.alpha:.2f} -> {new_alpha:.2f}")
+            print(f"[FocalLoss] Adjusting gamma: {self.gamma:.1f} -> {new_gamma:.1f}")
+
+            self.alpha = new_alpha
+            self.gamma = new_gamma
+            return True
+
+        return False
+
+    def reset_parameters(self) -> None:
+        """Reset to original alpha and gamma values."""
+        self.alpha = self._original_alpha
+        self.gamma = self._original_gamma
+        self._collapse_detected = False
+
+
+class FocalLossWithCollapsePrevention(nn.Module):
+    """
+    Extended Focal Loss with automatic collapse detection and prevention.
+
+    This wrapper around FocalLoss adds:
+    1. Automatic collapse detection when loss < threshold
+    2. Label smoothing to prevent overconfidence
+    3. Minimum loss floor to maintain gradients
+    4. Positive class upweighting based on class distribution
+
+    Use this instead of raw FocalLoss for the transition task.
+
+    Args:
+        alpha: Base weighting factor for positive class. Default 0.25.
+        gamma: Focusing parameter. Default 2.0.
+        label_smoothing: Smooth labels to prevent overconfidence. Default 0.1.
+        min_loss_floor: Minimum loss value to maintain gradients. Default 1e-6.
+        collapse_threshold: Loss below this triggers collapse prevention. Default 1e-4.
+        auto_reweight: Automatically reweight based on class distribution. Default True.
+    """
+
+    def __init__(
+        self,
+        alpha: float = 0.25,
+        gamma: float = 2.0,
+        label_smoothing: float = 0.1,
+        min_loss_floor: float = 1e-6,
+        collapse_threshold: float = 1e-4,
+        auto_reweight: bool = True,
+    ) -> None:
+        super().__init__()
+        self.base_alpha = alpha
+        self.gamma = gamma
+        self.label_smoothing = label_smoothing
+        self.min_loss_floor = min_loss_floor
+        self.collapse_threshold = collapse_threshold
+        self.auto_reweight = auto_reweight
+
+        self.focal_loss = FocalLoss(
+            alpha=alpha,
+            gamma=gamma,
+            reduction='none',
+            auto_detect_collapse=False,  # We handle collapse ourselves
+        )
+
+        # Track statistics for adaptive reweighting
+        self._running_pos_rate = 0.5
+        self._ema_decay = 0.99
+        self._collapse_count = 0
+
+    def forward(
+        self,
+        logits: Tensor,
+        targets: Tensor,
+        weight: Optional[Tensor] = None,
+    ) -> Tensor:
+        """
+        Compute focal loss with collapse prevention.
+
+        Args:
+            logits: Raw model outputs (before sigmoid) [batch]
+            targets: Binary targets (0 or 1) [batch]
+            weight: Optional per-sample weights [batch]
+
+        Returns:
+            Focal loss scalar with collapse prevention
+        """
+        logits = logits.view(-1)
+        targets = targets.view(-1).float()
+
+        # Apply label smoothing
+        if self.label_smoothing > 0:
+            targets = targets * (1 - self.label_smoothing) + 0.5 * self.label_smoothing
+
+        # Update running positive rate
+        with torch.no_grad():
+            pos_rate = targets.mean().item()
+            self._running_pos_rate = (
+                self._ema_decay * self._running_pos_rate +
+                (1 - self._ema_decay) * pos_rate
+            )
+
+        # Auto-reweight alpha based on class imbalance
+        if self.auto_reweight and self._running_pos_rate < 0.1:
+            # Severe imbalance: increase alpha for rare class
+            effective_alpha = min(0.9, self.base_alpha / (self._running_pos_rate + 0.01))
+        else:
+            effective_alpha = self.base_alpha
+
+        self.focal_loss.alpha = effective_alpha
+
+        # Compute focal loss
+        per_sample_loss = self.focal_loss(logits, targets, weight)
+
+        # Mean reduction with floor
+        loss = per_sample_loss.mean()
+
+        # Apply minimum loss floor to maintain gradients
+        loss = torch.maximum(loss, torch.tensor(self.min_loss_floor, device=loss.device))
+
+        # Check for collapse
+        if loss.item() < self.collapse_threshold:
+            self._collapse_count += 1
+
+            if self._collapse_count >= 5:
+                # Persistent collapse - add gradient-maintaining term
+                # Small regularization on logit magnitude
+                reg_loss = logits.pow(2).mean() * 1e-4
+                loss = loss + reg_loss
+
+        return loss
+
+    def get_stats(self) -> Dict[str, float]:
+        """Get current statistics for logging."""
+        return {
+            'running_pos_rate': self._running_pos_rate,
+            'effective_alpha': self.focal_loss.alpha,
+            'gamma': self.gamma,
+            'collapse_count': self._collapse_count,
+        }
+
+
+# =============================================================================
+# 14. SOURCE DROPOUT (Phase 2 - Gemini Proposal)
+# =============================================================================
+# Prevents over-reliance on uninformative sources like hdx_rainfall
+
+
+class SourceDropout(nn.Module):
+    """
+    Randomly drops out entire sources during training.
+
+    Addresses the issue where uninformative sources (like hdx_rainfall with 5.2%
+    importance despite being irrelevant) dominate because they have strong
+    seasonal patterns that correlate spuriously with targets.
+
+    During training, randomly zeros out specified sources with given probability.
+    This forces the model to learn from other (more relevant) sources.
+
+    Args:
+        dropout_sources: List of source names to potentially drop.
+            Default: ['hdx_rainfall']
+        dropout_prob: Probability of dropping each source. Default 0.4.
+        training_only: Only apply dropout during training. Default True.
+
+    Example:
+        >>> source_dropout = SourceDropout(
+        ...     dropout_sources=['hdx_rainfall'],
+        ...     dropout_prob=0.4,
+        ... )
+        >>> features = {'equipment': torch.randn(4, 12, 38),
+        ...             'hdx_rainfall': torch.randn(4, 12, 16)}
+        >>> masks = {'equipment': torch.ones(4, 12, 38, dtype=torch.bool),
+        ...          'hdx_rainfall': torch.ones(4, 12, 16, dtype=torch.bool)}
+        >>> # During training, hdx_rainfall may be zeroed out 40% of the time
+        >>> features, masks = source_dropout(features, masks)
+    """
+
+    def __init__(
+        self,
+        dropout_sources: Optional[List[str]] = None,
+        dropout_prob: float = 0.4,
+        training_only: bool = True,
+    ) -> None:
+        super().__init__()
+        self.dropout_sources = dropout_sources or ['hdx_rainfall']
+        self.dropout_prob = dropout_prob
+        self.training_only = training_only
+
+    def forward(
+        self,
+        features: Dict[str, Tensor],
+        masks: Dict[str, Tensor],
+    ) -> Tuple[Dict[str, Tensor], Dict[str, Tensor]]:
+        """
+        Apply source dropout.
+
+        Args:
+            features: Dict[source_name, Tensor[batch, seq, features]]
+            masks: Dict[source_name, Tensor[batch, seq, features]]
+
+        Returns:
+            Tuple of (modified_features, modified_masks)
+        """
+        if self.training_only and not self.training:
+            return features, masks
+
+        features_out = {}
+        masks_out = {}
+
+        for name, feat in features.items():
+            if name in self.dropout_sources and self.training:
+                # Decide whether to drop this source (same decision for whole batch)
+                if torch.rand(1).item() < self.dropout_prob:
+                    # Zero out features and mark as missing
+                    features_out[name] = torch.zeros_like(feat)
+                    masks_out[name] = torch.zeros_like(masks[name])
+                else:
+                    features_out[name] = feat
+                    masks_out[name] = masks[name]
+            else:
+                features_out[name] = feat
+                masks_out[name] = masks[name]
+
+        return features_out, masks_out
+
+    def extra_repr(self) -> str:
+        return f"dropout_sources={self.dropout_sources}, dropout_prob={self.dropout_prob}"
+
+
+class AdaptiveSourceDropout(nn.Module):
+    """
+    Adaptive source dropout based on source importance.
+
+    Extends SourceDropout by tracking which sources the model relies on and
+    increasing dropout probability for over-relied sources.
+
+    This creates a curriculum where:
+    1. Initially: Low dropout, model can use all sources
+    2. Later: High dropout for dominant sources, forcing diversification
+    3. Result: More balanced source usage, less spurious correlation
+
+    Args:
+        all_sources: List of all source names
+        initial_dropout_prob: Starting dropout probability. Default 0.1.
+        max_dropout_prob: Maximum dropout probability. Default 0.6.
+        importance_threshold: Sources with importance above this get dropout.
+            Default 0.15 (15% importance).
+        update_interval: How often to update dropout probs. Default 100 batches.
+    """
+
+    def __init__(
+        self,
+        all_sources: List[str],
+        initial_dropout_prob: float = 0.1,
+        max_dropout_prob: float = 0.6,
+        importance_threshold: float = 0.15,
+        update_interval: int = 100,
+    ) -> None:
+        super().__init__()
+        self.all_sources = list(all_sources)
+        self.initial_dropout_prob = initial_dropout_prob
+        self.max_dropout_prob = max_dropout_prob
+        self.importance_threshold = importance_threshold
+        self.update_interval = update_interval
+
+        # Initialize per-source dropout probabilities
+        self.dropout_probs = {name: initial_dropout_prob for name in all_sources}
+
+        # Track source importance (from attention weights or gradient norms)
+        self.source_importance = {name: 1.0 / len(all_sources) for name in all_sources}
+        self._batch_count = 0
+
+    def update_importance(self, importance: Dict[str, float]) -> None:
+        """
+        Update source importance estimates.
+
+        Call this after each batch with the attention weights or
+        gradient norms from the model.
+
+        Args:
+            importance: Dict mapping source name to importance score (0-1)
+        """
+        # EMA update
+        alpha = 0.1
+        for name in self.all_sources:
+            if name in importance:
+                self.source_importance[name] = (
+                    (1 - alpha) * self.source_importance[name] +
+                    alpha * importance[name]
+                )
+
+        self._batch_count += 1
+
+        # Periodically update dropout probabilities
+        if self._batch_count % self.update_interval == 0:
+            self._update_dropout_probs()
+
+    def _update_dropout_probs(self) -> None:
+        """Update dropout probabilities based on source importance."""
+        for name in self.all_sources:
+            imp = self.source_importance[name]
+
+            if imp > self.importance_threshold:
+                # Source is over-relied - increase dropout
+                # Scale dropout linearly with how much importance exceeds threshold
+                excess = (imp - self.importance_threshold) / (1 - self.importance_threshold)
+                new_prob = self.initial_dropout_prob + excess * (
+                    self.max_dropout_prob - self.initial_dropout_prob
+                )
+                self.dropout_probs[name] = min(new_prob, self.max_dropout_prob)
+            else:
+                # Source is underutilized - keep low dropout
+                self.dropout_probs[name] = self.initial_dropout_prob
+
+    def forward(
+        self,
+        features: Dict[str, Tensor],
+        masks: Dict[str, Tensor],
+    ) -> Tuple[Dict[str, Tensor], Dict[str, Tensor]]:
+        """
+        Apply adaptive source dropout.
+
+        Args:
+            features: Dict[source_name, Tensor[batch, seq, features]]
+            masks: Dict[source_name, Tensor[batch, seq, features]]
+
+        Returns:
+            Tuple of (modified_features, modified_masks)
+        """
+        if not self.training:
+            return features, masks
+
+        features_out = {}
+        masks_out = {}
+
+        for name, feat in features.items():
+            if name in self.dropout_probs:
+                if torch.rand(1).item() < self.dropout_probs[name]:
+                    # Drop this source
+                    features_out[name] = torch.zeros_like(feat)
+                    masks_out[name] = torch.zeros_like(masks[name])
+                else:
+                    features_out[name] = feat
+                    masks_out[name] = masks[name]
+            else:
+                features_out[name] = feat
+                masks_out[name] = masks[name]
+
+        return features_out, masks_out
+
+    def get_dropout_probs(self) -> Dict[str, float]:
+        """Get current per-source dropout probabilities."""
+        return self.dropout_probs.copy()
+
+
+# =============================================================================
+# 15. COLLAPSE DETECTOR (Phase 2 - Gemini Proposal)
+# =============================================================================
+
+
+class CollapseDetector:
+    """
+    Monitors task losses for collapse and triggers interventions.
+
+    Collapse is detected when:
+    1. Loss drops below threshold (e.g., < 1e-4) early in training
+    2. Loss variance becomes very low (model outputs constant)
+    3. Gradient norms become negligible
+
+    When collapse is detected, the detector can:
+    1. Switch to focal loss for affected tasks
+    2. Increase regularization
+    3. Reset task-specific parameters
+    4. Log warnings for investigation
+
+    Args:
+        task_names: List of task identifiers to monitor
+        loss_threshold: Loss below this triggers collapse check. Default 1e-4.
+        variance_window: Window size for variance computation. Default 10.
+        min_variance: Minimum acceptable variance. Default 1e-8.
+        early_epoch_threshold: Only check for collapse before this epoch. Default 5.
+    """
+
+    def __init__(
+        self,
+        task_names: List[str],
+        loss_threshold: float = 1e-4,
+        variance_window: int = 10,
+        min_variance: float = 1e-8,
+        early_epoch_threshold: int = 5,
+    ) -> None:
+        self.task_names = list(task_names)
+        self.loss_threshold = loss_threshold
+        self.variance_window = variance_window
+        self.min_variance = min_variance
+        self.early_epoch_threshold = early_epoch_threshold
+
+        # Track loss history per task
+        self.loss_history: Dict[str, List[float]] = {
+            name: [] for name in task_names
+        }
+
+        # Collapse state per task
+        self.collapse_detected: Dict[str, bool] = {
+            name: False for name in task_names
+        }
+
+        # Epoch tracking
+        self.current_epoch = 0
+
+    def update(
+        self,
+        losses: Dict[str, float],
+        epoch: int,
+    ) -> Dict[str, bool]:
+        """
+        Update with current losses and check for collapse.
+
+        Args:
+            losses: Dict mapping task name to current loss value
+            epoch: Current training epoch
+
+        Returns:
+            Dict mapping task name to collapse status (True if just detected)
+        """
+        self.current_epoch = epoch
+        newly_collapsed = {}
+
+        for task_name, loss in losses.items():
+            if task_name not in self.task_names:
+                continue
+
+            # Add to history
+            self.loss_history[task_name].append(loss)
+
+            # Trim to window size
+            if len(self.loss_history[task_name]) > self.variance_window:
+                self.loss_history[task_name] = self.loss_history[task_name][-self.variance_window:]
+
+            # Check for collapse (only in early epochs)
+            if epoch < self.early_epoch_threshold and not self.collapse_detected[task_name]:
+                is_collapsed = self._check_collapse(task_name, loss)
+                if is_collapsed:
+                    self.collapse_detected[task_name] = True
+                    newly_collapsed[task_name] = True
+                    print(f"[CollapseDetector] COLLAPSE DETECTED for task '{task_name}' "
+                          f"at epoch {epoch} (loss={loss:.2e})")
+
+        return newly_collapsed
+
+    def _check_collapse(self, task_name: str, current_loss: float) -> bool:
+        """Check if a task has collapsed."""
+        # Criterion 1: Loss below threshold
+        if current_loss < self.loss_threshold:
+            return True
+
+        # Criterion 2: Loss variance very low (output is constant)
+        history = self.loss_history[task_name]
+        if len(history) >= 3:
+            variance = np.var(history)
+            if variance < self.min_variance and current_loss < 0.01:
+                return True
+
+        return False
+
+    def is_collapsed(self, task_name: str) -> bool:
+        """Check if a task is in collapsed state."""
+        return self.collapse_detected.get(task_name, False)
+
+    def get_collapsed_tasks(self) -> List[str]:
+        """Get list of collapsed task names."""
+        return [name for name, collapsed in self.collapse_detected.items() if collapsed]
+
+    def reset(self) -> None:
+        """Reset all tracking state."""
+        self.loss_history = {name: [] for name in self.task_names}
+        self.collapse_detected = {name: False for name in self.task_names}
+        self.current_epoch = 0
+
+
+# =============================================================================
+# TESTING (Updated)
+# =============================================================================
+
+
+def test_phase2_improvements():
+    """Test Phase 2 (Gemini proposal) improvements."""
+    print("\n" + "=" * 60)
+    print("Testing Phase 2 (Gemini Proposal) Improvements")
+    print("=" * 60)
+
+    # Test FocalLoss
+    print("\n1. Testing FocalLoss...")
+    focal = FocalLoss(alpha=0.25, gamma=2.0)
+    logits = torch.randn(32)
+    targets = torch.zeros(32)
+    targets[5] = 1  # Few positive samples
+    targets[10] = 1
+
+    loss = focal(logits, targets)
+    print(f"   Focal loss: {loss.item():.4f}")
+
+    # Compare with BCE
+    bce = F.binary_cross_entropy_with_logits(logits, targets)
+    print(f"   BCE loss: {bce.item():.4f}")
+    print(f"   Focal < BCE: {loss.item() < bce.item()} (expected for imbalanced)")
+
+    # Test collapse detection
+    print("\n2. Testing FocalLossWithCollapsePrevention...")
+    focal_cp = FocalLossWithCollapsePrevention(
+        alpha=0.25,
+        gamma=2.0,
+        collapse_threshold=1e-4,
+    )
+
+    # Simulate collapse scenario (model outputs constant)
+    collapsed_logits = torch.full((32,), -10.0)  # Confident negative
+    targets_imbalanced = torch.zeros(32)
+    targets_imbalanced[0] = 1  # 3% positive rate
+
+    loss_collapsed = focal_cp(collapsed_logits, targets_imbalanced)
+    print(f"   Loss with collapse prevention: {loss_collapsed.item():.6f}")
+    print(f"   Stats: {focal_cp.get_stats()}")
+
+    # Test SourceDropout
+    print("\n3. Testing SourceDropout...")
+    source_dropout = SourceDropout(
+        dropout_sources=['hdx_rainfall'],
+        dropout_prob=0.4,
+    )
+    source_dropout.train()
+
+    features = {
+        'equipment': torch.randn(4, 12, 38),
+        'hdx_rainfall': torch.randn(4, 12, 16),
+    }
+    masks = {
+        'equipment': torch.ones(4, 12, 38, dtype=torch.bool),
+        'hdx_rainfall': torch.ones(4, 12, 16, dtype=torch.bool),
+    }
+
+    # Run multiple times to see dropout effect
+    dropped_count = 0
+    for _ in range(100):
+        feat_out, mask_out = source_dropout(features, masks)
+        if feat_out['hdx_rainfall'].abs().sum() == 0:
+            dropped_count += 1
+
+    print(f"   Dropout rate: {dropped_count}% (expected ~40%)")
+    assert 25 < dropped_count < 55, f"Dropout rate {dropped_count}% outside expected range"
+    print("   SourceDropout works correctly")
+
+    # Test CollapseDetector
+    print("\n4. Testing CollapseDetector...")
+    detector = CollapseDetector(
+        task_names=['transition', 'casualty'],
+        loss_threshold=1e-4,
+        early_epoch_threshold=5,
+    )
+
+    # Simulate normal training
+    detector.update({'transition': 0.5, 'casualty': 1.2}, epoch=0)
+    detector.update({'transition': 0.3, 'casualty': 0.8}, epoch=1)
+    assert len(detector.get_collapsed_tasks()) == 0, "Should not detect collapse yet"
+
+    # Simulate transition collapse
+    collapsed = detector.update({'transition': 1e-8, 'casualty': 0.6}, epoch=2)
+    assert 'transition' in collapsed, "Should detect transition collapse"
+    assert detector.is_collapsed('transition'), "Transition should be marked collapsed"
+    assert not detector.is_collapsed('casualty'), "Casualty should not be collapsed"
+    print("   CollapseDetector works correctly")
+
+    print("\n" + "=" * 60)
+    print("All Phase 2 tests passed!")
+    print("=" * 60)
+
+
 if __name__ == '__main__':
     test_improvements()
+    test_phase2_improvements()

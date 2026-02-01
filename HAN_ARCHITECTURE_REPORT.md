@@ -907,5 +907,242 @@ Full integration requires replacing DailyForecastingHead with ImprovedForecastMo
 
 ---
 
+## 19. Phase 1 Implementation: GPT52 Budgeted A³DRO (2026-02-01)
+
+### 19.1 Overview
+
+Phase 1 addresses three critical issues identified in the symptom analysis:
+1. **Forecast task domination (~99%)** - Single task hijacking all gradients
+2. **Negative training loss (-4.09)** - A³DRO numerical instability
+3. **Incomparable validation across epochs** - Raw uniform weights meaningless with 100,000x scale mismatch
+
+### 19.2 Implemented Components
+
+#### A. Budgeted A³DRO (β=0.35)
+
+**Location**: `analysis/training_improvements.py` - `A3DROLoss` class
+
+**Mathematical formulation**:
+```
+q_i^(β) = (1-β) * q_i + β * u_i
+
+where:
+- q_i = softmax(r_i / λ) * p_i  (A³DRO weights)
+- u_i = 1 / |active_tasks|      (uniform distribution)
+- β = 0.35                       (budget parameter)
+```
+
+**Effect**: No single task can exceed (1-β) = 65% of gradient budget, even with extreme regret values.
+
+**Implementation**:
+```python
+# In A3DROLoss.forward():
+if self.budget_beta > 0:
+    n_active = len(active_tasks)
+    uniform = torch.ones(n_active, device=device) / n_active
+    weights = (1 - self.budget_beta) * weights + self.budget_beta * uniform
+```
+
+#### B. Regret Clipping (c=3.0)
+
+**Location**: `analysis/training_improvements.py` - `A3DROLoss` class
+
+**Mathematical formulation**:
+```
+r_i^clip = clamp(log(L_i) - log(b_i), -c, +c)
+
+where:
+- L_i = current task loss
+- b_i = frozen baseline (median from warmup)
+- c = 3.0 (clipping threshold)
+```
+
+**Effect**: Prevents extreme regret values (e.g., exp(23) ratios) from causing numerical instability in softmax.
+
+**Implementation**:
+```python
+# In A3DROLoss.forward():
+regret = torch.log(loss + 1e-8) - torch.log(baseline + 1e-8)
+if self.regret_clip < float('inf'):
+    regret = torch.clamp(regret, -self.regret_clip, self.regret_clip)
+```
+
+#### C. Anchored Validation Loss
+
+**Location**: `analysis/training_improvements.py` - `AnchoredValidationLoss` class
+
+**Purpose**: Replace `UniformValidationLoss` which used raw losses (making validation "forecast-only" due to 100,000x scale mismatch).
+
+**Mathematical formulation**:
+```
+L_val = (1/|A|) * Σ r_i
+
+where:
+- r_i = log(L_i) - log(b_i)  (log-ratio regret)
+- A = set of active tasks
+- b_i = frozen baselines from A³DRO
+```
+
+**Effect**: Validation loss is now in normalized regret space, comparable across epochs and tasks.
+
+**Implementation**:
+```python
+class AnchoredValidationLoss(nn.Module):
+    def set_baselines(self, baselines: Dict[str, float]):
+        """Sync baselines from A3DROLoss after warmup"""
+        self.baselines = baselines.copy()
+        self.baselines_frozen = True
+
+    def forward(self, losses, availabilities=None):
+        regrets = []
+        for task, loss in losses.items():
+            baseline = self.baselines.get(task, 1.0)
+            regret = torch.log(loss + 1e-8) - math.log(baseline + 1e-8)
+            regret = torch.clamp(regret, -self.regret_clip, self.regret_clip)
+            regrets.append(regret)
+        return torch.stack(regrets).mean()
+```
+
+### 19.3 CLI Arguments Added
+
+**Location**: `analysis/train_multi_resolution.py`
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--budget-beta` | 0.35 | Budget mixing parameter (0=pure A³DRO, 1=pure uniform) |
+| `--regret-clip` | 3.0 | Maximum absolute regret value |
+| `--use-anchored-validation` | True | Use anchored regrets for validation |
+| `--no-anchored-validation` | - | Fall back to raw uniform validation |
+
+### 19.4 Test Results
+
+**Test file**: `tests/test_budgeted_a3dro.py`
+
+| Test Category | Passed | Total |
+|---------------|--------|-------|
+| Budgeted A³DRO | 5 | 5 |
+| Regret Clipping | 4 | 4 |
+| Anchored Validation | 4 | 4 |
+| Numerical Stability | 7 | 8 (1 xfail) |
+| Integration | 3 | 3 |
+| GPT52 Spec | 4 | 5 (1 skipped) |
+| Performance | 4 | 4 |
+| **Total** | **31** | **33** |
+
+**Known issues**:
+- Empty losses dict raises `StopIteration` (xfail, edge case)
+- One spec test skipped pending verification
+
+### 19.5 Initial Training Results (Epoch 0-2)
+
+**Configuration**:
+```bash
+python -m analysis.train_multi_resolution \
+    --budget-beta 0.35 \
+    --regret-clip 3.0 \
+    --use-anchored-validation \
+    --all-raion-sources \
+    --epochs 50 \
+    --batch_size 4 \
+    --d_model 128
+```
+
+**Observations**:
+
+| Metric | Before Phase 1 | After Phase 1 (Epoch 2) |
+|--------|----------------|-------------------------|
+| Task weights | Forecast ~99% | Uniform 0.17 each ✅ |
+| Training loss | -4.09 (negative) | -0.89 (bounded) ✅ |
+| Numerical stability | Unstable | Stable ✅ |
+| Validation comparability | Meaningless | Comparable ✅ |
+
+**Per-task losses (Epoch 2)**:
+
+| Task | Loss | Status |
+|------|------|--------|
+| regime | 0.072 | ✅ Learning |
+| forecast | 0.946 | ✅ Learning |
+| daily_forecast | 0.103 | ✅ Learning |
+| casualty | 0.000 | ⚠️ Collapsed (Phase 2 target) |
+| transition | 0.000 | ⚠️ Collapsed (Phase 2 target) |
+| anomaly | 0.000 | ⚠️ Collapsed (Phase 2 target) |
+
+### 19.6 Phase 1 Summary
+
+**What Phase 1 Fixed**:
+1. ✅ Forecast task no longer dominates (capped at 65%)
+2. ✅ Training loss stays bounded (regret clipping)
+3. ✅ Validation is now comparable across epochs
+4. ✅ Weights are uniformly distributed
+
+**What Phase 1 Did NOT Fix** (addressed in Phase 2):
+1. ❌ Transition task collapse (needs Focal Loss)
+2. ❌ Casualty task collapse (needs Focal Loss)
+3. ❌ hdx_rainfall spurious correlation (needs source dropout)
+
+### 19.7 Files Modified
+
+| File | Changes |
+|------|---------|
+| `analysis/training_improvements.py` | Added `budget_beta`, `regret_clip` to A3DROLoss; Added `AnchoredValidationLoss` class |
+| `analysis/training_improvements_integration.py` | Added baseline syncing between A3DRO and validation loss |
+| `analysis/train_multi_resolution.py` | Added CLI arguments for GPT52 components |
+| `tests/test_budgeted_a3dro.py` | New comprehensive test suite (34 tests) |
+
+---
+
+## 20. Phase 2 Implementation: Gemini Emergency Fixes (Planned)
+
+### 20.1 Components to Implement
+
+Based on gemini.md proposal and remaining symptoms:
+
+| Component | Target Symptom | Priority |
+|-----------|---------------|----------|
+| **Focal Loss for Transition** | Transition collapse (1e-8) | HIGH |
+| **Focal Loss for Casualty** | Casualty collapse (1e-5) | HIGH |
+| **Source-Specific Dropout** | hdx_rainfall dominance | MEDIUM |
+| **Log1p Target Scaling** | 100,000x loss scale (partial fix) | LOW |
+
+### 20.2 Focal Loss Specification
+
+**For transition task (binary)**:
+```python
+class FocalLoss(nn.Module):
+    def __init__(self, alpha=0.25, gamma=2.0):
+        # alpha: weight for positive class
+        # gamma: focusing parameter (higher = more focus on hard examples)
+
+    def forward(self, inputs, targets):
+        BCE_loss = F.binary_cross_entropy_with_logits(inputs, targets, reduction='none')
+        pt = torch.exp(-BCE_loss)  # probability of correct class
+        F_loss = self.alpha * (1-pt)**self.gamma * BCE_loss
+        return F_loss.mean()
+```
+
+**Rationale**: Transition events are rare (~1-2% positive). Standard BCE is minimized by predicting "never transition". Focal loss down-weights easy negatives (99%) and up-weights hard positives.
+
+### 20.3 Source Dropout Specification
+
+**For hdx_rainfall**:
+```python
+# In forward pass, before encoding:
+if self.training and 'hdx_rainfall' in monthly_features:
+    if torch.rand(1).item() < 0.4:  # 40% dropout
+        monthly_features['hdx_rainfall'] = torch.zeros_like(monthly_features['hdx_rainfall'])
+```
+
+**Rationale**: Model lazily latches onto rainfall seasonality (strong periodic signal). Dropout forces learning from military data sources.
+
+### 20.4 Implementation Status
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| Focal Loss | 🔄 In Progress | - |
+| Source Dropout | ⏳ Pending | - |
+| Log1p Scaling | ⏳ Pending | Lower priority |
+
+---
+
 *Report generated by Claude Code architecture review agents*
-*Last updated: 2026-01-31 (Section 18 added: synthesized solution)*
+*Last updated: 2026-02-01 (Sections 19-20 added: Phase 1 implementation, Phase 2 plan)*

@@ -1223,6 +1223,340 @@ class AirRaidSirensRaionLoader:
 
 
 # =============================================================================
+# AIR RAID SIRENS OBLAST LOADER (uses 100% of data including oblast-level records)
+# =============================================================================
+
+class AirRaidSirensOblastLoader:
+    """
+    Load Air Raid Sirens data aggregated at oblast level.
+
+    This loader uses ALL records including the 57% that are oblast-level only
+    (which cannot be assigned to specific raions). This provides full coverage
+    of the air raid alert dataset.
+
+    Output: Daily feature tensor [n_days, 25 oblasts, 20 features]
+
+    Features (20 total per oblast):
+    - [0-2]: Alert counts (total, official_source, volunteer_source)
+    - [3-6]: Duration stats (total_minutes, avg_minutes, max_minutes, std_minutes)
+    - [7-10]: Time of day (night_alerts, morning_alerts, afternoon_alerts, evening_alerts)
+    - [11-14]: Duration categories (short<15m, medium, long>60m, extended>120m)
+    - [15-17]: Intensity (alerts_per_hour, peak_density, coverage_ratio)
+    - [18-19]: Derived (alert_frequency_change, duration_trend)
+    """
+
+    # 25 Ukrainian oblasts (English names)
+    OBLAST_NAMES = [
+        'Cherkasy', 'Chernihiv', 'Chernivtsi', 'Crimea', 'Dnipropetrovsk',
+        'Donetsk', 'Ivano-Frankivsk', 'Kharkiv', 'Kherson', 'Khmelnytskyi',
+        'Kyiv', 'Kirovohrad', 'Luhansk', 'Lviv', 'Mykolaiv',
+        'Odesa', 'Poltava', 'Rivne', 'Sumy', 'Ternopil',
+        'Vinnytsia', 'Volyn', 'Zakarpattia', 'Zaporizhzhia', 'Zhytomyr'
+    ]
+
+    # Ukrainian to English oblast mapping
+    OBLAST_TRANSLATION = {
+        'Черкаська область': 'Cherkasy',
+        'Чернігівська область': 'Chernihiv',
+        'Чернівецька область': 'Chernivtsi',
+        'Автономна Республіка Крим': 'Crimea',
+        'Дніпропетровська область': 'Dnipropetrovsk',
+        'Донецька область': 'Donetsk',
+        'Івано-Франківська область': 'Ivano-Frankivsk',
+        'Харківська область': 'Kharkiv',
+        'Херсонська область': 'Kherson',
+        'Хмельницька область': 'Khmelnytskyi',
+        'Київська область': 'Kyiv',
+        'м. Київ': 'Kyiv',  # Kyiv city -> Kyiv oblast
+        'Кіровоградська область': 'Kirovohrad',
+        'Луганська область': 'Luhansk',
+        'Львівська область': 'Lviv',
+        'Миколаївська область': 'Mykolaiv',
+        'Одеська область': 'Odesa',
+        'Полтавська область': 'Poltava',
+        'Рівненська область': 'Rivne',
+        'Сумська область': 'Sumy',
+        'Тернопільська область': 'Ternopil',
+        'Вінницька область': 'Vinnytsia',
+        'Волинська область': 'Volyn',
+        'Закарпатська область': 'Zakarpattia',
+        'Запорізька область': 'Zaporizhzhia',
+        'Житомирська область': 'Zhytomyr',
+    }
+
+    # Feature names (20 features per oblast)
+    FEATURE_NAMES = [
+        # Alert counts [0-2]
+        'alert_count', 'official_alerts', 'volunteer_alerts',
+        # Duration stats [3-6]
+        'total_duration_minutes', 'avg_duration_minutes', 'max_duration_minutes', 'std_duration_minutes',
+        # Time of day [7-10]
+        'night_alerts', 'morning_alerts', 'afternoon_alerts', 'evening_alerts',
+        # Duration categories [11-14]
+        'short_alerts', 'medium_alerts', 'long_alerts', 'extended_alerts',
+        # Intensity [15-17]
+        'alerts_per_hour', 'peak_hour_density', 'coverage_ratio',
+        # Derived [18-19]
+        'alert_frequency_change', 'duration_trend',
+    ]
+
+    FEATURE_IDX = {name: i for i, name in enumerate(FEATURE_NAMES)}
+    N_FEATURES = len(FEATURE_NAMES)
+    N_OBLASTS = len(OBLAST_NAMES)
+
+    def __init__(
+        self,
+        official_file: Optional[Path] = None,
+        volunteer_file: Optional[Path] = None,
+    ):
+        self.official_file = official_file or AIR_RAID_OFFICIAL_FILE
+        self.volunteer_file = volunteer_file or AIR_RAID_VOLUNTEER_FILE
+        self._data: Optional[pd.DataFrame] = None
+
+    def _translate_oblast(self, oblast_ukr: str) -> Optional[str]:
+        """Translate Ukrainian oblast name to English."""
+        if not isinstance(oblast_ukr, str):
+            return None
+        # Direct lookup
+        if oblast_ukr in self.OBLAST_TRANSLATION:
+            return self.OBLAST_TRANSLATION[oblast_ukr]
+        # Try partial match
+        for ukr, en in self.OBLAST_TRANSLATION.items():
+            if ukr in oblast_ukr or oblast_ukr in ukr:
+                return en
+        return None
+
+    def load_raw(self) -> pd.DataFrame:
+        """Load raw air raid siren data."""
+        if self._data is not None:
+            return self._data
+
+        dfs = []
+
+        if self.official_file.exists():
+            print(f"Loading official air raid data from {self.official_file}...")
+            df_official = pd.read_csv(self.official_file)
+            df_official['source'] = 'official'
+            dfs.append(df_official)
+            print(f"  Official: {len(df_official)} records")
+
+        if self.volunteer_file.exists():
+            print(f"Loading volunteer air raid data from {self.volunteer_file}...")
+            df_volunteer = pd.read_csv(self.volunteer_file)
+            df_volunteer['source'] = 'volunteer'
+            dfs.append(df_volunteer)
+            print(f"  Volunteer: {len(df_volunteer)} records")
+
+        if not dfs:
+            warnings.warn("No air raid siren data found")
+            return pd.DataFrame()
+
+        df = pd.concat(dfs, ignore_index=True)
+
+        # Parse timestamps
+        for col in ['started_at', 'finished_at']:
+            if col in df.columns:
+                df[col] = pd.to_datetime(df[col], errors='coerce')
+
+        # Calculate duration
+        if 'started_at' in df.columns and 'finished_at' in df.columns:
+            df['duration_minutes'] = (df['finished_at'] - df['started_at']).dt.total_seconds() / 60
+            df['duration_minutes'] = df['duration_minutes'].clip(lower=0)
+
+        # Extract date and hour
+        if 'started_at' in df.columns:
+            df['date'] = df['started_at'].dt.date
+            df['hour'] = df['started_at'].dt.hour
+
+        self._data = df
+        return df
+
+    def load_oblast_features(
+        self,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+    ) -> Tuple[np.ndarray, np.ndarray, List[str], List[datetime]]:
+        """
+        Load air raid sirens as per-oblast daily features.
+
+        Uses ALL records including oblast-level alerts (57% of data).
+
+        Returns:
+            Tuple of (features[20], mask, oblast_names, dates)
+        """
+        start = start_date or DEFAULT_START_DATE
+        end = end_date or DEFAULT_END_DATE
+
+        df = self.load_raw()
+        if df.empty:
+            return np.array([]), np.array([]), [], []
+
+        # Handle timezone
+        if df['started_at'].dt.tz is not None:
+            import pytz
+            start = start.replace(tzinfo=pytz.UTC) if start.tzinfo is None else start
+            end = end.replace(tzinfo=pytz.UTC) if end.tzinfo is None else end
+
+        # Filter date range
+        df = df[(df['started_at'] >= start) & (df['started_at'] <= end)].copy()
+
+        # Translate oblast names
+        df['oblast_en'] = df['oblast'].apply(self._translate_oblast)
+
+        # Create date range
+        n_days = (end - start).days + 1
+        dates = [start + timedelta(days=i) for i in range(n_days)]
+        date_to_idx = {d.date(): i for i, d in enumerate(dates)}
+
+        # Create oblast index
+        oblast_to_idx = {o: i for i, o in enumerate(self.OBLAST_NAMES)}
+
+        # Initialize features
+        features = np.zeros((n_days, self.N_OBLASTS, self.N_FEATURES), dtype=np.float32)
+        mask = np.zeros((n_days, self.N_OBLASTS), dtype=bool)
+
+        # Aggregate alerts by day-oblast
+        day_oblast_alerts: Dict[Tuple[int, int], List[Dict]] = {}
+
+        for _, row in df.iterrows():
+            oblast = row.get('oblast_en')
+            if oblast is None or oblast not in oblast_to_idx:
+                continue
+
+            date_key = row.get('date')
+            if date_key is None or date_key not in date_to_idx:
+                continue
+
+            day_idx = date_to_idx[date_key]
+            oblast_idx = oblast_to_idx[oblast]
+            key = (day_idx, oblast_idx)
+
+            if key not in day_oblast_alerts:
+                day_oblast_alerts[key] = []
+
+            day_oblast_alerts[key].append({
+                'duration': row.get('duration_minutes', 0) or 0,
+                'hour': row.get('hour', 12),
+                'source': row.get('source', 'official'),
+            })
+
+        # Compute features for each day-oblast
+        for (day_idx, oblast_idx), alerts in day_oblast_alerts.items():
+            mask[day_idx, oblast_idx] = True
+
+            # Alert counts [0-2]
+            features[day_idx, oblast_idx, 0] = len(alerts)
+            features[day_idx, oblast_idx, 1] = sum(1 for a in alerts if a['source'] == 'official')
+            features[day_idx, oblast_idx, 2] = sum(1 for a in alerts if a['source'] == 'volunteer')
+
+            # Duration stats [3-6]
+            durations = [a['duration'] for a in alerts if a['duration'] > 0]
+            if durations:
+                features[day_idx, oblast_idx, 3] = sum(durations)
+                features[day_idx, oblast_idx, 4] = np.mean(durations)
+                features[day_idx, oblast_idx, 5] = max(durations)
+                features[day_idx, oblast_idx, 6] = np.std(durations) if len(durations) > 1 else 0
+
+            # Time of day [7-10]
+            hours = [a['hour'] for a in alerts]
+            features[day_idx, oblast_idx, 7] = sum(1 for h in hours if 0 <= h < 6)  # night
+            features[day_idx, oblast_idx, 8] = sum(1 for h in hours if 6 <= h < 12)  # morning
+            features[day_idx, oblast_idx, 9] = sum(1 for h in hours if 12 <= h < 18)  # afternoon
+            features[day_idx, oblast_idx, 10] = sum(1 for h in hours if 18 <= h < 24)  # evening
+
+            # Duration categories [11-14]
+            features[day_idx, oblast_idx, 11] = sum(1 for d in durations if d < 15)  # short
+            features[day_idx, oblast_idx, 12] = sum(1 for d in durations if 15 <= d < 60)  # medium
+            features[day_idx, oblast_idx, 13] = sum(1 for d in durations if 60 <= d < 120)  # long
+            features[day_idx, oblast_idx, 14] = sum(1 for d in durations if d >= 120)  # extended
+
+            # Intensity [15-17]
+            features[day_idx, oblast_idx, 15] = len(alerts) / 24.0  # alerts per hour
+            hour_counts = {}
+            for h in hours:
+                hour_counts[h] = hour_counts.get(h, 0) + 1
+            features[day_idx, oblast_idx, 16] = max(hour_counts.values()) if hour_counts else 0
+
+        # Coverage ratio [17] - % of day with active alerts
+        for day_idx in range(n_days):
+            total_duration = features[day_idx, :, 3].sum()
+            features[day_idx, :, 17] = total_duration / (24 * 60) if total_duration > 0 else 0
+
+        # Derived features [18-19]
+        for oblast_idx in range(self.N_OBLASTS):
+            for day_idx in range(1, n_days):
+                prev_count = features[day_idx - 1, oblast_idx, 0]
+                curr_count = features[day_idx, oblast_idx, 0]
+                if prev_count > 0:
+                    features[day_idx, oblast_idx, 18] = (curr_count - prev_count) / prev_count
+
+                prev_dur = features[day_idx - 1, oblast_idx, 4]
+                curr_dur = features[day_idx, oblast_idx, 4]
+                if prev_dur > 0:
+                    features[day_idx, oblast_idx, 19] = (curr_dur - prev_dur) / prev_dur
+
+        print(f"  Air raid sirens (oblast): {mask.sum()} oblast-day observations, {self.N_FEATURES} features")
+        print(f"    Using ALL records including oblast-level (vs raion loader which uses only 43%)")
+
+        return features, mask, self.OBLAST_NAMES, dates
+
+
+def load_air_raid_sirens_oblast_daily(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+) -> Tuple[pd.DataFrame, np.ndarray]:
+    """
+    Load Air Raid Sirens data at oblast level for MultiResolutionDataset.
+
+    This loader uses 100% of air raid data (including 57% oblast-level records
+    that cannot be assigned to specific raions).
+
+    Features: 20 per oblast x 25 oblasts = 500 total features
+
+    Returns:
+        df: DataFrame with date and flattened oblast features
+        mask: 1D observation mask
+    """
+    start = datetime.strptime(start_date, '%Y-%m-%d') if start_date else DEFAULT_START_DATE
+    end = datetime.strptime(end_date, '%Y-%m-%d') if end_date else DEFAULT_END_DATE
+
+    loader = AirRaidSirensOblastLoader()
+    features, mask_2d, oblast_names, dates = loader.load_oblast_features(start, end)
+
+    if len(features) == 0:
+        return pd.DataFrame(), np.array([])
+
+    # Flatten [n_days, n_oblasts, n_features] -> [n_days, n_oblasts * n_features]
+    n_days, n_oblasts, n_features = features.shape
+    features_flat = features.reshape(n_days, -1)
+
+    # Create column names
+    columns = ['date']
+    for oblast in oblast_names:
+        for feat in AirRaidSirensOblastLoader.FEATURE_NAMES:
+            columns.append(f"{oblast}_{feat}")
+
+    # Create DataFrame
+    data = np.column_stack([
+        np.array([d.date() if hasattr(d, 'date') else d for d in dates]),
+        features_flat
+    ])
+    df = pd.DataFrame(data, columns=columns)
+    df['date'] = pd.to_datetime(df['date'])
+
+    # Convert feature columns to float
+    for col in columns[1:]:
+        df[col] = pd.to_numeric(df[col], errors='coerce')
+
+    # Create 1D mask (any oblast observed)
+    mask_1d = mask_2d.any(axis=1).astype(bool)
+
+    print(f"  Air raid sirens (oblast): {len(df)} days, {len(columns)-1} features")
+
+    return df, mask_1d
+
+
+# =============================================================================
 # UCDP RAION LOADER
 # =============================================================================
 
@@ -1532,8 +1866,13 @@ class UCDPRaionLoader:
 # WARSPOTTING RAION LOADER
 # =============================================================================
 
-# Warspotting data file
-WARSPOTTING_FILE = DATA_DIR / "warspotting" / "warspotting_losses_api.json"
+# Warspotting data files
+# Historical data (2022-02-24 to 2025-06-08): scraped from website, 20k+ records
+WARSPOTTING_XLSX_FILE = DATA_DIR / "warspotting" / "warspotting_losses.xlsx"
+# API data (2025-06-09 onwards): from API endpoint, ongoing updates
+WARSPOTTING_JSON_FILE = DATA_DIR / "warspotting" / "warspotting_losses_api.json"
+# Legacy alias for backward compatibility
+WARSPOTTING_FILE = WARSPOTTING_JSON_FILE
 
 
 class WarspottingRaionLoader:
@@ -1624,9 +1963,15 @@ class WarspottingRaionLoader:
         self,
         raion_manager: Optional[RaionBoundaryManager] = None,
         data_file: Optional[Path] = None,
+        xlsx_file: Optional[Path] = None,
+        json_file: Optional[Path] = None,
     ):
         self.raion_manager = raion_manager or RaionBoundaryManager()
-        self.data_file = data_file or WARSPOTTING_FILE
+        # Legacy single-file support (uses JSON by default)
+        self.data_file = data_file or WARSPOTTING_JSON_FILE
+        # New multi-file support: historical xlsx + API json
+        self.xlsx_file = xlsx_file or WARSPOTTING_XLSX_FILE
+        self.json_file = json_file or WARSPOTTING_JSON_FILE
         self._data: Optional[pd.DataFrame] = None
         self._raion_name_map: Optional[Dict[str, str]] = None
 
@@ -1686,18 +2031,71 @@ class WarspottingRaionLoader:
                 return category
         return 'other'
 
-    def load_raw(self) -> pd.DataFrame:
-        """Load raw Warspotting data into DataFrame."""
-        if self._data is not None:
-            return self._data
+    def _load_xlsx(self) -> pd.DataFrame:
+        """Load historical data from xlsx file (2022-02-24 to 2025-06-08).
 
-        if not self.data_file.exists():
-            warnings.warn(f"Warspotting data not found: {self.data_file}")
+        Returns empty DataFrame if openpyxl is not available or file missing.
+        """
+        if not self.xlsx_file.exists():
+            warnings.warn(f"Warspotting xlsx not found: {self.xlsx_file}")
             return pd.DataFrame()
 
-        print(f"Loading Warspotting data from {self.data_file}...")
+        try:
+            import openpyxl  # noqa: F401 - check if available
+        except ImportError:
+            # HARD FAILURE: xlsx file exists but openpyxl is missing
+            # This prevents silent data loss of 20,055 historical records (2022-2025)
+            raise ImportError(
+                "openpyxl not installed but Warspotting xlsx file exists. "
+                "This would silently skip 20,055 historical records (2022-2025). "
+                "Install with: pip install openpyxl"
+            )
 
-        with open(self.data_file) as f:
+        print(f"  Loading historical xlsx: {self.xlsx_file}...")
+        df = pd.read_excel(self.xlsx_file, engine='openpyxl')
+
+        # Normalize column names to match expected schema
+        # xlsx has: id, date, type, model, status, lost_by, nearest_location, geo, unit, tags, comment, sources, photos
+        # Keep only the columns we need
+        required_cols = ['id', 'date', 'type', 'model', 'status', 'lost_by', 'nearest_location', 'geo', 'unit', 'tags']
+        for col in required_cols:
+            if col not in df.columns:
+                df[col] = None
+
+        # Parse geo column "lat,lon" into separate lat/lon columns
+        lats, lons = [], []
+        for geo in df['geo']:
+            lat, lon = None, None
+            if geo and isinstance(geo, str) and ',' in geo:
+                try:
+                    parts = geo.split(',')
+                    lat = float(parts[0].strip())
+                    lon = float(parts[1].strip())
+                except (ValueError, IndexError):
+                    pass
+            lats.append(lat)
+            lons.append(lon)
+
+        df['lat'] = lats
+        df['lon'] = lons
+
+        # Normalize date
+        df['date'] = pd.to_datetime(df['date'], errors='coerce')
+
+        # Mark source for debugging
+        df['source'] = 'xlsx'
+
+        print(f"    Loaded {len(df)} records from xlsx (date range: {df['date'].min()} to {df['date'].max()})")
+        return df[['id', 'type', 'model', 'status', 'date', 'lat', 'lon', 'nearest_location', 'unit', 'tags', 'source']]
+
+    def _load_json(self) -> pd.DataFrame:
+        """Load API data from JSON file (2025-06-09 onwards)."""
+        if not self.json_file.exists():
+            warnings.warn(f"Warspotting JSON not found: {self.json_file}")
+            return pd.DataFrame()
+
+        print(f"  Loading API JSON: {self.json_file}...")
+        with open(self.json_file) as f:
             data = json.load(f)
 
         losses = data.get('losses', [])
@@ -1711,8 +2109,8 @@ class WarspottingRaionLoader:
             if geo and isinstance(geo, str) and ',' in geo:
                 try:
                     parts = geo.split(',')
-                    lat = float(parts[0])
-                    lon = float(parts[1])
+                    lat = float(parts[0].strip())
+                    lon = float(parts[1].strip())
                 except (ValueError, IndexError):
                     pass
 
@@ -1727,14 +2125,72 @@ class WarspottingRaionLoader:
                 'nearest_location': item.get('nearest_location', ''),
                 'unit': item.get('unit'),
                 'tags': item.get('tags'),
+                'source': 'json',
             })
 
         df = pd.DataFrame(records)
         df['date'] = pd.to_datetime(df['date'], errors='coerce')
 
-        print(f"  Loaded {len(df)} Warspotting losses")
-        print(f"  With geo coords: {df['lat'].notna().sum()}")
-        print(f"  With nearest_location: {(df['nearest_location'] != '').sum()}")
+        print(f"    Loaded {len(df)} records from JSON (date range: {df['date'].min()} to {df['date'].max()})")
+        return df
+
+    def load_raw(self) -> pd.DataFrame:
+        """Load raw Warspotting data from both xlsx (historical) and JSON (API) sources.
+
+        Merges both sources and deduplicates by id to avoid double-counting.
+        Historical xlsx covers 2022-02-24 to 2025-06-08 (~20k records).
+        API JSON covers 2025-06-09 onwards (~1.5k+ records).
+
+        Returns combined DataFrame with full conflict period coverage.
+        """
+        if self._data is not None:
+            return self._data
+
+        print("Loading Warspotting data (historical xlsx + API json)...")
+
+        # Load both sources
+        df_xlsx = self._load_xlsx()
+        df_json = self._load_json()
+
+        # Combine sources
+        if df_xlsx.empty and df_json.empty:
+            warnings.warn("No Warspotting data found in either xlsx or json files")
+            return pd.DataFrame()
+        elif df_xlsx.empty:
+            df = df_json
+            print("  Warning: Only JSON data available (missing historical xlsx)")
+        elif df_json.empty:
+            df = df_xlsx
+            print("  Warning: Only xlsx data available (missing API JSON)")
+        else:
+            # Merge both sources, preferring xlsx for any overlapping IDs
+            # (xlsx is the original source, JSON may have updates)
+            df = pd.concat([df_xlsx, df_json], ignore_index=True)
+
+            # Deduplicate by id, keeping first occurrence (xlsx data)
+            pre_dedup = len(df)
+            df = df.drop_duplicates(subset=['id'], keep='first')
+            if pre_dedup > len(df):
+                print(f"  Deduplicated {pre_dedup - len(df)} overlapping records by id")
+
+        # Sort by date
+        df = df.sort_values('date').reset_index(drop=True)
+
+        print(f"  Combined total: {len(df)} Warspotting losses")
+        print(f"    Date range: {df['date'].min()} to {df['date'].max()}")
+        print(f"    With geo coords: {df['lat'].notna().sum()}")
+        print(f"    With nearest_location: {(df['nearest_location'].fillna('') != '').sum()}")
+        if 'source' in df.columns:
+            print(f"    From xlsx: {(df['source'] == 'xlsx').sum()}, From json: {(df['source'] == 'json').sum()}")
+
+        # Validate minimum record count - historical xlsx should have ~20k records
+        # If we have less than 10k, something is wrong with data loading
+        MIN_EXPECTED_RECORDS = 10000
+        if len(df) < MIN_EXPECTED_RECORDS:
+            warnings.warn(
+                f"Warspotting loaded only {len(df)} records (expected >= {MIN_EXPECTED_RECORDS}). "
+                f"Historical xlsx data may be missing. Check openpyxl installation."
+            )
 
         self._data = df
         return df

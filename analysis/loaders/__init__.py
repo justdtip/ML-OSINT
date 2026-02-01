@@ -51,11 +51,13 @@ from .viirs_spatial_loader import (
 from .new_source_raion_loaders import (
     GeoconfirmedRaionLoader,
     AirRaidSirensRaionLoader,
+    AirRaidSirensOblastLoader,  # NEW: uses 100% of air raid data
     UCDPRaionLoader,
     WarspottingRaionLoader,
     DeepStateRaionLoader,
     FIRMSExpandedRaionLoader,
     CombinedRaionLoader,
+    load_air_raid_sirens_oblast_daily,  # NEW: oblast-level loader function
 )
 
 from .raion_adapter import (
@@ -101,11 +103,13 @@ __all__ = [
     # New raion-level sources (expanded features)
     'GeoconfirmedRaionLoader',   # 50 features
     'AirRaidSirensRaionLoader',  # 30 features
+    'AirRaidSirensOblastLoader', # 20 features x 25 oblasts (uses 100% data)
     'UCDPRaionLoader',           # 35 features
     'WarspottingRaionLoader',    # 33 features
     'DeepStateRaionLoader',      # 48 features
     'FIRMSExpandedRaionLoader',  # 35 features
     'CombinedRaionLoader',       # Unified loader (231 features total)
+    'load_air_raid_sirens_oblast_daily',  # Oblast-level air raid loader
     # Raion adapters for LOADER_REGISTRY integration
     'load_geoconfirmed_raion_adapted',
     'load_air_raid_sirens_raion_adapted',

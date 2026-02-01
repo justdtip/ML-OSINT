@@ -1390,7 +1390,7 @@ class MultiResolutionTrainer:
         run_manager: Optional[TrainingRunManager] = None,
         use_amp: bool = True,
         gradient_checkpointing: bool = True,
-        use_temporal_reg: bool = False,
+        use_temporal_reg: bool = True,
         temporal_corr_weight: float = 0.01,
         temporal_smooth_weight: float = 0.001,
     ):
@@ -3201,8 +3201,8 @@ def main():
                         help='Rolling window size for detrending in days (default: 14)')
 
     # Temporal regularization (temporal-deconfounding-plan.md)
-    parser.add_argument('--use-temporal-reg', action='store_true', default=False,
-                        help='Enable temporal regularization to prevent learning time shortcuts (default: False)')
+    parser.add_argument('--use-temporal-reg', action='store_true', default=True,
+                        help='Enable temporal regularization to prevent learning time shortcuts (default: True)')
     parser.add_argument('--no-temporal-reg', action='store_true',
                         help='Disable temporal regularization')
     parser.add_argument('--temporal-corr-weight', type=float, default=0.01,

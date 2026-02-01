@@ -72,6 +72,9 @@ from analysis.loaders import (
     RAION_ADAPTER_REGISTRY,
 )
 
+# Import oblast-level loader (uses 100% of air raid data including oblast-level records)
+from analysis.loaders.new_source_raion_loaders import load_air_raid_sirens_oblast_daily
+
 # Import detrending utilities
 from analysis.preprocessing_utils import DetrendingConfig, detrend_features
 
@@ -178,7 +181,7 @@ class MultiResolutionConfig:
     # Detrending configuration (temporal-deconfounding-plan.md)
     # Subtracts rolling mean to remove slow trends while preserving daily fluctuations.
     # This reduces spurious correlations caused by shared time trends (71% correlation reduction).
-    apply_detrending: bool = False  # Default False for backward compatibility
+    apply_detrending: bool = True  # Default True - removes 71% spurious time-trend correlation
     detrending_window: int = 14  # Default rolling window size
 
     # PCA configuration for equipment features (Probe 1.1.2 redundancy reduction)
@@ -1724,6 +1727,7 @@ LOADER_REGISTRY: Dict[str, callable] = {
     # These sources provide per-raion masks for GeographicSourceEncoder
     "geoconfirmed_raion": load_geoconfirmed_raion_adapted,     # 50 features/raion
     "air_raid_sirens_raion": load_air_raid_sirens_raion_adapted,  # 30 features/raion
+    "air_raid_sirens_oblast": load_air_raid_sirens_oblast_daily,  # 20 features/oblast x 25 = 500 features (uses 100% data)
     "ucdp_raion": load_ucdp_raion_adapted,                     # 35 features/raion
     "warspotting_raion": load_warspotting_raion_adapted,       # 33 features/raion
     "deepstate_raion": load_deepstate_raion_adapted,           # 48 features/raion

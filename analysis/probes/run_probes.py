@@ -241,11 +241,8 @@ for tier_num, tier_probes in [(1, TIER_1_PROBES), (2, TIER_2_PROBES), (3, TIER_3
             else:
                 module = "data_artifact_probes"
         elif section == 2:
-            # 2.3.x and 2.4.x are in model_interpretability_probes
-            if subsection in ['3', '4']:
-                module = "model_interpretability_probes"
-            else:
-                module = "cross_modal_fusion_probes"
+            # Note: 2.3.x and 2.4.x (JIM probes) removed - legacy models deleted
+            module = "cross_modal_fusion_probes"
         elif section == 3:
             module = "temporal_dynamics_probes"
         elif section == 4:

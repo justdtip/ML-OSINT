@@ -615,30 +615,10 @@ if _STATISTICAL_AVAILABLE:
     ])
 
 # ============================================================================
-# Section 2.3-2.4: Model Interpretability Probes
+# Section 2.3-2.4: Model Interpretability Probes (REMOVED)
 # ============================================================================
-try:
-    from .model_interpretability_probes import (
-        # Section 2.3: JIM Interpretability
-        JIMModuleIOProbe,
-        JIMAttentionAnalysisProbe,
-
-        # Section 2.4: Unified Model Validation
-        CrossSourceLatentProbe,
-        DeltaModelValidationProbe,
-    )
-    _MODEL_INTERP_AVAILABLE = True
-except ImportError as e:
-    _MODEL_INTERP_AVAILABLE = False
-    warnings.warn(f"Model interpretability probes not available: {e}")
-
-if _MODEL_INTERP_AVAILABLE:
-    __all__.extend([
-        "JIMModuleIOProbe",
-        "JIMAttentionAnalysisProbe",
-        "CrossSourceLatentProbe",
-        "DeltaModelValidationProbe",
-    ])
+# Note: JIM and Unified model probes removed - legacy models deleted
+_MODEL_INTERP_AVAILABLE = False
 
 # ============================================================================
 # Section 8: Model Assessment Probes
